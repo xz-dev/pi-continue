@@ -20,7 +20,7 @@ The public package identity is `pi-continue`.
 
 Canonical surfaces:
 
-- source repo: `/Users/tiziano/Code/pi-continue`
+- source repo: `https://github.com/Tiziano-AI/pi-continue`
 - extension path: `extensions/continue/index.ts`
 - npm package name: `pi-continue`
 - config file: `pi-continue.json`

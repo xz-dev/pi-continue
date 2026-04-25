@@ -17,7 +17,7 @@ It does not patch Pi, fork sessions, switch sessions, rewrite transcript history
 
 ## Install
 
-From npm after publication:
+From npm:
 
 ```bash
 pi install npm:pi-continue
@@ -186,7 +186,8 @@ assets/user/split_prefix.md
 ## Development
 
 ```bash
-cd /Users/tiziano/Code/pi-continue
+git clone https://github.com/Tiziano-AI/pi-continue.git
+cd pi-continue
 pnpm test
 jq empty examples/*.json package.json
 npm pack --dry-run --json

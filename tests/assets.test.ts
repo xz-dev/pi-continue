@@ -5,6 +5,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadPromptAsset } from "../extensions/continue/src/assets.ts";
 
+const promptAssetPaths = [
+	"assets/system/history_initial.md",
+	"assets/system/history_update.md",
+	"assets/system/split_prefix.md",
+	"assets/user/continuation_base.md",
+	"assets/user/history_initial.md",
+	"assets/user/history_update.md",
+	"assets/user/split_prefix.md",
+];
+
 test("package history prompts require evidence-gated curated routing", () => {
 	for (const path of [
 		"assets/system/history_initial.md",
@@ -23,6 +33,15 @@ test("package history prompts require evidence-gated curated routing", () => {
 		assert.match(content, /noisy evidence, not content to replay/);
 		assert.match(content, /Drop provenance-only details/);
 		assert.match(content, /Generalize repeated friction/);
+	}
+});
+
+test("prompt assets avoid raw Markdown HTML tag block lines", () => {
+	for (const path of promptAssetPaths) {
+		const lines = readFileSync(path, "utf8").split("\n");
+		for (let index = 0; index < lines.length; index++) {
+			assert.doesNotMatch(lines[index], /^\s*<\/?[a-z][a-z0-9-]*(?:\s+[^>]*)?>\s*$/i, `${path}:${index + 1}`);
+		}
 	}
 });
 

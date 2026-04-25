@@ -1,9 +1,10 @@
-<continuation>
+# Literal `<continuation>` contract
+
 Continuation to another agent in a new session, now.
 
 ## OBJECTIVE
 
-Write a faithful continuation note for another agent that will need to pickup from here.
+Write a faithful continuation note for another agent that will need to pick up from here.
 
 - Preserve what still changes what the next agent should do, avoid, ask, validate, or read.
 - Before synthesizing conclusions, read every tool output and every user and assistant message in your context.
@@ -31,9 +32,8 @@ Write a faithful continuation note for another agent that will need to pickup fr
 
 - Emit the note as instructions to send to the new agent.
 - Use these headings and never omit `## Must Read` or `## Start From Here`.
-- Update CONTINUE.md accordingly.
+- Update `CONTINUE.md` accordingly.
 
 ## QUALITY BAR
 
-The new agent should be able to read the note and the CONTINUE.md and continue correctly without rereading the past.
-</continuation>
+The new agent should be able to read the note and `CONTINUE.md` and continue correctly without rereading the past.
