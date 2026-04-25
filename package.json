@@ -1,0 +1,42 @@
+{
+  "name": "pi-continue",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Keep long Pi runs moving with safe mid-run compaction and a focused continuation prompt.",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "continue",
+    "continuation",
+    "compaction"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Tiziano-AI/pi-continue.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Tiziano-AI/pi-continue/issues"
+  },
+  "homepage": "https://github.com/Tiziano-AI/pi-continue#readme",
+  "files": [
+    "README.md",
+    "ARCH.md",
+    "LICENSE",
+    "assets/",
+    "examples/",
+    "extensions/"
+  ],
+  "scripts": {
+    "test": "node --experimental-strip-types --test tests/*.test.ts"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-ai": "*",
+    "@mariozechner/pi-coding-agent": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions/continue/index.ts"
+    ]
+  }
+}

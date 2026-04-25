@@ -1,0 +1,14 @@
+{
+  "enabled": true,
+  "summarizerModel": "inherit",
+  "reasoning": "inherit",
+  "historyMaxTokens": null,
+  "splitPrefixMaxTokens": null,
+  "continuationDocPath": "CONTINUE.md",
+  "continuationDocSyncMode": "off",
+  "midRunGuardEnabled": true,
+  "appendCompactionMetadata": false,
+  "appendFileTags": false,
+  "promptOverridePolicy": "project-override",
+  "fallbackMode": "deterministic-summary"
+}
