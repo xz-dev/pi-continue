@@ -6,7 +6,7 @@
 
 The package owns:
 
-- one `/continue` command with a discoverable TUI action tree, typed shortcuts, and autocomplete
+- one `/continue` command with a compact TUI action palette, typed shortcuts, and autocomplete
 - a safe mid-run guard at Pi's awaited pre-provider `context` seam
 - package-shaped compaction summaries for continuation
 - the runtime prompt that resumes the same task after compaction
@@ -14,7 +14,7 @@ The package owns:
 - optional repo-local agent guide refinement when explicitly enabled
 - customizable system/user prompt assets and prompt override precedence for continuation synthesis
 
-It does not patch Pi vendor code, fork sessions, switch sessions, rewrite transcript history, or maintain legacy command/config aliases.
+It does not patch Pi vendor code, fork sessions, switch sessions, rewrite transcript history, or maintain command/config aliases.
 
 ## Canonical identity
 
@@ -36,7 +36,7 @@ Canonical surfaces:
 - history artifact version: `pi-continue-artifacts/v2`
 - compaction detail kind: `pi-continue/v2`
 
-No old package names, command aliases, config files, prompt tags, or extension paths are compatibility surfaces.
+Only the canonical surfaces above are package contract surfaces.
 
 ## Pi boundary
 
@@ -87,31 +87,33 @@ Canonical command:
 /continue
 ```
 
-In UI-capable sessions, exact `/continue` opens the package-owned action tree. The menu is the primary UX and exposes:
+In UI-capable sessions, exact `/continue` opens the package-owned action palette. The palette is the primary UX and exposes:
 
-- `Continue now` with an optional focus field.
-- `Queue until idle` with an optional focus field.
-- `Status`.
-- `Preview prompts` with an optional focus field.
+- `Continue now` for immediate native compaction and same-session resume.
+- `Queue until idle` for safe idle-point compaction.
+- `Preview prompts` for read-only prompt inspection.
+- `Status` for config, prompt provenance, and trigger state.
 - `Project settings` and `Global settings`.
-- `Reset project config` and `Reset global config`.
+- `Reset project` and `Reset global`.
+
+The palette has one focus target: action selection. `Enter` runs or opens the selected action without hidden steering text. Focus-capable actions use a separate optional focus prompt, opened from the palette, so text entry never competes with list navigation.
 
 Typed shortcuts are the scriptable/power-user surface and are provided through the same command with argument completions:
 
 ```text
 /continue steer [focus]
 /continue queue [focus]
+/continue preview [focus]
 /continue status
 /continue settings [project|global]
 /continue reset [project|global]
-/continue preview [focus]
 ```
 
-In non-interactive modes, exact `/continue` preserves direct `steer` behavior instead of opening the menu, so RPC/automation never hangs on unavailable UI.
+In non-interactive modes, exact `/continue` preserves direct `steer` behavior instead of opening the palette, so RPC/automation never hangs on unavailable UI.
 
 Successful compaction sends the runtime continuation prompt. Duplicate compaction starts are rejected while one is already running. If an automatic guard compaction fails for the same token estimate, the next identical guard event aborts the unsafe over-threshold replay and refuses to loop compaction repeatedly.
 
-The old top-level commands are intentionally absent.
+Top-level command aliases are absent.
 
 ## Runtime continuation prompt
 
@@ -337,7 +339,7 @@ The package does not:
 - patch Pi core
 - fork or switch sessions
 - rewrite transcript history
-- read old config files or register old commands
+- read alternate config files or register command aliases
 - write repo documents unless the matching sync mode is explicitly enabled
 - act as a memory system, context pruner, or custom compaction framework
 

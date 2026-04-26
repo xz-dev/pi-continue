@@ -18,7 +18,7 @@ It is not a replacement compactor. It is a continuation layer around Pi's native
 - **Mid-run continuation:** detects a full context during a run, before the next provider request is sent.
 - **Native Pi compaction:** uses `ctx.compact()`, `session_before_compact`, and Pi's normal session format.
 - **Same-session resume:** sends a continuation prompt after compaction, so Pi keeps working in the current session.
-- **Discoverable `/continue`:** opens a browsable action tree in the TUI, with typed shortcuts and autocomplete for power users.
+- **Discoverable `/continue`:** opens a compact TUI action palette, with typed shortcuts and autocomplete for power users.
 - **Custom prompts:** lets you override the system and user prompt assets without editing package source.
 - **Structured artifacts:** asks the summarizer for a strict JSON artifact object, then validates it before writing anything.
 - **Model control:** inherits the current model/reasoning by default, or uses a pinned summarizer model.
@@ -81,49 +81,49 @@ Pi packages run with your local user permissions. Review package source before i
 /continue
 ```
 
-In the interactive TUI, exact `/continue` opens a browsable action tree:
+In the interactive TUI, exact `/continue` opens a compact action palette:
 
 ```text
 Continue
-  Continue now        Focus, optional
-  Queue until idle    Focus, optional
+  Continue now        Compact now; resume this task
+  Queue until idle    Wait, then compact
 Inspect
-  Status
-  Preview prompts     Preview focus, optional
+  Preview prompts     Show prompts; no compaction
+  Status              Show config and trigger
 Configure
   Project settings
   Global settings
-  Reset project config
-  Reset global config
+  Reset project
+  Reset global
 ```
 
-The focus field is optional. Leave it blank to continue normally, or add a short steering note such as `finish validation before release`.
+Press `Enter` to run or open the selected action. For actions that accept steering text, press `f` to open a separate optional focus prompt, then leave it blank to continue normally or add a short note such as `finish validation before release`.
 
 Typed shortcuts remain supported and autocompleted:
 
 ```text
 /continue steer focus on the failing auth migration and exact next commands
 /continue queue preserve current file state and remaining validation steps
+/continue preview focus on validation and AGENTS.md candidate updates
 /continue status
 /continue settings project
 /continue settings global
 /continue reset project
 /continue reset global
-/continue preview focus on validation and AGENTS.md candidate updates
 ```
 
 Shortcut behavior:
 
 - `steer [focus]`: continue now; abort active work if needed, compact, then send the continuation prompt.
 - `queue [focus]`: wait for Pi to become idle, compact, then send the continuation prompt.
+- `preview [focus]`: show the exact prompt payloads that would be used now.
 - `status`: show effective config, prompt sources, and compaction threshold.
 - `settings [project|global]`: edit package settings in the TUI.
 - `reset [project|global]`: delete the selected config file after confirmation.
-- `preview [focus]`: show the exact prompt payloads that would be used now.
 
-In non-interactive modes, exact `/continue` keeps the safe direct behavior and runs `steer` instead of opening a menu, so RPC/automation never waits on an unavailable UI.
+In non-interactive modes, exact `/continue` keeps the safe direct behavior and runs `steer` instead of opening a palette, so RPC/automation never waits on an unavailable UI.
 
-The old top-level commands are intentionally not registered. Use `/continue` for the menu or `/continue status`, `/continue settings`, `/continue reset`, and `/continue preview` as shortcuts.
+Only `/continue` is registered. Use exact `/continue` for the palette or `/continue status`, `/continue settings`, `/continue reset`, and `/continue preview` as shortcuts.
 
 ## Configuration
 
@@ -172,7 +172,7 @@ Useful settings:
 - `promptOverridePolicy`: `"project-override"`, `"global-override"`, or `"package-default"`.
 - `fallbackMode`: `"deterministic-summary"` or `"abort"` when modeled summary synthesis fails.
 
-Malformed JSON config fails loudly instead of silently falling back to defaults. Old config names and old command names are intentionally not read.
+Malformed JSON config fails loudly instead of silently falling back to defaults. Config and command names outside this contract are not read.
 
 AGENTS.md writes are off by default. Enable `agentGuideSyncMode: "always"` only when you want the model to be allowed to replace the configured guide after it identifies durable operating guidance, command corrections, or reusable repo rules.
 
@@ -268,7 +268,7 @@ Runtime behavior:
 - `agentGuideMarkdown` is the full content for optional agent-guide sync, or `null` when no guide update is warranted.
 - `agentGuideChangeReason` is a non-empty explanation of why the guide should or should not change.
 
-The structured fields replace the old read-now/do-now heading contract:
+The structured fields define the continuation contract:
 
 - `contextMap` is the curated source route: include sources only when they unlock a decision, prevent rework, or reduce risk.
 - `workingEdge` is the execution continuity map: commands, edits, checks, sequencing constraints, or decision points needed to continue.
@@ -308,7 +308,7 @@ After compaction, Pi reconstructs context as the compaction summary followed by 
 - synthesize missing tool results
 - preserve partial in-flight model output as completed history
 - act as a memory system, context pruner, or general custom compaction framework
-- register legacy command aliases
+- register alternate command aliases
 - write `CONTINUE.md` or `AGENTS.md` unless the relevant sync mode is explicitly enabled
 
 `pi-continue` deliberately stays narrow: it combines the extension-visible mid-run checkpoint, Pi native compaction, and automatic same-session continuation without claiming to own broader memory or compaction behavior.

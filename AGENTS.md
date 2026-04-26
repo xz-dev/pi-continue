@@ -35,9 +35,9 @@ Keep all surfaces aligned to these invariants:
 - Transcript, tool output, file lists, and logs are evidence, not replay material.
 - Durable learnings and repeated user feedback should survive compaction when they still govern future action.
 - Prompt behavior is intentionally customizable through system/user prompt assets.
-- `/continue` UX must prefer discoverable UI and autocomplete over memorized subcommands: exact `/continue` opens the action tree when UI-capable, while typed subcommands remain shortcuts.
+- `/continue` UX must prefer discoverable UI and autocomplete over memorized subcommands: exact `/continue` opens the compact action palette when UI-capable, while typed subcommands remain shortcuts.
 - AGENTS.md refinement is a configurable side effect and must stay off by default.
-- No legacy command/config aliases unless the user explicitly changes the product contract.
+- No command/config aliases unless the user explicitly changes the product contract.
 
 ## User-facing language
 
@@ -80,9 +80,10 @@ Do not patch or edit Pi vendor code.
 ## Code structure
 
 - `extensions/continue/index.ts` wires the single `/continue` command and Pi events.
-- `src/menu.ts` owns the interactive `/continue` action tree, contextual focus fields, and menu state rendering.
+- `src/palette-actions.ts` owns the `/continue` palette action catalog, result mapping, labels, descriptions, and effect copy.
+- `src/palette.ts` owns the interactive `/continue` action palette, separate optional focus prompt, and stable rendering.
 - `src/completions.ts` owns slash argument completions for typed `/continue` shortcuts.
-- `src/command-shape.ts` owns pure command-shape decisions such as exact-menu routing and operator shortcut splitting.
+- `src/command-shape.ts` owns pure command-shape decisions such as exact-palette routing and operator shortcut splitting.
 - `src/config.ts` owns package config parsing/defaults and rejects malformed JSON loudly.
 - `src/pi-settings.ts` reads effective Pi compaction settings.
 - `src/mid-run-guard.ts` owns guard eligibility and threshold decisions.

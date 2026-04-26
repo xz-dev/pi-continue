@@ -13,8 +13,8 @@ function isOperatorSubcommandName(name: string): name is ContinueOperatorSubcomm
 	return OPERATOR_SUBCOMMANDS.has(name);
 }
 
-/** Return whether exact /continue should open the interactive action tree. */
-export function shouldOpenContinueMenu(args: string | undefined, hasUI: boolean): boolean {
+/** Return whether exact /continue should open the interactive action palette. */
+export function shouldOpenContinuePalette(args: string | undefined, hasUI: boolean): boolean {
 	return hasUI && (args?.trim() ?? "").length === 0;
 }
 
@@ -29,7 +29,7 @@ export function splitContinueSubcommand(args: string | undefined): ContinueOpera
 	return { name, rest: rest.length > 0 ? rest : undefined };
 }
 
-/** Build the typed shortcut form used by menu selections to reach the runtime owner. */
+/** Build the typed shortcut form used by palette selections to reach the runtime owner. */
 export function buildContinuationCommandArgs(mode: ContinuationRequestMode, instructions: string | undefined): string {
 	const trimmed = instructions?.trim();
 	return trimmed && trimmed.length > 0 ? `${mode} ${trimmed}` : mode;

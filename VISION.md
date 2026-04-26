@@ -34,7 +34,7 @@ Long tool-heavy runs can grow context between normal auto-compaction checkpoints
 - Continuation summaries are evidence-gated, structured, and immediately actionable.
 - Read routes are high-signal and justified by action/risk, not capped by arbitrary counts or expanded from raw file activity.
 - Durable learnings appear in continuation artifacts, and reusable operating-rule updates can be promoted to the configured agent guide when explicitly enabled.
-- Operators can discover continuation actions from exact `/continue`, use optional focus fields in context, and still rely on typed shortcuts with autocomplete.
+- Operators can discover continuation actions from exact `/continue`, add optional focus through a separate prompt, and still rely on typed shortcuts with autocomplete.
 - Operators can inspect config, prompt provenance, and the exact prompt payloads used for continuation.
 - Public docs, examples, prompt assets, tests, and package metadata describe one coherent product contract.
 
@@ -45,5 +45,5 @@ Long tool-heavy runs can grow context between normal auto-compaction checkpoints
 - No interruption of incomplete tool-call batches.
 - No synthetic tool results or invented model output.
 - No general-purpose memory, context-pruning, or custom-compaction framework.
-- No legacy top-level command aliases.
+- No top-level command aliases.
 - No AGENTS.md or continuation-document writes unless the matching sync mode is explicitly enabled.

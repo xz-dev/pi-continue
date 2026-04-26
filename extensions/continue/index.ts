@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { loadHistoryPromptAssets, loadSplitPromptAssets } from "./src/assets.ts";
 import { parseHistoryArtifacts, parseSplitPrefix } from "./src/blocks.ts";
-import { splitContinueSubcommand, shouldOpenContinueMenu, buildContinuationCommandArgs } from "./src/command-shape.ts";
+import { splitContinueSubcommand, shouldOpenContinuePalette, buildContinuationCommandArgs } from "./src/command-shape.ts";
 import { runPreviewCommand, runResetCommand, runSettingsDialog, runStatusCommand } from "./src/commands.ts";
 import { getContinueArgumentCompletions } from "./src/completions.ts";
 import { composeCompactionSummary } from "./src/compose.ts";
@@ -14,7 +14,8 @@ import { resolveTokenBudget, runPromptPass } from "./src/model.ts";
 import { loadPiInternals } from "./src/pi-internals.ts";
 import { compileHistoryPrompt, compileSplitPrompt } from "./src/prompt.ts";
 import { resolveProjectContext, writeRepoDocument } from "./src/project.ts";
-import { showContinueMenu, type ContinueMenuResult } from "./src/menu.ts";
+import { showContinuePalette } from "./src/palette.ts";
+import type { ContinuePaletteResult } from "./src/palette-actions.ts";
 import { createContinuationRuntimeState, runContinuationCommand, type ContinuationRuntimeState } from "./src/runtime.ts";
 import type { PendingDocumentWrite } from "./src/types.ts";
 
@@ -34,11 +35,11 @@ async function runEnabledContinuationCommand(
 	await runContinuationCommand(ctx, runtime, args, sendContinuation);
 }
 
-async function runContinueMenuResult(
+async function runContinuePaletteResult(
 	pi: ExtensionAPI,
 	ctx: ExtensionCommandContext,
 	runtime: ContinuationRuntimeState,
-	result: ContinueMenuResult,
+	result: ContinuePaletteResult,
 ): Promise<void> {
 	if (result.kind === "status") {
 		await runStatusCommand(pi, ctx);
@@ -83,12 +84,12 @@ export default function (pi: ExtensionAPI) {
 	const runtime = createContinuationRuntimeState();
 
 	pi.registerCommand("continue", {
-		description: "Open continuation actions; shortcuts: steer, queue, status, settings, reset, preview",
+		description: "Open continuation actions; shortcuts: steer, queue, preview, status, settings, reset",
 		getArgumentCompletions: getContinueArgumentCompletions,
 		handler: async (args, ctx) => {
-			if (shouldOpenContinueMenu(args, ctx.hasUI)) {
-				const result = await showContinueMenu(pi, ctx, runtime);
-				if (result) await runContinueMenuResult(pi, ctx, runtime, result);
+			if (shouldOpenContinuePalette(args, ctx.hasUI)) {
+				const result = await showContinuePalette(pi, ctx, runtime);
+				if (result) await runContinuePaletteResult(pi, ctx, runtime, result);
 				return;
 			}
 			const subcommand = splitContinueSubcommand(args);

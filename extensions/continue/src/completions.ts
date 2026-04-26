@@ -19,6 +19,10 @@ const TOP_LEVEL_COMMANDS: CommandCompletion[] = [
 		description: "Queue until idle: wait for Pi to stop running, then compact and resume.",
 	},
 	{
+		name: "preview",
+		description: "Preview the exact prompt payloads; optional focus text is supported.",
+	},
+	{
 		name: "status",
 		description: "Inspect effective config, prompt sources, and the Pi compaction trigger.",
 	},
@@ -29,10 +33,6 @@ const TOP_LEVEL_COMMANDS: CommandCompletion[] = [
 	{
 		name: "reset",
 		description: "Reset project or global pi-continue settings after confirmation.",
-	},
-	{
-		name: "preview",
-		description: "Preview the exact prompt payloads; optional focus text is supported.",
 	},
 ];
 

@@ -5,7 +5,7 @@ import { getContinueArgumentCompletions } from "../extensions/continue/src/compl
 test("getContinueArgumentCompletions exposes action-first top-level shortcuts", () => {
 	const items = getContinueArgumentCompletions("");
 	assert.ok(items);
-	assert.deepEqual(items.map((item) => item.value), ["steer", "queue", "status", "settings", "reset", "preview"]);
+	assert.deepEqual(items.map((item) => item.value), ["steer", "queue", "preview", "status", "settings", "reset"]);
 	assert.match(items[0].description ?? "", /Continue now/);
 	assert.match(items[1].description ?? "", /Queue until idle/);
 });
