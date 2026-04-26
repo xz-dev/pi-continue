@@ -1,4 +1,4 @@
-import type { ContinuationCompactionDetails } from "./types.ts";
+import type { AgentGuideWriteStatus, ContinuationCompactionDetails } from "./types.ts";
 
 interface FileOperations {
 	read: Set<string>;
@@ -12,6 +12,8 @@ interface ContinuationSummaryMetadata {
 	modifiedFileCount: number;
 	documentSyncId?: string;
 	agentGuideSyncId?: string;
+	agentGuideWriteStatus?: AgentGuideWriteStatus;
+	agentGuideChangeReason?: string;
 }
 
 function computeFileLists(fileOps: FileOperations): { readFiles: string[]; modifiedFiles: string[] } {
@@ -25,9 +27,13 @@ function computeFileLists(fileOps: FileOperations): { readFiles: string[]; modif
 }
 
 const CONTINUATION_DETAILS_KIND = "pi-continue/v2";
-
 function isStringArray(value: unknown): value is string[] {
 	return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+function asAgentGuideWriteStatus(value: unknown): AgentGuideWriteStatus | undefined {
+	if (value === "sync-off" || value === "no-replacement" || value === "replacement-pending") return value;
+	return undefined;
 }
 
 /** Parse the package-owned compaction-entry details payload used by session_compact. */
@@ -38,12 +44,18 @@ export function parseContinuationDetails(value: unknown): ContinuationCompaction
 	if (!isStringArray(record.readFiles) || !isStringArray(record.modifiedFiles)) return undefined;
 	const documentSyncId = typeof record.documentSyncId === "string" ? record.documentSyncId : undefined;
 	const agentGuideSyncId = typeof record.agentGuideSyncId === "string" ? record.agentGuideSyncId : undefined;
+	const agentGuideWriteStatus = asAgentGuideWriteStatus(record.agentGuideWriteStatus);
+	const agentGuideChangeReason = typeof record.agentGuideChangeReason === "string" && record.agentGuideChangeReason.trim().length > 0
+		? record.agentGuideChangeReason.trim()
+		: undefined;
 	return {
 		kind: CONTINUATION_DETAILS_KIND,
 		readFiles: record.readFiles,
 		modifiedFiles: record.modifiedFiles,
 		documentSyncId,
 		agentGuideSyncId,
+		agentGuideWriteStatus,
+		agentGuideChangeReason,
 	};
 }
 
@@ -52,6 +64,8 @@ export function buildContinuationDetails(
 	fileOps: FileOperations,
 	documentSyncId: string | undefined,
 	agentGuideSyncId: string | undefined,
+	agentGuideWriteStatus: AgentGuideWriteStatus | undefined,
+	agentGuideChangeReason: string | undefined,
 ): ContinuationCompactionDetails {
 	const { readFiles, modifiedFiles } = computeFileLists(fileOps);
 	return {
@@ -60,7 +74,13 @@ export function buildContinuationDetails(
 		modifiedFiles,
 		documentSyncId,
 		agentGuideSyncId,
+		agentGuideWriteStatus,
+		agentGuideChangeReason,
 	};
+}
+
+function clip(value: string, maxLength: number): string {
+	return value.length <= maxLength ? value : `${value.slice(0, maxLength - 3)}...`;
 }
 
 function buildSummaryMetadata(details: ContinuationCompactionDetails): ContinuationSummaryMetadata {
@@ -71,6 +91,8 @@ function buildSummaryMetadata(details: ContinuationCompactionDetails): Continuat
 	};
 	if (details.documentSyncId) metadata.documentSyncId = details.documentSyncId;
 	if (details.agentGuideSyncId) metadata.agentGuideSyncId = details.agentGuideSyncId;
+	if (details.agentGuideWriteStatus) metadata.agentGuideWriteStatus = details.agentGuideWriteStatus;
+	if (details.agentGuideChangeReason) metadata.agentGuideChangeReason = clip(details.agentGuideChangeReason, 360);
 	return metadata;
 }
 

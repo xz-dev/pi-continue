@@ -5,6 +5,7 @@ import { parseHistoryArtifacts, parseSplitPrefix } from "./src/blocks.ts";
 import { splitContinueSubcommand, shouldOpenContinuePalette, buildContinuationCommandArgs } from "./src/command-shape.ts";
 import { runPreviewCommand, runResetCommand, runSettingsDialog, runStatusCommand } from "./src/commands.ts";
 import { getContinueArgumentCompletions } from "./src/completions.ts";
+import { normalizeCompactionPreparation, type FileOperations } from "./src/compaction-preparation.ts";
 import { composeCompactionSummary } from "./src/compose.ts";
 import { loadContinuationConfig } from "./src/config.ts";
 import { buildContinuationDetails, parseContinuationDetails } from "./src/details.ts";
@@ -17,7 +18,7 @@ import { resolveProjectContext, writeRepoDocument } from "./src/project.ts";
 import { showContinuePalette } from "./src/palette.ts";
 import type { ContinuePaletteResult } from "./src/palette-actions.ts";
 import { createContinuationRuntimeState, runContinuationCommand, type ContinuationRuntimeState } from "./src/runtime.ts";
-import type { PendingDocumentWrite } from "./src/types.ts";
+import type { AgentGuideWriteStatus, DocumentSyncMode, PendingDocumentWrite } from "./src/types.ts";
 
 async function runEnabledContinuationCommand(
 	pi: ExtensionAPI,
@@ -66,7 +67,7 @@ async function runContinuePaletteResult(
 	);
 }
 
-function computeFileListsSnapshot(fileOps: { read: Set<string>; written: Set<string>; edited: Set<string> }): {
+function computeFileListsSnapshot(fileOps: FileOperations): {
 	readFiles: string[];
 	modifiedFiles: string[];
 } {
@@ -77,6 +78,15 @@ function computeFileListsSnapshot(fileOps: { read: Set<string>; written: Set<str
 		readFiles: [...reads].sort((left, right) => left.localeCompare(right)),
 		modifiedFiles: [...modified].sort((left, right) => left.localeCompare(right)),
 	};
+}
+
+function decideAgentGuideWriteStatus(syncMode: DocumentSyncMode, agentGuideMd: string | undefined): AgentGuideWriteStatus {
+	if (syncMode === "off") return "sync-off";
+	return agentGuideMd ? "replacement-pending" : "no-replacement";
+}
+
+function clipNotification(value: string, maxLength: number): string {
+	return value.length <= maxLength ? value : `${value.slice(0, maxLength - 3)}...`;
 }
 
 export default function (pi: ExtensionAPI) {
@@ -122,58 +132,62 @@ export default function (pi: ExtensionAPI) {
 		const config = loadContinuationConfig(projectContext.projectRoot);
 		if (!config.enabled) return undefined;
 		const resolvedProjectContext = await resolveProjectContext(pi, ctx.cwd, config.continuationDocPath, config.agentGuidePath);
-		const fileOpsSnapshot = computeFileListsSnapshot(event.preparation.fileOps);
+		const preparation = normalizeCompactionPreparation(event.preparation, event.branchEntries);
+		if (preparation.repairedNoOpCut && ctx.hasUI) {
+			ctx.ui.notify("Adjusted native compaction checkpoint so continuation has real history.", "warning");
+		}
+		const fileOpsSnapshot = computeFileListsSnapshot(preparation.fileOps);
 		const internals = await loadPiInternals();
 		const historyPrompt = compileHistoryPrompt(
 			loadHistoryPromptAssets(
 				resolvedProjectContext.projectRoot,
 				config.promptOverridePolicy,
-				event.preparation.previousSummary ? "update" : "initial",
+				preparation.previousSummary ? "update" : "initial",
 			),
 			{
-				scenario: event.preparation.previousSummary ? "update" : "initial",
+				scenario: preparation.previousSummary ? "update" : "initial",
 				projectRoot: resolvedProjectContext.projectRoot,
 				continuationDocPath: resolvedProjectContext.continuationDocPath,
 				existingContinuationDoc: resolvedProjectContext.existingContinuationDoc,
 				agentGuidePath: resolvedProjectContext.agentGuidePath,
 				existingAgentGuide: resolvedProjectContext.existingAgentGuide,
-				previousSummary: event.preparation.previousSummary,
-				historyTranscript: internals.serializeConversation(internals.convertToLlm(event.preparation.messagesToSummarize)),
+				previousSummary: preparation.previousSummary,
+				historyTranscript: internals.serializeConversation(internals.convertToLlm(preparation.messagesToSummarize)),
 				customInstructions: event.customInstructions,
 				fileOps: fileOpsSnapshot,
 			},
 		);
 		const splitPrompt =
-			event.preparation.isSplitTurn && event.preparation.turnPrefixMessages.length > 0
+			preparation.isSplitTurn && preparation.turnPrefixMessages.length > 0
 				? compileSplitPrompt(
 						loadSplitPromptAssets(resolvedProjectContext.projectRoot, config.promptOverridePolicy),
 						{
 							projectRoot: resolvedProjectContext.projectRoot,
 							continuationDocPath: resolvedProjectContext.continuationDocPath,
-							splitPrefixTranscript: internals.serializeConversation(internals.convertToLlm(event.preparation.turnPrefixMessages)),
+							splitPrefixTranscript: internals.serializeConversation(internals.convertToLlm(preparation.turnPrefixMessages)),
 							customInstructions: event.customInstructions,
 						},
 				  )
 				: undefined;
 		const historyBudget = resolveTokenBudget(
-			event.preparation.settings.reserveTokens,
+			preparation.settings.reserveTokens,
 			config.historyMaxTokens,
 			"history",
 		);
 		const splitBudget = resolveTokenBudget(
-			event.preparation.settings.reserveTokens,
+			preparation.settings.reserveTokens,
 			config.splitPrefixMaxTokens,
 			"split",
 		);
 		const historyInputForFallback = {
-			scenario: event.preparation.previousSummary ? "update" as const : "initial" as const,
+			scenario: preparation.previousSummary ? "update" as const : "initial" as const,
 			projectRoot: resolvedProjectContext.projectRoot,
 			continuationDocPath: resolvedProjectContext.continuationDocPath,
 			existingContinuationDoc: resolvedProjectContext.existingContinuationDoc,
 			agentGuidePath: resolvedProjectContext.agentGuidePath,
 			existingAgentGuide: resolvedProjectContext.existingAgentGuide,
-			previousSummary: event.preparation.previousSummary,
-			historyTranscript: internals.serializeConversation(internals.convertToLlm(event.preparation.messagesToSummarize)),
+			previousSummary: preparation.previousSummary,
+			historyTranscript: internals.serializeConversation(internals.convertToLlm(preparation.messagesToSummarize)),
 			customInstructions: event.customInstructions,
 			fileOps: fileOpsSnapshot,
 		};
@@ -181,7 +195,7 @@ export default function (pi: ExtensionAPI) {
 			? {
 				projectRoot: resolvedProjectContext.projectRoot,
 				continuationDocPath: resolvedProjectContext.continuationDocPath,
-				splitPrefixTranscript: internals.serializeConversation(internals.convertToLlm(event.preparation.turnPrefixMessages)),
+				splitPrefixTranscript: internals.serializeConversation(internals.convertToLlm(preparation.turnPrefixMessages)),
 				customInstructions: event.customInstructions,
 			}
 			: undefined;
@@ -219,7 +233,8 @@ export default function (pi: ExtensionAPI) {
 				label: "continuation document",
 			});
 		}
-		const agentGuideSyncId = config.agentGuideSyncMode === "always" && historyArtifacts.agentGuideMd ? randomUUID() : undefined;
+		const agentGuideWriteStatus = decideAgentGuideWriteStatus(config.agentGuideSyncMode, historyArtifacts.agentGuideMd);
+		const agentGuideSyncId = agentGuideWriteStatus === "replacement-pending" ? randomUUID() : undefined;
 		if (agentGuideSyncId && historyArtifacts.agentGuideMd) {
 			pendingDocumentWrites.set(agentGuideSyncId, {
 				path: resolvedProjectContext.agentGuidePath,
@@ -227,15 +242,21 @@ export default function (pi: ExtensionAPI) {
 				label: "agent guide",
 			});
 		}
-		const details = buildContinuationDetails(event.preparation.fileOps, documentSyncId, agentGuideSyncId);
+		const details = buildContinuationDetails(
+			preparation.fileOps,
+			documentSyncId,
+			agentGuideSyncId,
+			agentGuideWriteStatus,
+			historyArtifacts.agentGuideChangeReason,
+		);
 		return {
 			compaction: {
 				summary: composeCompactionSummary(historyArtifacts.continuation, splitPrefix, details, {
 					appendCompactionMetadata: config.appendCompactionMetadata,
 					appendFileTags: config.appendFileTags,
 				}),
-				firstKeptEntryId: event.preparation.firstKeptEntryId,
-				tokensBefore: event.preparation.tokensBefore,
+				firstKeptEntryId: preparation.firstKeptEntryId,
+				tokensBefore: preparation.tokensBefore,
 				details,
 			},
 		};
@@ -259,6 +280,9 @@ export default function (pi: ExtensionAPI) {
 					"info",
 				);
 			}
+		}
+		if (ctx.hasUI && details.agentGuideWriteStatus === "no-replacement" && details.agentGuideChangeReason) {
+			ctx.ui.notify(`Agent guide unchanged: ${clipNotification(details.agentGuideChangeReason, 240)}`, "info");
 		}
 	});
 

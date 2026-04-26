@@ -31,6 +31,7 @@ Long tool-heavy runs can grow context between normal auto-compaction checkpoints
 
 - Pi avoids sending another over-threshold provider request when an extension-visible safe checkpoint exists.
 - The next turn continues the user's active task without redoing completed discovery.
+- Native compaction checkpoints that would keep everything and summarize nothing are adjusted before continuation synthesis.
 - Continuation summaries are evidence-gated, structured, and immediately actionable.
 - Read routes are high-signal and justified by action/risk, not capped by arbitrary counts or expanded from raw file activity.
 - Durable learnings appear in continuation artifacts, and reusable operating-rule updates can be promoted to the configured agent guide when explicitly enabled.

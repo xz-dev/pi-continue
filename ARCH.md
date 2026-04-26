@@ -73,11 +73,12 @@ The guard flow:
 6. Trigger when `estimatedTokens > model.contextWindow - reserveTokens`.
 7. Abort the active run before the oversized provider request is sent.
 8. Start Pi compaction.
-9. Build the package continuation summary in `session_before_compact`.
-10. Optionally write repo documents in `session_compact` when their sync modes are enabled.
-11. Send the continuation prompt after compaction completes.
+9. In `session_before_compact`, repair Pi preparations that would keep the whole branch while summarizing no messages because a completed tool-result suffix crossed `keepRecentTokens`; the repaired cut keeps the assistant that owns the suffix and summarizes the earlier same-turn prefix separately.
+10. Build the package continuation summary in `session_before_compact`.
+11. Optionally write repo documents in `session_compact` when their sync modes are enabled.
+12. Send the continuation prompt after compaction completes.
 
-The guard never rewrites context messages and never interrupts incomplete tool batches.
+The guard never rewrites context messages, never interrupts incomplete tool batches, and only adjusts native compaction preparations after Pi has already reached a complete assistant/tool-result checkpoint.
 
 ## Command contract
 
@@ -193,7 +194,7 @@ Generated continuation artifacts use structured fields instead of mandatory read
 - `contextMap`: curated exact sources/resources with why each matters and how to use it
 - `workingEdge`: commands, edits, checks, sequencing constraints, or decision points needed to continue
 - `durableLearnings`: reusable user feedback, friction, corrected habits, and best-practice rules that remain valuable beyond the immediate subtask
-- `agentGuideUpdates`: candidate durable AGENTS.md changes or reasons no guide change is warranted
+- `agentGuideUpdates`: candidate durable AGENTS.md changes or reasons no guide change is warranted; candidate notes do not write the guide without a full `agentGuideMarkdown` replacement
 
 There is no numeric cap in the prompt or code. The synthesizer preserves details only when they change the next agent's action, validation, safety, context routing, durable guide update, blocker handling, dirty-state handling, approval boundary, or repeated explicit user requirement.
 
@@ -228,6 +229,8 @@ Sync behavior:
 - `"always"` writes the rendered `document` artifact to the configured continuation path
 - default `agentGuideSyncMode` is `"off"`
 - `"always"` writes `agentGuideMarkdown` to the configured guide path only when the modeled artifact provides a full replacement
+- `agentGuideUpdates` are continuation notes only; they never write the guide by themselves
+- compaction details persist the agent-guide write status (`sync-off`, `no-replacement`, or `replacement-pending`) and the modeled change reason for operator observability
 - writes are normalized and skipped when content is unchanged
 - writes happen only after successful extension-owned compaction
 

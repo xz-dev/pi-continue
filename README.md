@@ -44,8 +44,9 @@ Pi finishes an assistant/tool-result batch
 -> pi-continue sees the completed tool results in the awaited context hook
 -> estimated context is over Pi's compaction threshold
 -> pi-continue aborts before the oversized request is sent
--> Pi native compaction runs
--> pi-continue writes a structured continuation summary
+-> Pi prepares native compaction
+-> pi-continue adjusts any checkpoint that would keep everything and summarize nothing
+-> Pi saves the native compaction with pi-continue's structured summary
 -> pi-continue sends a prompt telling Pi to continue from that summary
 ```
 
@@ -117,7 +118,7 @@ Shortcut behavior:
 - `steer [focus]`: continue now; abort active work if needed, compact, then send the continuation prompt.
 - `queue [focus]`: wait for Pi to become idle, compact, then send the continuation prompt.
 - `preview [focus]`: show the exact prompt payloads that would be used now.
-- `status`: show effective config, prompt sources, and compaction threshold.
+- `status`: show effective config, prompt sources, compaction threshold, and document-write semantics.
 - `settings [project|global]`: edit package settings in the TUI.
 - `reset [project|global]`: delete the selected config file after confirmation.
 
@@ -168,13 +169,13 @@ Useful settings:
 - `continuationDocPath`: repo-relative path for the optional continuation document.
 - `continuationDocSyncMode`: `"off"` by default; set `"always"` to write the continuation document after successful extension-owned compaction.
 - `agentGuidePath`: repo-relative path for the optional agent guide refinement target.
-- `agentGuideSyncMode`: `"off"` by default; set `"always"` to write a modeled full replacement for the agent guide when the artifact includes one.
+- `agentGuideSyncMode`: `"off"` by default; set `"always"` to allow AGENTS.md writes only when the modeled artifact includes a full `agentGuideMarkdown` replacement.
 - `promptOverridePolicy`: `"project-override"`, `"global-override"`, or `"package-default"`.
 - `fallbackMode`: `"deterministic-summary"` or `"abort"` when modeled summary synthesis fails.
 
 Malformed JSON config fails loudly instead of silently falling back to defaults. Config and command names outside this contract are not read.
 
-AGENTS.md writes are off by default. Enable `agentGuideSyncMode: "always"` only when you want the model to be allowed to replace the configured guide after it identifies durable operating guidance, command corrections, or reusable repo rules.
+AGENTS.md writes are off by default. Enable `agentGuideSyncMode: "always"` only when you want the model to be allowed to replace the configured guide after it identifies durable operating guidance, command corrections, or reusable repo rules. `agentGuideUpdates` are candidate notes in the continuation summary; they do not write the file by themselves. A write happens only when `agentGuideMarkdown` is non-null and contains the full replacement guide.
 
 ## Pi compaction threshold
 
@@ -265,19 +266,20 @@ Runtime behavior:
 
 - `brief` is rendered into Pi's compaction summary inside the package-owned continuation block.
 - `document` is rendered as full content for optional repo-local continuation document sync.
-- `agentGuideMarkdown` is the full content for optional agent-guide sync, or `null` when no guide update is warranted.
+- `agentGuideMarkdown` is the full content for optional agent-guide sync, or `null` when no guide replacement is warranted.
 - `agentGuideChangeReason` is a non-empty explanation of why the guide should or should not change.
+- `agentGuideUpdates` can name candidate guide changes even when `agentGuideMarkdown` is `null`; candidates are guidance, not writes.
 
 The structured fields define the continuation contract:
 
 - `contextMap` is the curated source route: include sources only when they unlock a decision, prevent rework, or reduce risk.
 - `workingEdge` is the execution continuity map: commands, edits, checks, sequencing constraints, or decision points needed to continue.
 - `durableLearnings` carries reusable user feedback, friction, corrected habits, and best-practice rules even when the immediate subtask is done.
-- `agentGuideUpdates` records candidate AGENTS.md refinements or why no guide update is warranted.
+- `agentGuideUpdates` records candidate AGENTS.md refinements or why no guide update is warranted; only non-null `agentGuideMarkdown` can write the guide.
 
 There is no numeric cap for source routing in prompts or code. The contract asks for judgment, rationale, and action value rather than count targets.
 
-The runtime continuation prompt tells the next turn to use the compaction summary as primary context, orient from the structured fields, avoid replaying completed discovery, treat AGENTS.md candidate updates as guidance unless written, and continue from the live working edge.
+When guide sync is enabled and no full replacement is emitted, `pi-continue` leaves AGENTS.md unchanged and reports the modeled reason. The runtime continuation prompt tells the next turn to use the compaction summary as primary context, orient from the structured fields, avoid replaying completed discovery, treat AGENTS.md candidate updates as guidance unless written, and continue from the live working edge.
 
 ## What the summarizer sees
 

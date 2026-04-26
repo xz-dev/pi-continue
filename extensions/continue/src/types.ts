@@ -96,12 +96,18 @@ export interface ParsedHistoryArtifacts {
 	agentGuideChangeReason: string;
 }
 
+/** Persisted status for whether a compaction attempted an AGENTS.md replacement. */
+export type AgentGuideWriteStatus = "sync-off" | "no-replacement" | "replacement-pending";
+
+/** Package-owned details saved on Pi compaction entries for lifecycle bookkeeping. */
 export interface ContinuationCompactionDetails {
 	kind: "pi-continue/v2";
 	readFiles: string[];
 	modifiedFiles: string[];
 	documentSyncId?: string;
 	agentGuideSyncId?: string;
+	agentGuideWriteStatus?: AgentGuideWriteStatus;
+	agentGuideChangeReason?: string;
 }
 
 export interface PendingDocumentWrite {

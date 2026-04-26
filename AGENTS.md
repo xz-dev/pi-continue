@@ -37,6 +37,7 @@ Keep all surfaces aligned to these invariants:
 - Prompt behavior is intentionally customizable through system/user prompt assets.
 - `/continue` UX must prefer discoverable UI and autocomplete over memorized subcommands: exact `/continue` opens the compact action palette when UI-capable, while typed subcommands remain shortcuts.
 - AGENTS.md refinement is a configurable side effect and must stay off by default.
+- AGENTS.md candidate notes are not writes; a sync write requires `agentGuideSyncMode: "always"` and a full non-null `agentGuideMarkdown` replacement.
 - No command/config aliases unless the user explicitly changes the product contract.
 
 ## User-facing language
@@ -93,8 +94,9 @@ Do not patch or edit Pi vendor code.
 - `src/assets.ts` owns prompt override precedence.
 - `src/prompt.ts` compiles runtime prompt payloads.
 - `src/blocks.ts` parses the strict `pi-continue-artifacts/v2` JSON artifact and split-prefix block.
+- `src/compaction-preparation.ts` owns package-level repair of native no-op compaction preparations that would summarize nothing while keeping the whole branch.
 - `src/compose.ts` renders the persisted compaction summary.
-- `src/details.ts` owns `pi-continue/v2` compaction details.
+- `src/details.ts` owns `pi-continue/v2` compaction details, including agent-guide write status and change reason.
 - `src/project.ts` owns git-root resolution, repo-relative path sanitization, and optional repo document writes.
 
 Keep one canonical owner for each behavior. Do not add parallel config keys, alternate command names, duplicate threshold math, or compatibility shims without explicit user approval.
@@ -111,6 +113,7 @@ Prompt assets are public product surface. When changing them:
 - Do not ask the model to invent progress, validation, file contents, root cause, or AGENTS.md writes.
 - Do not add numeric read-route caps. Ask for justified curation based on rework/risk/action value.
 - Remember that operators can override both system and user prompt assets through global/project prompt roots.
+- Keep `agentGuideUpdates` as candidate notes and `agentGuideMarkdown` as the only modeled write payload.
 
 ## Config and local state
 
@@ -122,7 +125,7 @@ Ignored local state:
 - `CONTINUE.md` — optional runtime continuation document.
 - package/build/cache artifacts already covered by `.gitignore`.
 
-`AGENTS.md` is tracked package corpus in this repo. Runtime AGENTS.md replacement is possible only when `agentGuideSyncMode` is explicitly set to `"always"`; default must remain `"off"`.
+`AGENTS.md` is tracked package corpus in this repo. Runtime AGENTS.md replacement is possible only when `agentGuideSyncMode` is explicitly set to `"always"` and the artifact includes a full `agentGuideMarkdown` replacement; default must remain `"off"`.
 
 Do not commit secrets, `.npmrc`, `.env*`, local Pi config, generated tarballs, or runtime continuation files.
 

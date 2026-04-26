@@ -13,7 +13,7 @@ Continue the approved prompt/command/continuation redesign after compaction.
 ## Decisions and Constraints
 - Do not preserve the old mandatory read-now/do-now heading contract.
 - Do not impose numeric caps on source routing.
-- AGENTS.md writes stay off by default.
+- AGENTS.md writes stay off by default and require a full `agentGuideMarkdown` replacement when enabled.
 
 ## Context Map
 - `/repo/ARCH.md` — architecture contract; use it to verify runtime boundaries and artifact ownership.
@@ -37,5 +37,6 @@ Continue the approved prompt/command/continuation redesign after compaction.
 - Avoid preserving a weak old contract under new labels; replace it with the product shape the user approved.
 
 ## Agent Guide Updates
-- Add durable prompt-contract rules to AGENTS.md only when guide sync is enabled or through normal repository edits.
+- Candidate: add durable prompt-contract rules to AGENTS.md if the next synthesis can emit a full replacement guide.
+- Candidate notes alone do not write AGENTS.md; guide sync writes only non-null `agentGuideMarkdown`.
 ```

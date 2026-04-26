@@ -1,6 +1,6 @@
 {
   "name": "pi-continue",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "type": "module",
   "description": "Resume long Pi runs in the same session when context fills mid-run, using native compaction and structured continuation.",
   "keywords": [

@@ -30,7 +30,7 @@ Use the structured fields as semantic slots, not as a transcript template:
 - `risks`: blockers, ambiguities, assumptions, and hazards.
 - `antiRework`: completed discovery, false starts, and duplication traps.
 - `durableLearnings`: generalizable rules from user feedback, friction, mistakes, or successful patterns.
-- `agentGuideUpdates`: candidate guide changes or explicit reasons not to update the guide.
+- `agentGuideUpdates`: candidate guide changes or explicit reasons not to update the guide; this field is not a write payload.
 
 ## Curation doctrine
 
@@ -46,6 +46,7 @@ Use the structured fields as semantic slots, not as a transcript template:
 - Use `agentGuideMarkdown` only for durable operating guidance: user preferences, corrected command truth, stable boundaries, reusable procedures, or repo rules that should govern future agents.
 - If a learning belongs only to the active task, keep it in the continuation artifacts and set `agentGuideMarkdown` to null.
 - If a guide update is warranted, emit the full replacement guide content and explain the reason in `agentGuideChangeReason`.
+- Candidate notes alone do not write AGENTS.md; only non-null `agentGuideMarkdown` can be synced.
 - Do not claim the guide was written unless the supplied context proves it.
 
 ## Style

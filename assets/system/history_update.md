@@ -54,7 +54,7 @@ Field semantics:
 - `risks`: blockers, unresolved questions, assumptions, and failure modes that can change the next action.
 - `antiRework`: specific completed discovery, false paths, and duplication traps the next agent should not repeat.
 - `durableLearnings`: general lessons, user feedback, corrected habits, and best-practice rules that remain valuable beyond the immediate subtask.
-- `agentGuideUpdates`: candidate durable guide changes or reasons no guide change is warranted.
+- `agentGuideUpdates`: candidate durable guide changes or reasons no guide change is warranted. Candidate notes are not writes.
 
 Evidence Gate:
 - Keep a candidate only if it changes what the next agent should do, avoid, ask, validate, inspect, or write durably.
@@ -80,3 +80,4 @@ Agent guide policy:
 - Rewrite the configured agent guide only for durable operating guidance: user preferences, corrected command truth, stable boundaries, reusable procedures, or repo rules that should govern future agents.
 - If the learning is active-task-only, keep it in `brief`/`document` and set `agentGuideMarkdown` to null.
 - If `agentGuideMarkdown` is non-null, it must be the full replacement guide content, not a patch or excerpt.
+- Candidate notes in `agentGuideUpdates` never write the guide by themselves.

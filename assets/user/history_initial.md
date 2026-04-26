@@ -18,5 +18,6 @@ For `document`, write the durable repo-local continuation document content throu
 ## Agent guide candidate contract
 
 - If the current AGENTS.md should change, set `agentGuideMarkdown` to the full replacement content for the configured guide path.
+- Use `agentGuideUpdates` for candidate notes; candidate notes do not write AGENTS.md without non-null `agentGuideMarkdown`.
 - If no durable operating rule should change, set `agentGuideMarkdown` to null and explain why in `agentGuideChangeReason`.
 - Candidate guide changes should be active refinements or corrections, not a transcript summary.
