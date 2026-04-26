@@ -118,8 +118,8 @@ function renderStatus(
 		`- Reasoning: ${config.reasoning}`,
 		`- History max tokens: ${config.historyMaxTokens ?? `pi-default (${historyBudget})`}`,
 		`- Split-prefix max tokens: ${config.splitPrefixMaxTokens ?? `pi-default (${splitBudget})`}`,
-		`- Repo CONTINUE path: ${continuationDocPath}`,
-		`- Repo CONTINUE sync: ${config.continuationDocSyncMode}`,
+		`- Continuation doc path: ${continuationDocPath}`,
+		`- Continuation doc sync: ${config.continuationDocSyncMode}`,
 		`- Mid-run guard: ${config.midRunGuardEnabled ? "yes" : "no"}`,
 		`- Append compaction metadata: ${config.appendCompactionMetadata ? "yes" : "no"}`,
 		`- Append file tags: ${config.appendFileTags ? "yes" : "no"}`,
@@ -212,8 +212,8 @@ export async function runSettingsDialog(pi: ExtensionAPI, ctx: ExtensionCommandC
 			`reasoning: ${config.reasoning}`,
 			`history max tokens: ${config.historyMaxTokens ?? "Pi default"}`,
 			`split-prefix max tokens: ${config.splitPrefixMaxTokens ?? "Pi default"}`,
-			`repo CONTINUE path: ${config.continuationDocPath}`,
-			`repo CONTINUE sync: ${config.continuationDocSyncMode}`,
+			`continuation doc path: ${config.continuationDocPath}`,
+			`continuation doc sync: ${config.continuationDocSyncMode}`,
 			`mid-run guard: ${config.midRunGuardEnabled ? "yes" : "no"}`,
 			`append compaction metadata: ${config.appendCompactionMetadata ? "yes" : "no"}`,
 			`append file tags: ${config.appendFileTags ? "yes" : "no"}`,
@@ -263,16 +263,16 @@ export async function runSettingsDialog(pi: ExtensionAPI, ctx: ExtensionCommandC
 			});
 			continue;
 		}
-		if (selected.startsWith("repo CONTINUE path:")) {
+		if (selected.startsWith("continuation doc path:")) {
 			config = await updateSetting(scope, projectContext.projectRoot, config, async (current) => {
-				const next = await ctx.ui.input("Repo CONTINUE path", "repo-relative path, default CONTINUE.md");
+				const next = await ctx.ui.input("Continuation doc path", "repo-relative path, default CONTINUE.md");
 				return next?.trim() ? { ...current, continuationDocPath: next.trim() } : undefined;
 			});
 			continue;
 		}
-		if (selected.startsWith("repo CONTINUE sync:")) {
+		if (selected.startsWith("continuation doc sync:")) {
 			config = await updateSetting(scope, projectContext.projectRoot, config, async (current) => {
-				const next = await ctx.ui.select("Repo CONTINUE sync", ["off", "always"]);
+				const next = await ctx.ui.select("Continuation doc sync", ["off", "always"]);
 				return next ? { ...current, continuationDocSyncMode: next as ContinuationConfig["continuationDocSyncMode"] } : undefined;
 			});
 			continue;

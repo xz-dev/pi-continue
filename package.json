@@ -2,7 +2,7 @@
   "name": "pi-continue",
   "version": "0.1.2",
   "type": "module",
-  "description": "Keep long Pi runs moving with safe mid-run compaction and a focused continuation prompt.",
+  "description": "Continue Pi runs when context fills mid-run using native compaction and prompt-driven resume.",
   "keywords": [
     "pi-package",
     "pi",
@@ -21,6 +21,8 @@
   "homepage": "https://github.com/Tiziano-AI/pi-continue#readme",
   "files": [
     "README.md",
+    "AGENTS.md",
+    "VISION.md",
     "ARCH.md",
     "LICENSE",
     "assets/",

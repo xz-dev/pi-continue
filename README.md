@@ -1,70 +1,53 @@
 # pi-continue
 
-`pi-continue` is a Pi extension that helps Pi keep going when the context fills up in the middle of a run.
+`pi-continue` is a Pi extension for the moment when context fills up while Pi is still working.
 
-This is the failure mode it is for:
+Pi already has native compaction. The rough edge is timing: during a long tool-heavy run, Pi can collect enough tool output to exceed the compaction threshold before normal auto-compaction gets a turn. The next model request may fail with `context_length_exceeded`, waste a large request, retry awkwardly, or stop even though the task was going fine.
 
-1. You give Pi a long task.
-2. Pi reads files, runs tools, and keeps working without returning to you.
-3. Tool results make the context grow past the compaction threshold.
-4. Pi is about to make another model request before normal auto-compaction has run.
-5. The run can hit `context_length_exceeded`, waste a large request, retry awkwardly, or stop when the work was otherwise going fine.
+This is the user-facing problem reported in Pi issues such as:
 
-Pi has native compaction, but this specific timing problem has shown up in public Pi issues:
+- [badlogic/pi-mono#2871](https://github.com/badlogic/pi-mono/issues/2871): auto-compaction is not checked mid-turn, so context can grow through long tool loops.
+- [badlogic/pi-mono#3609](https://github.com/badlogic/pi-mono/issues/3609): Pi can send requests above the compaction threshold, especially with smaller local-model windows.
 
-- [badlogic/pi-mono#2871](https://github.com/badlogic/pi-mono/issues/2871): auto-compaction is not checked mid-turn, so context can grow unbounded during long tool loops.
-- [badlogic/pi-mono#3609](https://github.com/badlogic/pi-mono/issues/3609): Pi can send requests above the compaction threshold, especially on smaller local-model context windows.
+`pi-continue` catches the safe checkpoint after a completed tool batch and before the next model request. If context is over Pi's threshold, it runs Pi's own compaction and then asks Pi to continue the same task from the new summary.
 
-`pi-continue` works around that gap at the extension layer. When Pi reaches a safe mid-run checkpoint, it compacts the session with Pi's own compaction system and then asks Pi to continue the same task from the new summary.
+It is not a replacement compactor. It is a continuation layer around Pi's native compaction.
 
-It is not a replacement for Pi compaction. It is a continuation layer around Pi compaction.
+## Highlights
 
-## What happens during an automatic continuation
+- **Mid-run continuation:** detects a full context during a run, before the next provider request is sent.
+- **Native Pi compaction:** uses `ctx.compact()`, `session_before_compact`, and Pi's normal session format.
+- **Same-session resume:** sends a continuation prompt after compaction, so Pi keeps working in the current session.
+- **Manual control:** adds `/continue` for immediate or queued continuation compaction.
+- **Custom prompts:** lets you override the system and user prompt assets without editing package source.
+- **Model control:** inherits the current model/reasoning by default, or uses a pinned summarizer model.
+- **Optional continuation doc:** can write a repo-local continuation document when explicitly enabled.
+
+## Canonical corpus
+
+- [`AGENTS.md`](AGENTS.md) — repo-local operating guide for coding agents.
+- [`VISION.md`](VISION.md) — product intent, user problem, principles, success criteria, and non-goals.
+- [`README.md`](README.md) — user/operator guide: install, commands, config, prompt customization, and boundaries.
+- [`ARCH.md`](ARCH.md) — architecture contract: Pi boundaries, guard semantics, config ownership, artifacts, and runtime flow.
+- [`examples/pi-continue.json`](examples/pi-continue.json) — full package config example.
+- [`examples/pi-settings-compaction-75pct-272k.json`](examples/pi-settings-compaction-75pct-272k.json) — Pi compaction-threshold example.
+- [`assets/`](assets/) — default system/user prompt corpus and the files you can override.
+
+`CONTINUE.md` is optional runtime output when continuation-doc sync is enabled. It is local state, not part of the tracked package corpus.
+
+## How automatic continuation works
 
 ```text
-Pi finishes a tool-call batch
--> pi-continue sees the completed tool results before the next model request
--> context is over Pi's compaction threshold
--> pi-continue aborts the current run before the oversized request is sent
+Pi finishes an assistant/tool-result batch
+-> pi-continue sees the completed tool results in the awaited context hook
+-> estimated context is over Pi's compaction threshold
+-> pi-continue aborts before the oversized request is sent
 -> Pi native compaction runs
--> pi-continue writes a continuation-focused compaction summary
+-> pi-continue writes a continuation-focused summary
 -> pi-continue sends a prompt telling Pi to continue from that summary
 ```
 
-From the user's point of view, the goal is simple: Pi should not get stuck just because the context filled while it was still working.
-
-## What it does
-
-- Adds automatic mid-run continuation when context is over threshold.
-- Adds `/continue` for manual continuation compaction.
-- Uses Pi's native `ctx.compact()` pipeline and session format.
-- Writes a `<continuation>` block into the compaction summary.
-- Sends a continuation prompt after compaction completes, so the same session resumes the task.
-- Optionally writes a repo-local `CONTINUE.md` when explicitly configured.
-- Uses the current Pi session model and reasoning level by default, with optional pinned summarizer settings.
-
-## What it does not do
-
-- It does not patch Pi or vendor code.
-- It does not fork, switch, or create sessions.
-- It does not rewrite transcript history.
-- It does not interrupt running tools.
-- It does not interrupt incomplete tool-call batches.
-- It does not synthesize missing tool results.
-- It does not preserve partial in-flight model output as if it were completed history.
-- It does not try to be a memory system, context pruner, or custom compaction framework.
-
-The guard only acts after Pi has a complete assistant/tool-result batch. If tool calls are still incomplete, it waits.
-
-## Why this is separate from other Pi extensions
-
-There are public Pi extensions for custom compaction summaries, context pruning, context caps, memory, and handoff to new sessions.
-
-Among the easily discoverable public Pi extensions, `pi-continue` appears to be the only one that combines all three of these behaviors:
-
-1. a mid-run checkpoint before the next provider request,
-2. Pi's native compaction pipeline,
-3. automatic same-session continuation after compaction.
+The guard only acts after Pi has complete tool results. It does not interrupt running tools or incomplete tool-call batches.
 
 ## Install
 
@@ -106,85 +89,14 @@ Examples:
 /continue queue preserve current file state and remaining validation steps
 ```
 
-`/continue` defaults to `steer`.
-
 Modes:
 
-- `steer`: aborts active work if needed, compacts now, then sends the continuation prompt.
-- `queue`: waits for Pi to become idle, compacts, then sends the continuation prompt.
+- `steer` aborts active work if needed, compacts now, then sends the continuation prompt.
+- `queue` waits for Pi to become idle, compacts, then sends the continuation prompt.
 
-Both modes use Pi's `session_before_compact` and `session_compact` extension seams.
+`/continue` defaults to `steer`.
 
-## Automatic guard
-
-The automatic guard is controlled by `midRunGuardEnabled`.
-
-It evaluates only when the pending context ends with one or more contiguous `toolResult` messages immediately preceded by an `assistant` message. That shape means Pi has a complete tool-call batch:
-
-```text
-assistant: toolCall A, toolCall B
-toolResult: A
-toolResult: B
-```
-
-When that shape is present, the guard:
-
-1. resolves the project and effective `pi-continue` config,
-2. reads effective Pi compaction settings,
-3. estimates context tokens through Pi internals,
-4. compares the estimate to Pi's compaction threshold,
-5. aborts the active run if the estimate is over threshold,
-6. starts Pi native compaction,
-7. builds the continuation summary through `session_before_compact`,
-8. sends the continuation prompt after `ctx.compact()` completes.
-
-The threshold is the same one Pi uses:
-
-```text
-estimated context tokens > model.contextWindow - compaction.reserveTokens
-```
-
-If a guard-triggered compaction fails, the package records the failed token estimate. If the same over-threshold request appears again, it aborts that retry instead of looping compaction attempts.
-
-## Continuation summary
-
-The history pass produces two artifacts:
-
-- `<continuation>`: the immediate next-turn note saved in Pi's compaction summary.
-- `<continuation-md>`: full content for optional repo-local `CONTINUE.md` sync.
-
-Both artifacts must include:
-
-- `## Must Read`: at most five high-signal paths or resources, with why each matters.
-- `## Start From Here`: the first concrete command, edit, validation, or investigation step.
-
-`Must Read` is a curated route, not a file-operation log. Transcript and tool history are evidence, not replay material.
-
-The runtime continuation prompt tells the next turn to:
-
-- use the compaction summary as primary context,
-- follow `Must Read` and `Start From Here`,
-- read repo `CONTINUE.md` only if the summary is missing details or appears stale,
-- avoid redoing completed discovery,
-- continue the active user task from the next concrete step.
-
-## What the summarizer sees
-
-Pi prepares compaction from the current session branch after aborting and waiting for the agent to become idle. `pi-continue` receives Pi's compaction preparation:
-
-- `messagesToSummarize`,
-- optional `turnPrefixMessages` for split turns,
-- `previousSummary`,
-- `firstKeptEntryId`,
-- `tokensBefore`,
-- file-operation metadata,
-- compaction settings.
-
-Pi converts messages with `convertToLlm()` and serializes them with `serializeConversation()` inside `<conversation>` tags. Tool-call names and JSON arguments are included. Text tool results are included, but Pi's serializer truncates each serialized tool result to 2,000 characters with a truncation marker.
-
-After compaction, Pi reconstructs context as the compaction summary followed by raw kept messages from `firstKeptEntryId` onward and any later messages.
-
-## Config
+## Configuration
 
 Global config:
 
@@ -217,20 +129,28 @@ Default config:
 }
 ```
 
-Notes:
+Useful settings:
 
-- `summarizerModel: "inherit"` uses the current Pi session model.
-- `reasoning: "inherit"` uses the current Pi reasoning level when the selected model supports reasoning.
-- Set `summarizerModel` to `"provider/model"` to pin a dedicated summarizer.
-- Set `continuationDocSyncMode` to `"always"` to opt in to repo-local `CONTINUE.md` writes.
-- Malformed JSON config fails loudly instead of silently falling back to defaults.
-- Old config names are intentionally not read. This package has one current config contract.
+- `midRunGuardEnabled`: enables the automatic mid-run guard.
+- `summarizerModel`: `"inherit"` or a pinned `"provider/model"` summarizer.
+- `reasoning`: `"inherit"`, `"off"`, `"minimal"`, `"low"`, `"medium"`, `"high"`, or `"xhigh"`.
+- `continuationDocSyncMode`: `"off"` by default; set `"always"` to write the continuation document.
+- `promptOverridePolicy`: `"project-override"`, `"global-override"`, or `"package-default"`.
+- `fallbackMode`: `"deterministic-summary"` or `"abort"` when modeled summary synthesis fails.
+
+Malformed JSON config fails loudly instead of silently falling back to defaults. Old config names are intentionally not read.
 
 Use `/continue-settings` to edit project or global config in the TUI.
 
-### Pi compaction settings
+## Pi compaction threshold
 
-`pi-continue` shares Pi core's compaction threshold instead of adding a second package-specific percentage knob. Configure it in Pi settings:
+`pi-continue` uses the same threshold as Pi core:
+
+```text
+estimated context tokens > model.contextWindow - compaction.reserveTokens
+```
+
+Configure the shared threshold in Pi settings:
 
 ```json
 {
@@ -244,9 +164,9 @@ Use `/continue-settings` to edit project or global config in the TUI.
 
 `reserveTokens` and `keepRecentTokens` are absolute token counts. For a 272K context model, `reserveTokens: 68000` triggers near 75% usage.
 
-## Prompt overrides
+## Prompt customization
 
-Prompt assets live under `assets/` and can be overridden without editing package source.
+The continuation summary is shaped by prompt assets under `assets/`. You can override both system prompts and user prompts without editing package source.
 
 Override roots:
 
@@ -267,7 +187,51 @@ assets/user/history_update.md
 assets/user/split_prefix.md
 ```
 
-`promptOverridePolicy` controls whether package defaults, global overrides, or project overrides win.
+`promptOverridePolicy` decides whether project overrides, global overrides, or package defaults win. `/continue-preview` shows the exact prompt payloads and source paths that would be used if you compacted now.
+
+## Continuation output
+
+The history pass produces two artifacts:
+
+- `<continuation>`: the immediate next-turn note saved in Pi's compaction summary.
+- `<continuation-md>`: full content for optional repo-local continuation document sync.
+
+Both artifacts must include:
+
+- `## Must Read`: at most five high-signal paths or resources, with why each matters.
+- `## Start From Here`: the first concrete command, edit, validation, or investigation step.
+
+The runtime continuation prompt tells the next turn to use the compaction summary as primary context, follow `Must Read` and `Start From Here`, avoid replaying completed discovery, and continue the active user task from the next concrete step.
+
+## What the summarizer sees
+
+Pi prepares compaction from the current session branch after aborting and waiting for the agent to become idle. `pi-continue` receives Pi's compaction preparation:
+
+- `messagesToSummarize`
+- optional `turnPrefixMessages` for split turns
+- `previousSummary`
+- `firstKeptEntryId`
+- `tokensBefore`
+- file-operation metadata
+- compaction settings
+
+Pi converts messages with `convertToLlm()` and serializes them with `serializeConversation()` inside `<conversation>` tags. Tool-call names and JSON arguments are included. Text tool results are included, but Pi's serializer truncates each serialized tool result to 2,000 characters with a truncation marker.
+
+After compaction, Pi reconstructs context as the compaction summary followed by raw kept messages from `firstKeptEntryId` onward and any later messages.
+
+## Boundaries
+
+`pi-continue` does not:
+
+- patch Pi or vendor code
+- fork, switch, or create sessions
+- rewrite transcript history
+- interrupt running tools or incomplete tool-call batches
+- synthesize missing tool results
+- preserve partial in-flight model output as completed history
+- act as a memory system, context pruner, or general custom compaction framework
+
+Among the easily discoverable public Pi extensions reviewed for this package, `pi-continue` appears to be the only one combining a mid-run checkpoint before the next provider request, Pi native compaction, and automatic same-session continuation. That is a scoped source-review claim, not a universal claim about private or unindexed extensions.
 
 ## Development
 

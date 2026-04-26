@@ -2,15 +2,16 @@
 
 ## Purpose
 
-`pi-continue` keeps long Pi runs moving through one package-owned continuation path.
+`pi-continue` owns the extension-layer continuation path for long Pi runs that fill context mid-run.
 
 The package owns:
 
 - the `/continue` command family
 - a safe mid-run guard at Pi's awaited pre-provider `context` seam
 - package-shaped compaction summaries for continuation
+- the runtime prompt that resumes the same task after compaction
 - optional repo-local `CONTINUE.md` sync when explicitly enabled
-- prompt assets and prompt override precedence for continuation synthesis
+- customizable system/user prompt assets and prompt override precedence for continuation synthesis
 
 It does not patch Pi vendor code, fork sessions, switch sessions, rewrite transcript history, or maintain legacy command/config aliases.
 
@@ -21,11 +22,15 @@ The public package identity is `pi-continue`.
 Canonical surfaces:
 
 - source repo: `https://github.com/Tiziano-AI/pi-continue`
+- agent operating guide: `AGENTS.md`
+- product intent: `VISION.md`
+- operator guide: `README.md`
+- architecture contract: `ARCH.md`
 - extension path: `extensions/continue/index.ts`
 - npm package name: `pi-continue`
 - config file: `pi-continue.json`
 - commands: `/continue`, `/continue-status`, `/continue-settings`, `/continue-reset`, `/continue-preview`
-- optional repo document: `CONTINUE.md`
+- optional runtime continuation document: `CONTINUE.md`
 - compaction detail kind: `pi-continue/v1`
 
 No old package names, command aliases, config files, prompt tags, or extension paths are compatibility surfaces.
@@ -41,7 +46,7 @@ Pi 0.70.2 supplies the required primitives:
 - `session_compact` observes the saved compaction entry.
 - `pi.sendUserMessage()` can start the next turn after compaction completes.
 
-Current Pi auto-compaction checks occur after `agent_end` and before new prompts. They do not proactively stop long tool/model loops between completed tool results and the next model request. `pi-continue` owns that extension-layer gap until Pi core provides a native mid-turn checkpoint primitive.
+Current Pi auto-compaction checks occur after `agent_end` and before new prompts. They do not proactively stop long tool/model loops between completed tool results and the next model request. That user-facing gap is context-full work that stalls, retries poorly, or sends an oversized provider request while Pi is still working. `pi-continue` owns that extension-layer gap until Pi core provides a native mid-turn checkpoint primitive.
 
 ## Mid-run guard
 
@@ -130,6 +135,8 @@ Default path:
 ```text
 <project-root>/CONTINUE.md
 ```
+
+`CONTINUE.md` is runtime output when continuation document sync is enabled. It is local project state, not tracked package corpus.
 
 Resolution:
 

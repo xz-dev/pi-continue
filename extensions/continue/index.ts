@@ -33,7 +33,7 @@ export default function (pi: ExtensionAPI) {
 	const runtime = createContinuationRuntimeState();
 
 	pi.registerCommand("continue", {
-		description: "Generate continuation compaction now; use /continue queue to wait for the active run to finish",
+		description: "Compact and continue this Pi session; use /continue queue to wait for idle",
 		handler: async (args, ctx) => {
 			const projectContext = await resolveProjectContext(pi, ctx.cwd, "CONTINUE.md");
 			const config = loadContinuationConfig(projectContext.projectRoot);
@@ -46,7 +46,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("continue-status", {
-		description: "Show effective continuation config, prompt provenance, and compaction status",
+		description: "Show continuation config, prompt sources, and compaction threshold",
 		handler: async (_args, ctx) => {
 			await runStatusCommand(pi, ctx);
 		},
@@ -67,7 +67,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("continue-preview", {
-		description: "Preview the prompt payloads that would be used for compaction now",
+		description: "Preview the continuation prompt payloads that would be used now",
 		handler: async (args, ctx) => {
 			await runPreviewCommand(pi, ctx, args);
 		},
@@ -199,8 +199,8 @@ export default function (pi: ExtensionAPI) {
 		if (ctx.hasUI) {
 			ctx.ui.notify(
 				result === "updated"
-					? `Updated ${pending.continuationDocPath}`
-					: `CONTINUE unchanged at ${pending.continuationDocPath}`,
+					? `Updated continuation doc at ${pending.continuationDocPath}`
+					: `Continuation doc unchanged at ${pending.continuationDocPath}`,
 				"info",
 			);
 		}
