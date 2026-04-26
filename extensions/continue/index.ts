@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { loadHistoryPromptAssets, loadSplitPromptAssets } from "./src/assets.ts";
 import { parseHistoryArtifacts, parseSplitPrefix } from "./src/blocks.ts";
+import { splitContinueSubcommand, shouldOpenContinueMenu, buildContinuationCommandArgs } from "./src/command-shape.ts";
 import { runPreviewCommand, runResetCommand, runSettingsDialog, runStatusCommand } from "./src/commands.ts";
+import { getContinueArgumentCompletions } from "./src/completions.ts";
 import { composeCompactionSummary } from "./src/compose.ts";
 import { loadContinuationConfig } from "./src/config.ts";
 import { buildContinuationDetails, parseContinuationDetails } from "./src/details.ts";
@@ -12,17 +14,55 @@ import { resolveTokenBudget, runPromptPass } from "./src/model.ts";
 import { loadPiInternals } from "./src/pi-internals.ts";
 import { compileHistoryPrompt, compileSplitPrompt } from "./src/prompt.ts";
 import { resolveProjectContext, writeRepoDocument } from "./src/project.ts";
-import { createContinuationRuntimeState, runContinuationCommand } from "./src/runtime.ts";
+import { showContinueMenu, type ContinueMenuResult } from "./src/menu.ts";
+import { createContinuationRuntimeState, runContinuationCommand, type ContinuationRuntimeState } from "./src/runtime.ts";
 import type { PendingDocumentWrite } from "./src/types.ts";
 
-function splitContinueSubcommand(args: string | undefined): { name: string; rest: string | undefined } | undefined {
-	const trimmed = args?.trim() ?? "";
-	if (!trimmed) return undefined;
-	const spaceIndex = trimmed.search(/\s/);
-	const name = (spaceIndex === -1 ? trimmed : trimmed.slice(0, spaceIndex)).toLowerCase();
-	if (name !== "status" && name !== "settings" && name !== "reset" && name !== "preview") return undefined;
-	const rest = spaceIndex === -1 ? "" : trimmed.slice(spaceIndex + 1).trim();
-	return { name, rest: rest.length > 0 ? rest : undefined };
+async function runEnabledContinuationCommand(
+	pi: ExtensionAPI,
+	ctx: ExtensionCommandContext,
+	runtime: ContinuationRuntimeState,
+	args: string | undefined,
+	sendContinuation: (prompt: string) => void,
+): Promise<void> {
+	const projectContext = await resolveProjectContext(pi, ctx.cwd, "CONTINUE.md");
+	const config = loadContinuationConfig(projectContext.projectRoot);
+	if (!config.enabled) {
+		if (ctx.hasUI) ctx.ui.notify("pi-continue is disabled. Re-enable it with /continue settings.", "warning");
+		return;
+	}
+	await runContinuationCommand(ctx, runtime, args, sendContinuation);
+}
+
+async function runContinueMenuResult(
+	pi: ExtensionAPI,
+	ctx: ExtensionCommandContext,
+	runtime: ContinuationRuntimeState,
+	result: ContinueMenuResult,
+): Promise<void> {
+	if (result.kind === "status") {
+		await runStatusCommand(pi, ctx);
+		return;
+	}
+	if (result.kind === "settings") {
+		await runSettingsDialog(pi, ctx, result.scope);
+		return;
+	}
+	if (result.kind === "reset") {
+		await runResetCommand(pi, ctx, result.scope);
+		return;
+	}
+	if (result.kind === "preview") {
+		await runPreviewCommand(pi, ctx, result.instructions);
+		return;
+	}
+	await runEnabledContinuationCommand(
+		pi,
+		ctx,
+		runtime,
+		buildContinuationCommandArgs(result.mode, result.instructions),
+		(prompt) => pi.sendUserMessage(prompt),
+	);
 }
 
 function computeFileListsSnapshot(fileOps: { read: Set<string>; written: Set<string>; edited: Set<string> }): {
@@ -43,8 +83,14 @@ export default function (pi: ExtensionAPI) {
 	const runtime = createContinuationRuntimeState();
 
 	pi.registerCommand("continue", {
-		description: "Continue, queue, status, settings, reset, or preview pi-continue",
+		description: "Open continuation actions; shortcuts: steer, queue, status, settings, reset, preview",
+		getArgumentCompletions: getContinueArgumentCompletions,
 		handler: async (args, ctx) => {
+			if (shouldOpenContinueMenu(args, ctx.hasUI)) {
+				const result = await showContinueMenu(pi, ctx, runtime);
+				if (result) await runContinueMenuResult(pi, ctx, runtime, result);
+				return;
+			}
 			const subcommand = splitContinueSubcommand(args);
 			if (subcommand?.name === "status") {
 				await runStatusCommand(pi, ctx);
@@ -62,13 +108,7 @@ export default function (pi: ExtensionAPI) {
 				await runPreviewCommand(pi, ctx, subcommand.rest);
 				return;
 			}
-			const projectContext = await resolveProjectContext(pi, ctx.cwd, "CONTINUE.md");
-			const config = loadContinuationConfig(projectContext.projectRoot);
-			if (!config.enabled) {
-				if (ctx.hasUI) ctx.ui.notify("pi-continue is disabled. Re-enable it with /continue settings.", "warning");
-				return;
-			}
-			await runContinuationCommand(ctx, runtime, args, (prompt) => pi.sendUserMessage(prompt));
+			await runEnabledContinuationCommand(pi, ctx, runtime, args, (prompt) => pi.sendUserMessage(prompt));
 		},
 	});
 

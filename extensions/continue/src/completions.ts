@@ -1,0 +1,96 @@
+interface CompletionItem {
+	value: string;
+	label: string;
+	description?: string;
+}
+
+interface CommandCompletion {
+	name: string;
+	description: string;
+}
+
+const TOP_LEVEL_COMMANDS: CommandCompletion[] = [
+	{
+		name: "steer",
+		description: "Continue now: abort active work if needed, compact, and resume in this session.",
+	},
+	{
+		name: "queue",
+		description: "Queue until idle: wait for Pi to stop running, then compact and resume.",
+	},
+	{
+		name: "status",
+		description: "Inspect effective config, prompt sources, and the Pi compaction trigger.",
+	},
+	{
+		name: "settings",
+		description: "Configure project or global pi-continue settings in the TUI.",
+	},
+	{
+		name: "reset",
+		description: "Reset project or global pi-continue settings after confirmation.",
+	},
+	{
+		name: "preview",
+		description: "Preview the exact prompt payloads; optional focus text is supported.",
+	},
+];
+
+const SCOPED_COMMANDS = new Set(["settings", "reset"]);
+const SCOPES: CommandCompletion[] = [
+	{
+		name: "project",
+		description: "Use this repository's .pi/extensions/pi-continue.json.",
+	},
+	{
+		name: "global",
+		description: "Use ~/.pi/agent/extensions/pi-continue.json.",
+	},
+];
+
+function completionFor(command: CommandCompletion, value: string): CompletionItem {
+	return {
+		value,
+		label: command.name,
+		description: command.description,
+	};
+}
+
+function filterCommands(commands: CommandCompletion[], prefix: string, valuePrefix = ""): CompletionItem[] {
+	const normalizedPrefix = prefix.toLowerCase();
+	return commands
+		.filter((command) => command.name.startsWith(normalizedPrefix))
+		.map((command) => completionFor(command, `${valuePrefix}${command.name}`));
+}
+
+function splitArgumentPrefix(argumentPrefix: string): { leading: string; first: string; rest: string; hasRest: boolean } {
+	const leadingTrimmed = argumentPrefix.trimStart();
+	const spaceIndex = leadingTrimmed.search(/\s/);
+	if (spaceIndex === -1) {
+		return {
+			leading: leadingTrimmed,
+			first: leadingTrimmed.toLowerCase(),
+			rest: "",
+			hasRest: false,
+		};
+	}
+	const first = leadingTrimmed.slice(0, spaceIndex).toLowerCase();
+	return {
+		leading: leadingTrimmed,
+		first,
+		rest: leadingTrimmed.slice(spaceIndex + 1).trimStart(),
+		hasRest: true,
+	};
+}
+
+/** Return argument completions for the single /continue command. */
+export function getContinueArgumentCompletions(argumentPrefix: string): CompletionItem[] | null {
+	const parts = splitArgumentPrefix(argumentPrefix);
+	if (!parts.hasRest) {
+		const items = filterCommands(TOP_LEVEL_COMMANDS, parts.leading);
+		return items.length > 0 ? items : null;
+	}
+	if (!SCOPED_COMMANDS.has(parts.first)) return null;
+	const items = filterCommands(SCOPES, parts.rest, `${parts.first} `);
+	return items.length > 0 ? items : null;
+}

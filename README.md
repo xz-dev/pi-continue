@@ -18,7 +18,7 @@ It is not a replacement compactor. It is a continuation layer around Pi's native
 - **Mid-run continuation:** detects a full context during a run, before the next provider request is sent.
 - **Native Pi compaction:** uses `ctx.compact()`, `session_before_compact`, and Pi's normal session format.
 - **Same-session resume:** sends a continuation prompt after compaction, so Pi keeps working in the current session.
-- **One command:** uses `/continue` for immediate continuation, queueing, status, settings, reset, and prompt preview.
+- **Discoverable `/continue`:** opens a browsable action tree in the TUI, with typed shortcuts and autocomplete for power users.
 - **Custom prompts:** lets you override the system and user prompt assets without editing package source.
 - **Structured artifacts:** asks the summarizer for a strict JSON artifact object, then validates it before writing anything.
 - **Model control:** inherits the current model/reasoning by default, or uses a pinned summarizer model.
@@ -78,33 +78,52 @@ Pi packages run with your local user permissions. Review package source before i
 `pi-continue` exposes one slash command:
 
 ```text
-/continue [steer|queue|status|settings|reset|preview] [arguments]
+/continue
 ```
 
-Examples:
+In the interactive TUI, exact `/continue` opens a browsable action tree:
 
 ```text
-/continue
+Continue
+  Continue now        Focus, optional
+  Queue until idle    Focus, optional
+Inspect
+  Status
+  Preview prompts     Preview focus, optional
+Configure
+  Project settings
+  Global settings
+  Reset project config
+  Reset global config
+```
+
+The focus field is optional. Leave it blank to continue normally, or add a short steering note such as `finish validation before release`.
+
+Typed shortcuts remain supported and autocompleted:
+
+```text
 /continue steer focus on the failing auth migration and exact next commands
 /continue queue preserve current file state and remaining validation steps
 /continue status
 /continue settings project
+/continue settings global
+/continue reset project
 /continue reset global
 /continue preview focus on validation and AGENTS.md candidate updates
 ```
 
-Subcommands:
+Shortcut behavior:
 
-- `steer`: abort active work if needed, compact now, then send the continuation prompt.
-- `queue`: wait for Pi to become idle, compact, then send the continuation prompt.
+- `steer [focus]`: continue now; abort active work if needed, compact, then send the continuation prompt.
+- `queue [focus]`: wait for Pi to become idle, compact, then send the continuation prompt.
 - `status`: show effective config, prompt sources, and compaction threshold.
 - `settings [project|global]`: edit package settings in the TUI.
-- `reset [project|global]`: delete the selected config file.
-- `preview [instructions]`: show the exact prompt payloads that would be used now.
+- `reset [project|global]`: delete the selected config file after confirmation.
+- `preview [focus]`: show the exact prompt payloads that would be used now.
 
-`/continue` defaults to `steer`.
+In non-interactive modes, exact `/continue` keeps the safe direct behavior and runs `steer` instead of opening a menu, so RPC/automation never waits on an unavailable UI.
 
-The old top-level commands are intentionally not registered. Use `/continue status`, `/continue settings`, `/continue reset`, and `/continue preview`.
+The old top-level commands are intentionally not registered. Use `/continue` for the menu or `/continue status`, `/continue settings`, `/continue reset`, and `/continue preview` as shortcuts.
 
 ## Configuration
 

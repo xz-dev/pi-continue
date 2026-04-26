@@ -6,7 +6,7 @@
 
 The package owns:
 
-- one `/continue` command with action and operator subcommands
+- one `/continue` command with a discoverable TUI action tree, typed shortcuts, and autocomplete
 - a safe mid-run guard at Pi's awaited pre-provider `context` seam
 - package-shaped compaction summaries for continuation
 - the runtime prompt that resumes the same task after compaction
@@ -84,19 +84,32 @@ The guard never rewrites context messages and never interrupts incomplete tool b
 Canonical command:
 
 ```text
-/continue [steer|queue|status|settings|reset|preview] [arguments]
+/continue
 ```
 
-Subcommands:
+In UI-capable sessions, exact `/continue` opens the package-owned action tree. The menu is the primary UX and exposes:
 
-- `steer`: abort active work if needed, then compact now.
-- `queue`: wait for idle, then compact.
-- `status`: show effective config, prompt provenance, and Pi threshold.
-- `settings [project|global]`: edit package settings in the TUI.
-- `reset [project|global]`: delete the selected config file.
-- `preview [instructions]`: render the prompt payloads that would be used now.
+- `Continue now` with an optional focus field.
+- `Queue until idle` with an optional focus field.
+- `Status`.
+- `Preview prompts` with an optional focus field.
+- `Project settings` and `Global settings`.
+- `Reset project config` and `Reset global config`.
 
-`/continue` defaults to `steer`. Successful compaction sends the runtime continuation prompt. Duplicate compaction starts are rejected while one is already running. If an automatic guard compaction fails for the same token estimate, the next identical guard event aborts the unsafe over-threshold replay and refuses to loop compaction repeatedly.
+Typed shortcuts are the scriptable/power-user surface and are provided through the same command with argument completions:
+
+```text
+/continue steer [focus]
+/continue queue [focus]
+/continue status
+/continue settings [project|global]
+/continue reset [project|global]
+/continue preview [focus]
+```
+
+In non-interactive modes, exact `/continue` preserves direct `steer` behavior instead of opening the menu, so RPC/automation never hangs on unavailable UI.
+
+Successful compaction sends the runtime continuation prompt. Duplicate compaction starts are rejected while one is already running. If an automatic guard compaction fails for the same token estimate, the next identical guard event aborts the unsafe over-threshold replay and refuses to loop compaction repeatedly.
 
 The old top-level commands are intentionally absent.
 
