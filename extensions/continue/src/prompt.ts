@@ -19,6 +19,8 @@ export function compileHistoryPrompt(assets: HistoryPromptAssets, input: History
 		renderTag("project-root", input.projectRoot),
 		renderTag("continuation-doc-path", input.continuationDocPath),
 		renderTag("existing-continuation-md", input.existingContinuationDoc),
+		renderTag("agent-guide-path", input.agentGuidePath),
+		renderTag("existing-agent-guide", input.existingAgentGuide),
 		renderTag("previous-compaction-summary", input.previousSummary),
 		renderTag("history-to-summarize", input.historyTranscript),
 		renderTag("file-operations", renderFileOps(input.fileOps)),

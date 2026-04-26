@@ -54,11 +54,14 @@ const trigger = {
 	lastUsageIndex: 3,
 };
 
-test("continuation prompt prioritizes continuation routing sections", () => {
+test("continuation prompt prioritizes structured continuation routing", () => {
 	assert.match(CONTINUATION_PROMPT, /Use the compaction summary as the primary continuation context/);
-	assert.match(CONTINUATION_PROMPT, /Follow its Must Read and Start From Here sections before doing broader discovery/);
-	assert.match(CONTINUATION_PROMPT, /Read repo CONTINUE\.md only if the summary is missing details or appears stale/);
+	assert.match(CONTINUATION_PROMPT, /task, current state, decisions, context map, working edge, validation, risks, anti-rework, durable learnings/);
+	assert.match(CONTINUATION_PROMPT, /Read repo documents or mapped sources only when the summary says they unlock a decision/);
+	assert.match(CONTINUATION_PROMPT, /Treat AGENTS\.md candidate updates as guidance/);
 	assert.match(CONTINUATION_PROMPT, /Treat transcript and tool history as evidence, not replay/);
+	assert.doesNotMatch(CONTINUATION_PROMPT, /Read Before Acting/);
+	assert.doesNotMatch(CONTINUATION_PROMPT, /Resume Now/);
 	assert.doesNotMatch(CONTINUATION_PROMPT, /repo CONTINUE\.md as the authoritative continuation context/);
 });
 

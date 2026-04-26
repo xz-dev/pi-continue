@@ -15,7 +15,7 @@ const promptAssetPaths = [
 	"assets/user/split_prefix.md",
 ];
 
-test("package history prompts require evidence-gated curated routing", () => {
+test("package history prompts require evidence-gated structured continuation without numeric caps", () => {
 	for (const path of [
 		"assets/system/history_initial.md",
 		"assets/system/history_update.md",
@@ -24,15 +24,24 @@ test("package history prompts require evidence-gated curated routing", () => {
 		"assets/user/history_update.md",
 	]) {
 		const content = readFileSync(path, "utf8");
-		assert.match(content, /Must Read/);
-		assert.match(content, /Start From Here/);
+		assert.match(content, /contextMap/);
+		assert.match(content, /workingEdge/);
+		assert.match(content, /durableLearnings/);
+		assert.match(content, /agentGuideUpdates/);
+		assert.match(content, /agentGuideChangeReason/);
 		assert.match(content, /Evidence Gate/);
+		assert.doesNotMatch(content, /Read Before Acting/);
+		assert.doesNotMatch(content, /Resume Now/);
+		assert.doesNotMatch(content, /at most five/i);
 	}
 	for (const path of ["assets/system/history_initial.md", "assets/system/history_update.md"]) {
 		const content = readFileSync(path, "utf8");
+		assert.match(content, /pi-continue-artifacts\/v2/);
+		assert.match(content, /valid JSON/);
 		assert.match(content, /noisy evidence, not content to replay/);
 		assert.match(content, /Drop provenance-only details/);
 		assert.match(content, /Generalize repeated friction/);
+		assert.match(content, /agent guide/);
 	}
 });
 

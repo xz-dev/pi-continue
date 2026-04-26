@@ -9,13 +9,14 @@ This file is the repo-local operating guide for agents working in `pi-continue`.
 Read in this order when the task touches product, docs, or runtime behavior:
 
 1. `VISION.md` — product promise, user problem, principles, success criteria, non-goals.
-2. `README.md` — user/operator-facing contract: install, commands, config, prompt customization, boundaries.
+2. `README.md` — user/operator-facing contract: install, command, config, prompt customization, boundaries.
 3. `ARCH.md` — architecture contract: Pi seams, guard semantics, artifacts, config ownership, non-goals.
 4. `extensions/continue/index.ts` — extension entry point and Pi hook registration.
 5. `extensions/continue/src/runtime.ts` and `extensions/continue/src/mid-run-guard.ts` — continuation lifecycle, prompt dispatch, retry blocking, guard trigger rules.
-6. `assets/` — customizable system/user prompt corpus.
-7. `examples/` — public config examples.
-8. `tests/` — executable contract.
+6. `extensions/continue/src/config.ts`, `extensions/continue/src/project.ts`, and `extensions/continue/src/blocks.ts` — config defaults, repo document resolution/writes, and structured artifact parsing.
+7. `assets/` — customizable system/user prompt corpus.
+8. `examples/` — public config and output examples.
+9. `tests/` — executable contract.
 
 `CONTINUE.md` is optional runtime output from the extension. It is ignored local state, not tracked package corpus. Do not re-track it.
 
@@ -28,9 +29,13 @@ Keep all surfaces aligned to these invariants:
 - Mid-run guard acts only after complete assistant/tool-result batches.
 - Never interrupt running tools or incomplete assistant/tool-result pairs.
 - Use Pi's threshold owner: `contextTokens > model.contextWindow - compaction.reserveTokens`.
-- Continuation artifacts must include `## Must Read` and `## Start From Here`.
+- Continuation artifacts must use the structured `pi-continue-artifacts/v2` fields: task, state, decisions, contextMap, workingEdge, validation, risks, antiRework, durableLearnings, and agentGuideUpdates.
+- Do not preserve mandatory read-now/do-now heading constraints. Use `contextMap` for justified source routing and `workingEdge` for execution continuity.
+- Do not impose numeric read-route caps in prompts or code; ask for high-signal justified curation instead.
 - Transcript, tool output, file lists, and logs are evidence, not replay material.
+- Durable learnings and repeated user feedback should survive compaction when they still govern future action.
 - Prompt behavior is intentionally customizable through system/user prompt assets.
+- AGENTS.md refinement is a configurable side effect and must stay off by default.
 - No legacy command/config aliases unless the user explicitly changes the product contract.
 
 ## User-facing language
@@ -44,10 +49,12 @@ Prefer:
 - "same-session resume"
 - "custom system/user prompt assets"
 - "native Pi compaction"
+- "structured continuation artifacts"
+- "context map", "working edge", "durable learnings", and "agent guide updates"
 
 Avoid leading with jargon such as "unsafe model call" or burying the product value under hook names. Hook names belong in architecture/runtime sections, not the opening pitch.
 
-README should stay friendly, concise, and high-signal. Do not omit the core features: mid-run continuation, native compaction, same-session resume, `/continue`, and customizable prompts.
+README should stay friendly, concise, and high-signal. Do not omit the core features: mid-run continuation, native compaction, same-session resume, `/continue`, customizable prompts, structured artifacts, and optional repo-document sync.
 
 ## Runtime boundaries
 
@@ -71,16 +78,19 @@ Do not patch or edit Pi vendor code.
 
 ## Code structure
 
-- `extensions/continue/index.ts` wires commands and Pi events.
+- `extensions/continue/index.ts` wires the single `/continue` command and Pi events.
 - `src/config.ts` owns package config parsing/defaults and rejects malformed JSON loudly.
 - `src/pi-settings.ts` reads effective Pi compaction settings.
 - `src/mid-run-guard.ts` owns guard eligibility and threshold decisions.
-- `src/runtime.ts` owns `/continue`, compaction lifecycle state, continuation prompt dispatch, duplicate/failure guards.
+- `src/runtime.ts` owns `/continue` action modes, compaction lifecycle state, continuation prompt dispatch, duplicate/failure guards.
+- `src/commands.ts` owns `/continue status`, `/continue settings`, `/continue reset`, and `/continue preview` operator flows.
 - `src/model.ts` resolves summarizer model/reasoning and runs prompt passes.
 - `src/assets.ts` owns prompt override precedence.
 - `src/prompt.ts` compiles runtime prompt payloads.
-- `src/blocks.ts`, `src/compose.ts`, and `src/details.ts` own artifact parsing/rendering/details.
-- `src/project.ts` owns git-root resolution and optional continuation document writes.
+- `src/blocks.ts` parses the strict `pi-continue-artifacts/v2` JSON artifact and split-prefix block.
+- `src/compose.ts` renders the persisted compaction summary.
+- `src/details.ts` owns `pi-continue/v2` compaction details.
+- `src/project.ts` owns git-root resolution, repo-relative path sanitization, and optional repo document writes.
 
 Keep one canonical owner for each behavior. Do not add parallel config keys, alternate command names, duplicate threshold math, or compatibility shims without explicit user approval.
 
@@ -88,11 +98,13 @@ Keep one canonical owner for each behavior. Do not add parallel config keys, alt
 
 Prompt assets are public product surface. When changing them:
 
-- Keep the Evidence Gate, `## Must Read`, and `## Start From Here` requirements intact.
-- Preserve the distinction between `<continuation>` and `<continuation-md>`.
+- Keep the Evidence Gate and structured continuation field semantics intact.
+- Preserve the strict JSON history artifact contract: `version`, `brief`, `document`, `agentGuideMarkdown`, and `agentGuideChangeReason`.
 - Preserve split-prefix behavior for compactions that cut inside a turn.
 - Do not emit raw standalone XML/HTML tag lines in Markdown prompt assets; `tests/assets.test.ts` forbids them.
-- Keep prompts concise, direct, and grounded. Do not ask the model to invent progress or validation.
+- Keep prompts concise, direct, outcome-first, and grounded.
+- Do not ask the model to invent progress, validation, file contents, root cause, or AGENTS.md writes.
+- Do not add numeric read-route caps. Ask for justified curation based on rework/risk/action value.
 - Remember that operators can override both system and user prompt assets through global/project prompt roots.
 
 ## Config and local state
@@ -104,6 +116,8 @@ Ignored local state:
 - `.pi/` — project-local Pi settings/extension config and prompt overrides.
 - `CONTINUE.md` — optional runtime continuation document.
 - package/build/cache artifacts already covered by `.gitignore`.
+
+`AGENTS.md` is tracked package corpus in this repo. Runtime AGENTS.md replacement is possible only when `agentGuideSyncMode` is explicitly set to `"always"`; default must remain `"off"`.
 
 Do not commit secrets, `.npmrc`, `.env*`, local Pi config, generated tarballs, or runtime continuation files.
 
@@ -128,10 +142,6 @@ Expected command surface:
 
 ```text
 continue
-continue-status
-continue-settings
-continue-reset
-continue-preview
 ```
 
 `npm pack --dry-run --json` should include `AGENTS.md`, `README.md`, `VISION.md`, `ARCH.md`, `LICENSE`, `assets/`, `examples/`, and `extensions/`. It should not include tests, `.pi/`, tarballs, or `CONTINUE.md`.
@@ -170,7 +180,8 @@ When a behavior, config key, command, artifact, prompt path, package file list, 
 - `VISION.md` for product intent changes.
 - `README.md` for user/operator behavior.
 - `ARCH.md` for runtime contracts and ownership.
-- `examples/*.json` for config defaults.
+- `AGENTS.md` for repo-local agent procedure and invariants.
+- `examples/*.json` and example markdown for defaults and output shape.
 - `assets/` for prompt behavior.
 - `tests/` for executable expectations.
 - `package.json` for package metadata and npm file inclusion.

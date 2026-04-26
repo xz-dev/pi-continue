@@ -4,10 +4,11 @@ import { composeCompactionSummary } from "../extensions/continue/src/compose.ts"
 import type { ContinuationCompactionDetails } from "../extensions/continue/src/types.ts";
 
 const details: ContinuationCompactionDetails = {
-	kind: "pi-continue/v1",
+	kind: "pi-continue/v2",
 	readFiles: ["/repo/read.ts"],
 	modifiedFiles: ["/repo/write.ts"],
 	documentSyncId: "sync-1",
+	agentGuideSyncId: "guide-1",
 };
 
 test("composeCompactionSummary can append compact metadata without file paths", () => {
@@ -18,6 +19,7 @@ test("composeCompactionSummary can append compact metadata without file paths", 
 	assert.match(summary, /<continuation>\ncontinue\n<\/continuation>/);
 	assert.match(summary, /"readFileCount": 1/);
 	assert.match(summary, /"modifiedFileCount": 1/);
+	assert.match(summary, /"agentGuideSyncId": "guide-1"/);
 	assert.doesNotMatch(summary, /<read-files>/);
 	assert.doesNotMatch(summary, /\/repo\/read\.ts/);
 	assert.doesNotMatch(summary, /\/repo\/write\.ts/);

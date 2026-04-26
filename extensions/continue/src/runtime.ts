@@ -5,11 +5,12 @@ export const CONTINUE_STATUS_KEY = "pi-continue";
 export const CONTINUATION_PROMPT = [
 	"Continue from the continuation compaction that was just created.",
 	"Use the compaction summary as the primary continuation context.",
-	"Follow its Must Read and Start From Here sections before doing broader discovery.",
-	"Read repo CONTINUE.md only if the summary is missing details or appears stale.",
+	"Orient from its task, current state, decisions, context map, working edge, validation, risks, anti-rework, durable learnings, and agent-guide update notes before broader discovery.",
+	"Read repo documents or mapped sources only when the summary says they unlock a decision, prevent rework, or reduce risk.",
+	"Treat AGENTS.md candidate updates as guidance unless the summary says they were written.",
 	"Treat transcript and tool history as evidence, not replay.",
 	"Do not redo completed discovery.",
-	"Continue the user's active task from the next concrete step, preserving all constraints and decisions captured in the continuation.",
+	"Continue the user's active task from the live working edge while preserving all constraints, decisions, and durable learnings captured in the continuation.",
 ].join(" ");
 
 export type ContinuationRequestMode = "steer" | "queue";

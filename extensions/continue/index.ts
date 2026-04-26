@@ -11,9 +11,19 @@ import { runMidRunGuard } from "./src/mid-run-guard.ts";
 import { resolveTokenBudget, runPromptPass } from "./src/model.ts";
 import { loadPiInternals } from "./src/pi-internals.ts";
 import { compileHistoryPrompt, compileSplitPrompt } from "./src/prompt.ts";
-import { resolveProjectContext, writeContinuationDocument } from "./src/project.ts";
+import { resolveProjectContext, writeRepoDocument } from "./src/project.ts";
 import { createContinuationRuntimeState, runContinuationCommand } from "./src/runtime.ts";
 import type { PendingDocumentWrite } from "./src/types.ts";
+
+function splitContinueSubcommand(args: string | undefined): { name: string; rest: string | undefined } | undefined {
+	const trimmed = args?.trim() ?? "";
+	if (!trimmed) return undefined;
+	const spaceIndex = trimmed.search(/\s/);
+	const name = (spaceIndex === -1 ? trimmed : trimmed.slice(0, spaceIndex)).toLowerCase();
+	if (name !== "status" && name !== "settings" && name !== "reset" && name !== "preview") return undefined;
+	const rest = spaceIndex === -1 ? "" : trimmed.slice(spaceIndex + 1).trim();
+	return { name, rest: rest.length > 0 ? rest : undefined };
+}
 
 function computeFileListsSnapshot(fileOps: { read: Set<string>; written: Set<string>; edited: Set<string> }): {
 	readFiles: string[];
@@ -33,43 +43,32 @@ export default function (pi: ExtensionAPI) {
 	const runtime = createContinuationRuntimeState();
 
 	pi.registerCommand("continue", {
-		description: "Compact and continue this Pi session; use /continue queue to wait for idle",
+		description: "Continue, queue, status, settings, reset, or preview pi-continue",
 		handler: async (args, ctx) => {
+			const subcommand = splitContinueSubcommand(args);
+			if (subcommand?.name === "status") {
+				await runStatusCommand(pi, ctx);
+				return;
+			}
+			if (subcommand?.name === "settings") {
+				await runSettingsDialog(pi, ctx, subcommand.rest);
+				return;
+			}
+			if (subcommand?.name === "reset") {
+				await runResetCommand(pi, ctx, subcommand.rest);
+				return;
+			}
+			if (subcommand?.name === "preview") {
+				await runPreviewCommand(pi, ctx, subcommand.rest);
+				return;
+			}
 			const projectContext = await resolveProjectContext(pi, ctx.cwd, "CONTINUE.md");
 			const config = loadContinuationConfig(projectContext.projectRoot);
 			if (!config.enabled) {
-				if (ctx.hasUI) ctx.ui.notify("pi-continue is disabled. Re-enable it in /continue-settings.", "warning");
+				if (ctx.hasUI) ctx.ui.notify("pi-continue is disabled. Re-enable it with /continue settings.", "warning");
 				return;
 			}
 			await runContinuationCommand(ctx, runtime, args, (prompt) => pi.sendUserMessage(prompt));
-		},
-	});
-
-	pi.registerCommand("continue-status", {
-		description: "Show continuation config, prompt sources, and compaction threshold",
-		handler: async (_args, ctx) => {
-			await runStatusCommand(pi, ctx);
-		},
-	});
-
-	pi.registerCommand("continue-settings", {
-		description: "Edit pi-continue settings in the TUI",
-		handler: async (args, ctx) => {
-			await runSettingsDialog(pi, ctx, args);
-		},
-	});
-
-	pi.registerCommand("continue-reset", {
-		description: "Reset project or global pi-continue config",
-		handler: async (args, ctx) => {
-			await runResetCommand(pi, ctx, args);
-		},
-	});
-
-	pi.registerCommand("continue-preview", {
-		description: "Preview the continuation prompt payloads that would be used now",
-		handler: async (args, ctx) => {
-			await runPreviewCommand(pi, ctx, args);
 		},
 	});
 
@@ -81,7 +80,7 @@ export default function (pi: ExtensionAPI) {
 		const projectContext = await resolveProjectContext(pi, ctx.cwd, "CONTINUE.md");
 		const config = loadContinuationConfig(projectContext.projectRoot);
 		if (!config.enabled) return undefined;
-		const resolvedProjectContext = await resolveProjectContext(pi, ctx.cwd, config.continuationDocPath);
+		const resolvedProjectContext = await resolveProjectContext(pi, ctx.cwd, config.continuationDocPath, config.agentGuidePath);
 		const fileOpsSnapshot = computeFileListsSnapshot(event.preparation.fileOps);
 		const internals = await loadPiInternals();
 		const historyPrompt = compileHistoryPrompt(
@@ -95,6 +94,8 @@ export default function (pi: ExtensionAPI) {
 				projectRoot: resolvedProjectContext.projectRoot,
 				continuationDocPath: resolvedProjectContext.continuationDocPath,
 				existingContinuationDoc: resolvedProjectContext.existingContinuationDoc,
+				agentGuidePath: resolvedProjectContext.agentGuidePath,
+				existingAgentGuide: resolvedProjectContext.existingAgentGuide,
 				previousSummary: event.preparation.previousSummary,
 				historyTranscript: internals.serializeConversation(internals.convertToLlm(event.preparation.messagesToSummarize)),
 				customInstructions: event.customInstructions,
@@ -128,6 +129,8 @@ export default function (pi: ExtensionAPI) {
 			projectRoot: resolvedProjectContext.projectRoot,
 			continuationDocPath: resolvedProjectContext.continuationDocPath,
 			existingContinuationDoc: resolvedProjectContext.existingContinuationDoc,
+			agentGuidePath: resolvedProjectContext.agentGuidePath,
+			existingAgentGuide: resolvedProjectContext.existingAgentGuide,
 			previousSummary: event.preparation.previousSummary,
 			historyTranscript: internals.serializeConversation(internals.convertToLlm(event.preparation.messagesToSummarize)),
 			customInstructions: event.customInstructions,
@@ -151,7 +154,7 @@ export default function (pi: ExtensionAPI) {
 			const [historyOutput, splitOutput] = await Promise.all([historyTask, splitTask]);
 			historyArtifacts = parseHistoryArtifacts(historyOutput);
 			if (!historyArtifacts) {
-				throw new Error("History pass omitted <continuation> or <continuation-md>");
+				throw new Error("History pass omitted required pi-continue JSON artifacts");
 			}
 			if (splitPrompt) {
 				splitPrefix = splitOutput ? parseSplitPrefix(splitOutput) : undefined;
@@ -170,11 +173,20 @@ export default function (pi: ExtensionAPI) {
 		const documentSyncId = config.continuationDocSyncMode === "always" ? randomUUID() : undefined;
 		if (documentSyncId) {
 			pendingDocumentWrites.set(documentSyncId, {
-				continuationDocPath: resolvedProjectContext.continuationDocPath,
+				path: resolvedProjectContext.continuationDocPath,
 				content: historyArtifacts.continuationMd,
+				label: "continuation document",
 			});
 		}
-		const details = buildContinuationDetails(event.preparation.fileOps, documentSyncId);
+		const agentGuideSyncId = config.agentGuideSyncMode === "always" && historyArtifacts.agentGuideMd ? randomUUID() : undefined;
+		if (agentGuideSyncId && historyArtifacts.agentGuideMd) {
+			pendingDocumentWrites.set(agentGuideSyncId, {
+				path: resolvedProjectContext.agentGuidePath,
+				content: historyArtifacts.agentGuideMd,
+				label: "agent guide",
+			});
+		}
+		const details = buildContinuationDetails(event.preparation.fileOps, documentSyncId, agentGuideSyncId);
 		return {
 			compaction: {
 				summary: composeCompactionSummary(historyArtifacts.continuation, splitPrefix, details, {
@@ -191,18 +203,21 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_compact", async (event, ctx) => {
 		if (!event.fromExtension) return;
 		const details = parseContinuationDetails(event.compactionEntry.details);
-		if (!details?.documentSyncId) return;
-		const pending = pendingDocumentWrites.get(details.documentSyncId);
-		pendingDocumentWrites.delete(details.documentSyncId);
-		if (!pending) return;
-		const result = await writeContinuationDocument(pending.continuationDocPath, pending.content);
-		if (ctx.hasUI) {
-			ctx.ui.notify(
-				result === "updated"
-					? `Updated continuation doc at ${pending.continuationDocPath}`
-					: `Continuation doc unchanged at ${pending.continuationDocPath}`,
-				"info",
-			);
+		if (!details) return;
+		for (const syncId of [details.documentSyncId, details.agentGuideSyncId]) {
+			if (!syncId) continue;
+			const pending = pendingDocumentWrites.get(syncId);
+			pendingDocumentWrites.delete(syncId);
+			if (!pending) continue;
+			const result = await writeRepoDocument(pending.path, pending.content);
+			if (ctx.hasUI) {
+				ctx.ui.notify(
+					result === "updated"
+						? `Updated ${pending.label} at ${pending.path}`
+						: `${pending.label} unchanged at ${pending.path}`,
+					"info",
+				);
+			}
 		}
 	});
 

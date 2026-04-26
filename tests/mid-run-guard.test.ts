@@ -11,6 +11,8 @@ function config(overrides = {}) {
 		splitPrefixMaxTokens: null,
 		continuationDocPath: "CONTINUE.md",
 		continuationDocSyncMode: "off",
+		agentGuidePath: "AGENTS.md",
+		agentGuideSyncMode: "off",
 		midRunGuardEnabled: true,
 		appendCompactionMetadata: true,
 		appendFileTags: true,

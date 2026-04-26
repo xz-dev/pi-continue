@@ -18,10 +18,11 @@ It is not a replacement compactor. It is a continuation layer around Pi's native
 - **Mid-run continuation:** detects a full context during a run, before the next provider request is sent.
 - **Native Pi compaction:** uses `ctx.compact()`, `session_before_compact`, and Pi's normal session format.
 - **Same-session resume:** sends a continuation prompt after compaction, so Pi keeps working in the current session.
-- **Manual control:** adds `/continue` for immediate or queued continuation compaction.
+- **One command:** uses `/continue` for immediate continuation, queueing, status, settings, reset, and prompt preview.
 - **Custom prompts:** lets you override the system and user prompt assets without editing package source.
+- **Structured artifacts:** asks the summarizer for a strict JSON artifact object, then validates it before writing anything.
 - **Model control:** inherits the current model/reasoning by default, or uses a pinned summarizer model.
-- **Optional continuation doc:** can write a repo-local continuation document when explicitly enabled.
+- **Optional repo documents:** can write a repo-local continuation document and AGENTS.md refinement when explicitly enabled.
 
 ## Canonical corpus
 
@@ -31,9 +32,10 @@ It is not a replacement compactor. It is a continuation layer around Pi's native
 - [`ARCH.md`](ARCH.md) — architecture contract: Pi boundaries, guard semantics, config ownership, artifacts, and runtime flow.
 - [`examples/pi-continue.json`](examples/pi-continue.json) — full package config example.
 - [`examples/pi-settings-compaction-75pct-272k.json`](examples/pi-settings-compaction-75pct-272k.json) — Pi compaction-threshold example.
+- [`examples/continuation-output-shape.md`](examples/continuation-output-shape.md) — example continuation markdown shape.
 - [`assets/`](assets/) — default system/user prompt corpus and the files you can override.
 
-`CONTINUE.md` is optional runtime output when continuation-doc sync is enabled. It is local state, not part of the tracked package corpus.
+`CONTINUE.md` is optional runtime output when continuation-document sync is enabled. It is local state, not part of the tracked package corpus.
 
 ## How automatic continuation works
 
@@ -43,7 +45,7 @@ Pi finishes an assistant/tool-result batch
 -> estimated context is over Pi's compaction threshold
 -> pi-continue aborts before the oversized request is sent
 -> Pi native compaction runs
--> pi-continue writes a continuation-focused summary
+-> pi-continue writes a structured continuation summary
 -> pi-continue sends a prompt telling Pi to continue from that summary
 ```
 
@@ -71,14 +73,12 @@ pi -e /absolute/path/to/pi-continue
 
 Pi packages run with your local user permissions. Review package source before installing third-party packages.
 
-## Commands
+## Command
+
+`pi-continue` exposes one slash command:
 
 ```text
-/continue [steer|queue] [instructions]
-/continue-status
-/continue-settings
-/continue-reset [project|global]
-/continue-preview [instructions]
+/continue [steer|queue|status|settings|reset|preview] [arguments]
 ```
 
 Examples:
@@ -87,14 +87,24 @@ Examples:
 /continue
 /continue steer focus on the failing auth migration and exact next commands
 /continue queue preserve current file state and remaining validation steps
+/continue status
+/continue settings project
+/continue reset global
+/continue preview focus on validation and AGENTS.md candidate updates
 ```
 
-Modes:
+Subcommands:
 
-- `steer` aborts active work if needed, compacts now, then sends the continuation prompt.
-- `queue` waits for Pi to become idle, compacts, then sends the continuation prompt.
+- `steer`: abort active work if needed, compact now, then send the continuation prompt.
+- `queue`: wait for Pi to become idle, compact, then send the continuation prompt.
+- `status`: show effective config, prompt sources, and compaction threshold.
+- `settings [project|global]`: edit package settings in the TUI.
+- `reset [project|global]`: delete the selected config file.
+- `preview [instructions]`: show the exact prompt payloads that would be used now.
 
 `/continue` defaults to `steer`.
+
+The old top-level commands are intentionally not registered. Use `/continue status`, `/continue settings`, `/continue reset`, and `/continue preview`.
 
 ## Configuration
 
@@ -121,6 +131,8 @@ Default config:
   "splitPrefixMaxTokens": null,
   "continuationDocPath": "CONTINUE.md",
   "continuationDocSyncMode": "off",
+  "agentGuidePath": "AGENTS.md",
+  "agentGuideSyncMode": "off",
   "midRunGuardEnabled": true,
   "appendCompactionMetadata": false,
   "appendFileTags": false,
@@ -134,13 +146,16 @@ Useful settings:
 - `midRunGuardEnabled`: enables the automatic mid-run guard.
 - `summarizerModel`: `"inherit"` or a pinned `"provider/model"` summarizer.
 - `reasoning`: `"inherit"`, `"off"`, `"minimal"`, `"low"`, `"medium"`, `"high"`, or `"xhigh"`.
-- `continuationDocSyncMode`: `"off"` by default; set `"always"` to write the continuation document.
+- `continuationDocPath`: repo-relative path for the optional continuation document.
+- `continuationDocSyncMode`: `"off"` by default; set `"always"` to write the continuation document after successful extension-owned compaction.
+- `agentGuidePath`: repo-relative path for the optional agent guide refinement target.
+- `agentGuideSyncMode`: `"off"` by default; set `"always"` to write a modeled full replacement for the agent guide when the artifact includes one.
 - `promptOverridePolicy`: `"project-override"`, `"global-override"`, or `"package-default"`.
 - `fallbackMode`: `"deterministic-summary"` or `"abort"` when modeled summary synthesis fails.
 
-Malformed JSON config fails loudly instead of silently falling back to defaults. Old config names are intentionally not read.
+Malformed JSON config fails loudly instead of silently falling back to defaults. Old config names and old command names are intentionally not read.
 
-Use `/continue-settings` to edit project or global config in the TUI.
+AGENTS.md writes are off by default. Enable `agentGuideSyncMode: "always"` only when you want the model to be allowed to replace the configured guide after it identifies durable operating guidance, command corrections, or reusable repo rules.
 
 ## Pi compaction threshold
 
@@ -187,21 +202,63 @@ assets/user/history_update.md
 assets/user/split_prefix.md
 ```
 
-`promptOverridePolicy` decides whether project overrides, global overrides, or package defaults win. `/continue-preview` shows the exact prompt payloads and source paths that would be used if you compacted now.
+`promptOverridePolicy` decides whether project overrides, global overrides, or package defaults win. `/continue preview` shows the exact prompt payloads and source paths that would be used if you compacted now.
+
+The default history prompts are provider-agnostic and optimized for current GPT-5-class behavior: outcome-first, explicit contract, concise evidence gate, structured output, and no arbitrary reading-count cap.
 
 ## Continuation output
 
-The history pass produces two artifacts:
+The history pass returns one strict JSON artifact object:
 
-- `<continuation>`: the immediate next-turn note saved in Pi's compaction summary.
-- `<continuation-md>`: full content for optional repo-local continuation document sync.
+```json
+{
+  "version": "pi-continue-artifacts/v2",
+  "brief": {
+    "task": "...",
+    "state": [],
+    "decisions": [],
+    "contextMap": [{ "source": "...", "relevance": "...", "use": "..." }],
+    "workingEdge": [],
+    "validation": [],
+    "risks": [],
+    "antiRework": [],
+    "durableLearnings": [],
+    "agentGuideUpdates": []
+  },
+  "document": {
+    "task": "...",
+    "state": [],
+    "decisions": [],
+    "contextMap": [],
+    "workingEdge": [],
+    "validation": [],
+    "risks": [],
+    "antiRework": [],
+    "durableLearnings": [],
+    "agentGuideUpdates": []
+  },
+  "agentGuideMarkdown": null,
+  "agentGuideChangeReason": "No durable guide change is warranted."
+}
+```
 
-Both artifacts must include:
+Runtime behavior:
 
-- `## Must Read`: at most five high-signal paths or resources, with why each matters.
-- `## Start From Here`: the first concrete command, edit, validation, or investigation step.
+- `brief` is rendered into Pi's compaction summary inside the package-owned continuation block.
+- `document` is rendered as full content for optional repo-local continuation document sync.
+- `agentGuideMarkdown` is the full content for optional agent-guide sync, or `null` when no guide update is warranted.
+- `agentGuideChangeReason` is a non-empty explanation of why the guide should or should not change.
 
-The runtime continuation prompt tells the next turn to use the compaction summary as primary context, follow `Must Read` and `Start From Here`, avoid replaying completed discovery, and continue the active user task from the next concrete step.
+The structured fields replace the old read-now/do-now heading contract:
+
+- `contextMap` is the curated source route: include sources only when they unlock a decision, prevent rework, or reduce risk.
+- `workingEdge` is the execution continuity map: commands, edits, checks, sequencing constraints, or decision points needed to continue.
+- `durableLearnings` carries reusable user feedback, friction, corrected habits, and best-practice rules even when the immediate subtask is done.
+- `agentGuideUpdates` records candidate AGENTS.md refinements or why no guide update is warranted.
+
+There is no numeric cap for source routing in prompts or code. The contract asks for judgment, rationale, and action value rather than count targets.
+
+The runtime continuation prompt tells the next turn to use the compaction summary as primary context, orient from the structured fields, avoid replaying completed discovery, treat AGENTS.md candidate updates as guidance unless written, and continue from the live working edge.
 
 ## What the summarizer sees
 
@@ -215,7 +272,9 @@ Pi prepares compaction from the current session branch after aborting and waitin
 - file-operation metadata
 - compaction settings
 
-Pi converts messages with `convertToLlm()` and serializes them with `serializeConversation()` inside `<conversation>` tags. Tool-call names and JSON arguments are included. Text tool results are included, but Pi's serializer truncates each serialized tool result to 2,000 characters with a truncation marker.
+`pi-continue` also supplies the configured continuation document path/content, configured agent guide path/content, custom instructions, and read/modified path evidence.
+
+Pi converts messages with `convertToLlm()` and serializes them with `serializeConversation()` inside conversation tags. Tool-call names and JSON arguments are included. Text tool results are included, but Pi's serializer truncates each serialized tool result to 2,000 characters with a truncation marker.
 
 After compaction, Pi reconstructs context as the compaction summary followed by raw kept messages from `firstKeptEntryId` onward and any later messages.
 
@@ -230,8 +289,10 @@ After compaction, Pi reconstructs context as the compaction summary followed by 
 - synthesize missing tool results
 - preserve partial in-flight model output as completed history
 - act as a memory system, context pruner, or general custom compaction framework
+- register legacy command aliases
+- write `CONTINUE.md` or `AGENTS.md` unless the relevant sync mode is explicitly enabled
 
-Among the easily discoverable public Pi extensions reviewed for this package, `pi-continue` appears to be the only one combining a mid-run checkpoint before the next provider request, Pi native compaction, and automatic same-session continuation. That is a scoped source-review claim, not a universal claim about private or unindexed extensions.
+`pi-continue` deliberately stays narrow: it combines the extension-visible mid-run checkpoint, Pi native compaction, and automatic same-session continuation without claiming to own broader memory or compaction behavior.
 
 ## Development
 
@@ -244,12 +305,8 @@ npm pack --dry-run --json
 printf '{"type":"get_commands"}\n' | pi --mode rpc --no-session --no-context-files
 ```
 
-Command surface:
+Expected command surface:
 
 ```text
 continue
-continue-status
-continue-settings
-continue-reset
-continue-preview
 ```

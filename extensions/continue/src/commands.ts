@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { loadHistoryPromptAssets, loadSplitPromptAssets } from "./assets.ts";
-import { DEFAULT_CONTINUE_CONFIG, loadContinuationConfig, resetContinuationConfig, saveContinuationConfig } from "./config.ts";
+import { DEFAULT_CONTINUE_CONFIG, loadContinuationConfig, loadScopeConfig, resetContinuationConfig, saveContinuationConfig } from "./config.ts";
 import { resolveTokenBudget, resolveSummarizerModel } from "./model.ts";
 import { readEffectivePiCompactionSettings } from "./pi-settings.ts";
 import { loadPiInternals } from "./pi-internals.ts";
@@ -19,7 +19,7 @@ function joinArgs(args: string | undefined): string | undefined {
 	return trimmed && trimmed.length > 0 ? trimmed : undefined;
 }
 
-async function requireUi(ctx: ExtensionCommandContext, _action: string): Promise<boolean> {
+async function requireUi(ctx: ExtensionCommandContext): Promise<boolean> {
 	return commandHasUi(ctx);
 }
 
@@ -57,7 +57,7 @@ async function buildPromptPreviewPayload(
 ): Promise<PreviewPayload | undefined> {
 	const initialProjectContext = await resolveProjectContext(pi, ctx.cwd, DEFAULT_CONTINUE_CONFIG.continuationDocPath);
 	const config = loadContinuationConfig(initialProjectContext.projectRoot);
-	const projectContext = await resolveProjectContext(pi, ctx.cwd, config.continuationDocPath);
+	const projectContext = await resolveProjectContext(pi, ctx.cwd, config.continuationDocPath, config.agentGuidePath);
 	const piCompactionSettings = readEffectivePiCompactionSettings(projectContext.projectRoot);
 	const internals = await loadPiInternals();
 	const preparation = internals.prepareCompaction(ctx.sessionManager.getBranch(), piCompactionSettings) as {
@@ -77,6 +77,8 @@ async function buildPromptPreviewPayload(
 		projectRoot: projectContext.projectRoot,
 		continuationDocPath: projectContext.continuationDocPath,
 		existingContinuationDoc: projectContext.existingContinuationDoc,
+		agentGuidePath: projectContext.agentGuidePath,
+		existingAgentGuide: projectContext.existingAgentGuide,
 		previousSummary: preparation.previousSummary,
 		historyTranscript,
 		customInstructions,
@@ -103,6 +105,7 @@ function renderStatus(
 	config: ContinuationConfig,
 	projectRoot: string,
 	continuationDocPath: string,
+	agentGuidePath: string,
 	payload: PreviewPayload | undefined,
 ): string {
 	const piCompactionSettings = readEffectivePiCompactionSettings(projectRoot);
@@ -114,12 +117,14 @@ function renderStatus(
 		``,
 		`## Effective Config`,
 		`- Enabled: ${config.enabled ? "yes" : "no"}`,
-		`- Summarizer model: ${config.summarizerModel} -> ${modelDescription}`,
+		`- Model: ${config.summarizerModel} -> ${modelDescription}`,
 		`- Reasoning: ${config.reasoning}`,
-		`- History max tokens: ${config.historyMaxTokens ?? `pi-default (${historyBudget})`}`,
-		`- Split-prefix max tokens: ${config.splitPrefixMaxTokens ?? `pi-default (${splitBudget})`}`,
-		`- Continuation doc path: ${continuationDocPath}`,
-		`- Continuation doc sync: ${config.continuationDocSyncMode}`,
+		`- History tokens: ${config.historyMaxTokens ?? `pi-default (${historyBudget})`}`,
+		`- Split tokens: ${config.splitPrefixMaxTokens ?? `pi-default (${splitBudget})`}`,
+		`- Continuation doc: ${continuationDocPath}`,
+		`- Continuation sync: ${config.continuationDocSyncMode}`,
+		`- Agent guide: ${agentGuidePath}`,
+		`- Agent guide sync: ${config.agentGuideSyncMode}`,
 		`- Mid-run guard: ${config.midRunGuardEnabled ? "yes" : "no"}`,
 		`- Append compaction metadata: ${config.appendCompactionMetadata ? "yes" : "no"}`,
 		`- Append file tags: ${config.appendFileTags ? "yes" : "no"}`,
@@ -129,22 +134,18 @@ function renderStatus(
 		`## Pi Core Compaction`,
 		`- Enabled: ${piCompactionSettings.enabled ? "yes" : "no"}`,
 		`- Reserve tokens: ${piCompactionSettings.reserveTokens}`,
-		`- Shared trigger threshold: ${renderSharedCompactionThreshold(ctx, piCompactionSettings.reserveTokens)}`,
-		`- Keep recent tokens: ${piCompactionSettings.keepRecentTokens}`,
+		`- Trigger: ${renderSharedCompactionThreshold(ctx, piCompactionSettings.reserveTokens)}`,
+		`- Keep recent: ${piCompactionSettings.keepRecentTokens}`,
 		``,
 		`## Project`,
 		`- Root: ${projectRoot}`,
-		payload
-			? `- Next history scenario: ${payload.scenario}`
-			: `- Next history scenario: unavailable`,
-		payload
-			? `- Split turn if compacted now: ${payload.isSplitTurn ? "yes" : "no"}`
-			: `- Split turn if compacted now: unavailable`,
-		payload ? `- History system prompt: ${payload.history.sources.system}` : undefined,
-		payload ? `- History base user prompt: ${payload.history.sources.baseUser}` : undefined,
-		payload ? `- History scenario user prompt: ${payload.history.sources.scenarioUser}` : undefined,
-		payload?.split ? `- Split system prompt: ${payload.split.sources.system}` : undefined,
-		payload?.split ? `- Split scenario user prompt: ${payload.split.sources.scenarioUser}` : undefined,
+		payload ? `- Scenario: ${payload.scenario}` : `- Scenario: unavailable`,
+		payload ? `- Split now: ${payload.isSplitTurn ? "yes" : "no"}` : `- Split now: unavailable`,
+		payload ? `- History system: ${payload.history.sources.system}` : undefined,
+		payload ? `- History base: ${payload.history.sources.baseUser}` : undefined,
+		payload ? `- History scenario: ${payload.history.sources.scenarioUser}` : undefined,
+		payload?.split ? `- Split system: ${payload.split.sources.system}` : undefined,
+		payload?.split ? `- Split scenario: ${payload.split.sources.scenarioUser}` : undefined,
 	].filter((line): line is string => line !== undefined);
 	return `${lines.join("\n")}\n`;
 }
@@ -176,7 +177,7 @@ async function chooseTokenOverride(
 	title: string,
 	current: number | null,
 ): Promise<number | null | undefined> {
-	const choice = await ctx.ui.select(title, ["use Pi default", `keep current (${current ?? "Pi default"})`, "enter explicit token budget"]);
+	const choice = await ctx.ui.select(title, ["use Pi default", `keep current (${current ?? "Pi default"})`, "enter tokens"]);
 	if (!choice) return undefined;
 	if (choice === "use Pi default") return null;
 	if (choice.startsWith("keep current")) return current;
@@ -198,22 +199,24 @@ async function updateSetting(
 	return next;
 }
 
-/** Interactive settings editor for the package-owned control surface. */
+/** Edit scoped config in the TUI. */
 export async function runSettingsDialog(pi: ExtensionAPI, ctx: ExtensionCommandContext, args: string | undefined): Promise<void> {
-	if (!(await requireUi(ctx, "continuation settings"))) return;
+	if (!(await requireUi(ctx))) return;
 	const projectContext = await resolveProjectContext(pi, ctx.cwd, DEFAULT_CONTINUE_CONFIG.continuationDocPath);
 	let scope = parseScope(args);
-	let config = loadContinuationConfig(projectContext.projectRoot);
+	let config = loadScopeConfig(scope, projectContext.projectRoot);
 	while (true) {
 		const selected = await ctx.ui.select("Continuation settings", [
 			`scope: ${scope}`,
 			`enabled: ${config.enabled ? "yes" : "no"}`,
 			`summarizer model: ${config.summarizerModel}`,
 			`reasoning: ${config.reasoning}`,
-			`history max tokens: ${config.historyMaxTokens ?? "Pi default"}`,
-			`split-prefix max tokens: ${config.splitPrefixMaxTokens ?? "Pi default"}`,
-			`continuation doc path: ${config.continuationDocPath}`,
-			`continuation doc sync: ${config.continuationDocSyncMode}`,
+			`history tokens: ${config.historyMaxTokens ?? "Pi default"}`,
+			`split tokens: ${config.splitPrefixMaxTokens ?? "Pi default"}`,
+			`continuation doc: ${config.continuationDocPath}`,
+			`continuation sync: ${config.continuationDocSyncMode}`,
+			`agent guide path: ${config.agentGuidePath}`,
+			`agent guide sync: ${config.agentGuideSyncMode}`,
 			`mid-run guard: ${config.midRunGuardEnabled ? "yes" : "no"}`,
 			`append compaction metadata: ${config.appendCompactionMetadata ? "yes" : "no"}`,
 			`append file tags: ${config.appendFileTags ? "yes" : "no"}`,
@@ -225,6 +228,7 @@ export async function runSettingsDialog(pi: ExtensionAPI, ctx: ExtensionCommandC
 		if (!selected || selected === "done") return;
 		if (selected.startsWith("scope:")) {
 			scope = scope === "project" ? "global" : "project";
+			config = loadScopeConfig(scope, projectContext.projectRoot);
 			ctx.ui.notify(`Editing ${scope} continuation config`, "info");
 			continue;
 		}
@@ -249,31 +253,45 @@ export async function runSettingsDialog(pi: ExtensionAPI, ctx: ExtensionCommandC
 			});
 			continue;
 		}
-		if (selected.startsWith("history max tokens:")) {
+		if (selected.startsWith("history tokens:")) {
 			config = await updateSetting(scope, projectContext.projectRoot, config, async (current) => {
 				const next = await chooseTokenOverride(ctx, "History max tokens", current.historyMaxTokens);
 				return next !== undefined ? { ...current, historyMaxTokens: next } : undefined;
 			});
 			continue;
 		}
-		if (selected.startsWith("split-prefix max tokens:")) {
+		if (selected.startsWith("split tokens:")) {
 			config = await updateSetting(scope, projectContext.projectRoot, config, async (current) => {
 				const next = await chooseTokenOverride(ctx, "Split-prefix max tokens", current.splitPrefixMaxTokens);
 				return next !== undefined ? { ...current, splitPrefixMaxTokens: next } : undefined;
 			});
 			continue;
 		}
-		if (selected.startsWith("continuation doc path:")) {
+		if (selected.startsWith("continuation doc:")) {
 			config = await updateSetting(scope, projectContext.projectRoot, config, async (current) => {
 				const next = await ctx.ui.input("Continuation doc path", "repo-relative path, default CONTINUE.md");
 				return next?.trim() ? { ...current, continuationDocPath: next.trim() } : undefined;
 			});
 			continue;
 		}
-		if (selected.startsWith("continuation doc sync:")) {
+		if (selected.startsWith("continuation sync:")) {
 			config = await updateSetting(scope, projectContext.projectRoot, config, async (current) => {
 				const next = await ctx.ui.select("Continuation doc sync", ["off", "always"]);
 				return next ? { ...current, continuationDocSyncMode: next as ContinuationConfig["continuationDocSyncMode"] } : undefined;
+			});
+			continue;
+		}
+		if (selected.startsWith("agent guide path:")) {
+			config = await updateSetting(scope, projectContext.projectRoot, config, async (current) => {
+				const next = await ctx.ui.input("Agent guide path", "repo-relative path, default AGENTS.md");
+				return next?.trim() ? { ...current, agentGuidePath: next.trim() } : undefined;
+			});
+			continue;
+		}
+		if (selected.startsWith("agent guide sync:")) {
+			config = await updateSetting(scope, projectContext.projectRoot, config, async (current) => {
+				const next = await ctx.ui.select("Agent guide sync", ["off", "always"]);
+				return next ? { ...current, agentGuideSyncMode: next as ContinuationConfig["agentGuideSyncMode"] } : undefined;
 			});
 			continue;
 		}
@@ -313,43 +331,43 @@ export async function runSettingsDialog(pi: ExtensionAPI, ctx: ExtensionCommandC
 			continue;
 		}
 		if (selected === `reset ${scope} config`) {
-			const confirmed = await ctx.ui.confirm("Reset continuation config", `Delete the ${scope} continuation config file?`);
+			const confirmed = await ctx.ui.confirm("Reset config", `Delete ${scope} config?`);
 			if (confirmed) {
 				await resetContinuationConfig(scope, projectContext.projectRoot);
-				config = loadContinuationConfig(projectContext.projectRoot);
+				config = loadScopeConfig(scope, projectContext.projectRoot);
 				ctx.ui.notify(`Reset ${scope} continuation config`, "info");
 			}
 		}
 	}
 }
 
-/** Show the current effective configuration and prompt provenance. */
+/** Show effective config and prompt provenance. */
 export async function runStatusCommand(pi: ExtensionAPI, ctx: ExtensionCommandContext): Promise<void> {
-	if (!(await requireUi(ctx, "continuation status"))) return;
+	if (!(await requireUi(ctx))) return;
 	const initialProjectContext = await resolveProjectContext(pi, ctx.cwd, DEFAULT_CONTINUE_CONFIG.continuationDocPath);
 	const config = loadContinuationConfig(initialProjectContext.projectRoot);
-	const projectContext = await resolveProjectContext(pi, ctx.cwd, config.continuationDocPath);
+	const projectContext = await resolveProjectContext(pi, ctx.cwd, config.continuationDocPath, config.agentGuidePath);
 	const payload = await buildPromptPreviewPayload(pi, ctx, undefined);
-	await showText(ctx, "continuation status", renderStatus(ctx, config, projectContext.projectRoot, projectContext.continuationDocPath, payload));
+	await showText(ctx, "continuation status", renderStatus(ctx, config, projectContext.projectRoot, projectContext.continuationDocPath, projectContext.agentGuidePath, payload));
 }
 
-/** Reset the selected config scope. */
+/** Reset scoped config. */
 export async function runResetCommand(pi: ExtensionAPI, ctx: ExtensionCommandContext, args: string | undefined): Promise<void> {
-	if (!(await requireUi(ctx, "continuation reset"))) return;
+	if (!(await requireUi(ctx))) return;
 	const projectContext = await resolveProjectContext(pi, ctx.cwd, DEFAULT_CONTINUE_CONFIG.continuationDocPath);
 	const scope = parseScope(args);
-	const confirmed = await ctx.ui.confirm("Reset continuation config", `Delete the ${scope} continuation config file?`);
+	const confirmed = await ctx.ui.confirm("Reset config", `Delete ${scope} config?`);
 	if (!confirmed) return;
 	await resetContinuationConfig(scope, projectContext.projectRoot);
 	ctx.ui.notify(`Reset ${scope} continuation config`, "info");
 }
 
-/** Preview the exact prompt payloads that would be used for compaction now. */
+/** Preview prompt payloads. */
 export async function runPreviewCommand(pi: ExtensionAPI, ctx: ExtensionCommandContext, args: string | undefined): Promise<void> {
-	if (!(await requireUi(ctx, "continuation prompt preview"))) return;
+	if (!(await requireUi(ctx))) return;
 	const payload = await buildPromptPreviewPayload(pi, ctx, joinArgs(args));
 	if (!payload) {
-		ctx.ui.notify("No compaction preview is available for the current session state.", "warning");
+		ctx.ui.notify("No compaction preview is available.", "warning");
 		return;
 	}
 	const sections = [

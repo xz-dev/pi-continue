@@ -1,8 +1,8 @@
 {
   "name": "pi-continue",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "type": "module",
-  "description": "Continue Pi runs when context fills mid-run using native compaction and prompt-driven resume.",
+  "description": "Resume long Pi runs in the same session when context fills mid-run, using native compaction and structured continuation.",
   "keywords": [
     "pi-package",
     "pi",

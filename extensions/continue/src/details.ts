@@ -7,10 +7,11 @@ interface FileOperations {
 }
 
 interface ContinuationSummaryMetadata {
-	kind: "pi-continue/v1";
+	kind: "pi-continue/v2";
 	readFileCount: number;
 	modifiedFileCount: number;
 	documentSyncId?: string;
+	agentGuideSyncId?: string;
 }
 
 function computeFileLists(fileOps: FileOperations): { readFiles: string[]; modifiedFiles: string[] } {
@@ -23,7 +24,7 @@ function computeFileLists(fileOps: FileOperations): { readFiles: string[]; modif
 	};
 }
 
-const CONTINUATION_DETAILS_KIND = "pi-continue/v1";
+const CONTINUATION_DETAILS_KIND = "pi-continue/v2";
 
 function isStringArray(value: unknown): value is string[] {
 	return Array.isArray(value) && value.every((entry) => typeof entry === "string");
@@ -36,22 +37,29 @@ export function parseContinuationDetails(value: unknown): ContinuationCompaction
 	if (record.kind !== CONTINUATION_DETAILS_KIND) return undefined;
 	if (!isStringArray(record.readFiles) || !isStringArray(record.modifiedFiles)) return undefined;
 	const documentSyncId = typeof record.documentSyncId === "string" ? record.documentSyncId : undefined;
+	const agentGuideSyncId = typeof record.agentGuideSyncId === "string" ? record.agentGuideSyncId : undefined;
 	return {
 		kind: CONTINUATION_DETAILS_KIND,
 		readFiles: record.readFiles,
 		modifiedFiles: record.modifiedFiles,
 		documentSyncId,
+		agentGuideSyncId,
 	};
 }
 
 /** Build current-compaction details without inheriting cumulative path lists from older summaries. */
-export function buildContinuationDetails(fileOps: FileOperations, documentSyncId: string | undefined): ContinuationCompactionDetails {
+export function buildContinuationDetails(
+	fileOps: FileOperations,
+	documentSyncId: string | undefined,
+	agentGuideSyncId: string | undefined,
+): ContinuationCompactionDetails {
 	const { readFiles, modifiedFiles } = computeFileLists(fileOps);
 	return {
 		kind: CONTINUATION_DETAILS_KIND,
 		readFiles,
 		modifiedFiles,
 		documentSyncId,
+		agentGuideSyncId,
 	};
 }
 
@@ -62,6 +70,7 @@ function buildSummaryMetadata(details: ContinuationCompactionDetails): Continuat
 		modifiedFileCount: details.modifiedFiles.length,
 	};
 	if (details.documentSyncId) metadata.documentSyncId = details.documentSyncId;
+	if (details.agentGuideSyncId) metadata.agentGuideSyncId = details.agentGuideSyncId;
 	return metadata;
 }
 

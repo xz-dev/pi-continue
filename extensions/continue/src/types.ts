@@ -8,7 +8,7 @@ export type ContinuationReasoning =
 	| "xhigh";
 
 export type PromptOverridePolicy = "package-default" | "global-override" | "project-override";
-export type ContinuationDocSyncMode = "always" | "off";
+export type DocumentSyncMode = "always" | "off";
 export type FallbackMode = "deterministic-summary" | "abort";
 export type ConfigScope = "global" | "project";
 export type HistoryScenario = "initial" | "update";
@@ -20,7 +20,9 @@ export interface ContinuationConfig {
 	historyMaxTokens: number | null;
 	splitPrefixMaxTokens: number | null;
 	continuationDocPath: string;
-	continuationDocSyncMode: ContinuationDocSyncMode;
+	continuationDocSyncMode: DocumentSyncMode;
+	agentGuidePath: string;
+	agentGuideSyncMode: DocumentSyncMode;
 	midRunGuardEnabled: boolean;
 	appendCompactionMetadata: boolean;
 	appendFileTags: boolean;
@@ -32,6 +34,8 @@ export interface ResolvedProjectContext {
 	projectRoot: string;
 	continuationDocPath: string;
 	existingContinuationDoc: string | undefined;
+	agentGuidePath: string;
+	existingAgentGuide: string | undefined;
 }
 
 export interface LoadedPromptAsset {
@@ -60,6 +64,8 @@ export interface HistoryPromptInput {
 	projectRoot: string;
 	continuationDocPath: string;
 	existingContinuationDoc: string | undefined;
+	agentGuidePath: string;
+	existingAgentGuide: string | undefined;
 	previousSummary: string | undefined;
 	historyTranscript: string;
 	customInstructions: string | undefined;
@@ -86,18 +92,22 @@ export interface CompiledPrompt {
 export interface ParsedHistoryArtifacts {
 	continuation: string;
 	continuationMd: string;
+	agentGuideMd: string | undefined;
+	agentGuideChangeReason: string;
 }
 
 export interface ContinuationCompactionDetails {
-	kind: "pi-continue/v1";
+	kind: "pi-continue/v2";
 	readFiles: string[];
 	modifiedFiles: string[];
 	documentSyncId?: string;
+	agentGuideSyncId?: string;
 }
 
 export interface PendingDocumentWrite {
-	continuationDocPath: string;
+	path: string;
 	content: string;
+	label: string;
 }
 
 export interface PiCompactionSettings {

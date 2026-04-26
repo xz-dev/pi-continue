@@ -5,7 +5,7 @@ import type {
 	ConfigScope,
 	FallbackMode,
 	ContinuationConfig,
-	ContinuationDocSyncMode,
+	DocumentSyncMode,
 	ContinuationReasoning,
 	PromptOverridePolicy,
 } from "./types.ts";
@@ -25,7 +25,7 @@ const PROMPT_OVERRIDE_POLICIES = new Set<PromptOverridePolicy>([
 	"global-override",
 	"project-override",
 ]);
-const CONTINUE_DOC_SYNC_MODES = new Set<ContinuationDocSyncMode>(["always", "off"]);
+const DOCUMENT_SYNC_MODES = new Set<DocumentSyncMode>(["always", "off"]);
 const FALLBACK_MODES = new Set<FallbackMode>(["deterministic-summary", "abort"]);
 const mutationQueues = new Map<string, Promise<void>>();
 
@@ -48,6 +48,8 @@ export const DEFAULT_CONTINUE_CONFIG: ContinuationConfig = {
 	splitPrefixMaxTokens: null,
 	continuationDocPath: "CONTINUE.md",
 	continuationDocSyncMode: "off",
+	agentGuidePath: "AGENTS.md",
+	agentGuideSyncMode: "off",
 	midRunGuardEnabled: true,
 	appendCompactionMetadata: false,
 	appendFileTags: false,
@@ -63,6 +65,8 @@ interface PartialContinuationConfig {
 	splitPrefixMaxTokens?: number | null;
 	continuationDocPath?: string;
 	continuationDocSyncMode?: string;
+	agentGuidePath?: string;
+	agentGuideSyncMode?: string;
 	midRunGuardEnabled?: boolean;
 	appendCompactionMetadata?: boolean;
 	appendFileTags?: boolean;
@@ -101,6 +105,8 @@ function parsePartialConfig(value: unknown): PartialContinuationConfig {
 		splitPrefixMaxTokens: asNullableNumber(value.splitPrefixMaxTokens),
 		continuationDocPath: asString(value.continuationDocPath),
 		continuationDocSyncMode: asString(value.continuationDocSyncMode),
+		agentGuidePath: asString(value.agentGuidePath),
+		agentGuideSyncMode: asString(value.agentGuideSyncMode),
 		midRunGuardEnabled: asBoolean(value.midRunGuardEnabled),
 		appendCompactionMetadata: asBoolean(value.appendCompactionMetadata),
 		appendFileTags: asBoolean(value.appendFileTags),
@@ -134,10 +140,10 @@ function normalizePromptOverridePolicy(value: string | undefined): PromptOverrid
 		: DEFAULT_CONTINUE_CONFIG.promptOverridePolicy;
 }
 
-function normalizeSyncMode(value: string | undefined): ContinuationDocSyncMode {
-	return value !== undefined && CONTINUE_DOC_SYNC_MODES.has(value as ContinuationDocSyncMode)
-		? (value as ContinuationDocSyncMode)
-		: DEFAULT_CONTINUE_CONFIG.continuationDocSyncMode;
+function normalizeSyncMode(value: string | undefined, fallback: DocumentSyncMode): DocumentSyncMode {
+	return value !== undefined && DOCUMENT_SYNC_MODES.has(value as DocumentSyncMode)
+		? (value as DocumentSyncMode)
+		: fallback;
 }
 
 function normalizeFallbackMode(value: string | undefined): FallbackMode {
@@ -146,9 +152,9 @@ function normalizeFallbackMode(value: string | undefined): FallbackMode {
 		: DEFAULT_CONTINUE_CONFIG.fallbackMode;
 }
 
-function normalizePath(value: string | undefined): string {
+function normalizePath(value: string | undefined, fallback: string): string {
 	const trimmed = value?.trim();
-	return trimmed && trimmed.length > 0 ? trimmed : DEFAULT_CONTINUE_CONFIG.continuationDocPath;
+	return trimmed && trimmed.length > 0 ? trimmed : fallback;
 }
 
 function normalizeTokenOverride(value: number | null | undefined): number | null {
@@ -169,8 +175,10 @@ function normalizeConfig(partial: PartialContinuationConfig): ContinuationConfig
 		reasoning: normalizeReasoning(partial.reasoning),
 		historyMaxTokens: normalizeTokenOverride(partial.historyMaxTokens),
 		splitPrefixMaxTokens: normalizeTokenOverride(partial.splitPrefixMaxTokens),
-		continuationDocPath: normalizePath(partial.continuationDocPath),
-		continuationDocSyncMode: normalizeSyncMode(partial.continuationDocSyncMode),
+		continuationDocPath: normalizePath(partial.continuationDocPath, DEFAULT_CONTINUE_CONFIG.continuationDocPath),
+		continuationDocSyncMode: normalizeSyncMode(partial.continuationDocSyncMode, DEFAULT_CONTINUE_CONFIG.continuationDocSyncMode),
+		agentGuidePath: normalizePath(partial.agentGuidePath, DEFAULT_CONTINUE_CONFIG.agentGuidePath),
+		agentGuideSyncMode: normalizeSyncMode(partial.agentGuideSyncMode, DEFAULT_CONTINUE_CONFIG.agentGuideSyncMode),
 		midRunGuardEnabled: partial.midRunGuardEnabled ?? DEFAULT_CONTINUE_CONFIG.midRunGuardEnabled,
 		appendCompactionMetadata: partial.appendCompactionMetadata ?? DEFAULT_CONTINUE_CONFIG.appendCompactionMetadata,
 		appendFileTags: partial.appendFileTags ?? DEFAULT_CONTINUE_CONFIG.appendFileTags,
@@ -191,6 +199,10 @@ export function loadContinuationConfig(projectRoot: string): ContinuationConfig 
 	const globalConfig = readPartialConfig(getGlobalConfigPath());
 	const projectConfig = readPartialConfig(getProjectConfigPath(projectRoot));
 	return normalizeConfig({ ...globalConfig, ...projectConfig });
+}
+
+export function loadScopeConfig(scope: ConfigScope, projectRoot: string): ContinuationConfig {
+	return normalizeConfig(readPartialConfig(getConfigPath(scope, projectRoot)));
 }
 
 function serializeConfig(config: ContinuationConfig): string {

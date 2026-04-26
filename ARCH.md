@@ -6,11 +6,12 @@
 
 The package owns:
 
-- the `/continue` command family
+- one `/continue` command with action and operator subcommands
 - a safe mid-run guard at Pi's awaited pre-provider `context` seam
 - package-shaped compaction summaries for continuation
 - the runtime prompt that resumes the same task after compaction
-- optional repo-local `CONTINUE.md` sync when explicitly enabled
+- optional repo-local continuation document sync when explicitly enabled
+- optional repo-local agent guide refinement when explicitly enabled
 - customizable system/user prompt assets and prompt override precedence for continuation synthesis
 
 It does not patch Pi vendor code, fork sessions, switch sessions, rewrite transcript history, or maintain legacy command/config aliases.
@@ -29,9 +30,11 @@ Canonical surfaces:
 - extension path: `extensions/continue/index.ts`
 - npm package name: `pi-continue`
 - config file: `pi-continue.json`
-- commands: `/continue`, `/continue-status`, `/continue-settings`, `/continue-reset`, `/continue-preview`
+- command: `/continue`
 - optional runtime continuation document: `CONTINUE.md`
-- compaction detail kind: `pi-continue/v1`
+- optional agent guide target: `AGENTS.md`
+- history artifact version: `pi-continue-artifacts/v2`
+- compaction detail kind: `pi-continue/v2`
 
 No old package names, command aliases, config files, prompt tags, or extension paths are compatibility surfaces.
 
@@ -68,10 +71,10 @@ The guard flow:
 4. Read effective Pi compaction settings.
 5. Estimate context tokens through Pi's compaction estimator.
 6. Trigger when `estimatedTokens > model.contextWindow - reserveTokens`.
-7. Abort the active run.
+7. Abort the active run before the oversized provider request is sent.
 8. Start Pi compaction.
 9. Build the package continuation summary in `session_before_compact`.
-10. Optionally write `CONTINUE.md` in `session_compact` when sync is enabled.
+10. Optionally write repo documents in `session_compact` when their sync modes are enabled.
 11. Send the continuation prompt after compaction completes.
 
 The guard never rewrites context messages and never interrupts incomplete tool batches.
@@ -81,73 +84,135 @@ The guard never rewrites context messages and never interrupts incomplete tool b
 Canonical command:
 
 ```text
-/continue [steer|queue] [instructions]
+/continue [steer|queue|status|settings|reset|preview] [arguments]
 ```
 
-Modes:
+Subcommands:
 
 - `steer`: abort active work if needed, then compact now.
 - `queue`: wait for idle, then compact.
+- `status`: show effective config, prompt provenance, and Pi threshold.
+- `settings [project|global]`: edit package settings in the TUI.
+- `reset [project|global]`: delete the selected config file.
+- `preview [instructions]`: render the prompt payloads that would be used now.
 
-Successful compaction sends the runtime continuation prompt. Duplicate compaction starts are rejected while one is already running. If an automatic guard compaction fails for the same token estimate, the next identical guard event aborts the unsafe over-threshold replay and refuses to loop compaction repeatedly.
+`/continue` defaults to `steer`. Successful compaction sends the runtime continuation prompt. Duplicate compaction starts are rejected while one is already running. If an automatic guard compaction fails for the same token estimate, the next identical guard event aborts the unsafe over-threshold replay and refuses to loop compaction repeatedly.
 
-## Continuation prompt
+The old top-level commands are intentionally absent.
 
-The runtime continuation prompt is extension-owned copy sent after successful compaction. It tells Pi to use the new compaction summary as primary context, follow `## Must Read` and `## Start From Here`, treat transcript/tool history as evidence rather than replay material, and continue the active user task from the next concrete step.
+## Runtime continuation prompt
+
+The runtime continuation prompt is extension-owned copy sent after successful compaction. It tells Pi to use the new compaction summary as primary context, orient from the structured task/state/decision/context-map/working-edge/validation/risk/anti-rework/durable-learning fields, treat transcript/tool history as evidence rather than replay material, treat AGENTS.md candidate updates as guidance unless the summary says they were written, and continue the active user task from the live working edge.
 
 This prompt is separate from the summarization prompt assets because it drives the next agent turn rather than shaping the compaction artifacts.
 
-## Compaction artifacts
+## Structured history artifact
 
-The history pass returns two blocks:
+The history pass returns one strict JSON object:
 
-- `<continuation>`: immediate next-turn note persisted in Pi's compaction summary
-- `<continuation-md>`: full replacement content for optional `CONTINUE.md` sync
+```json
+{
+  "version": "pi-continue-artifacts/v2",
+  "brief": {
+    "task": "...",
+    "state": [],
+    "decisions": [],
+    "contextMap": [{ "source": "...", "relevance": "...", "use": "..." }],
+    "workingEdge": [],
+    "validation": [],
+    "risks": [],
+    "antiRework": [],
+    "durableLearnings": [],
+    "agentGuideUpdates": []
+  },
+  "document": {
+    "task": "...",
+    "state": [],
+    "decisions": [],
+    "contextMap": [],
+    "workingEdge": [],
+    "validation": [],
+    "risks": [],
+    "antiRework": [],
+    "durableLearnings": [],
+    "agentGuideUpdates": []
+  },
+  "agentGuideMarkdown": null,
+  "agentGuideChangeReason": "No durable guide change is warranted."
+}
+```
 
-The split-prefix pass returns one block when Pi splits a turn:
+Runtime validation requires:
 
-- `<split-prefix>`: context needed to understand the raw kept suffix
+- `version` equal to `pi-continue-artifacts/v2`
+- `brief` and `document` objects with every required structured field
+- non-empty `task` strings
+- arrays for state, decisions, contextMap, workingEdge, validation, risks, antiRework, durableLearnings, and agentGuideUpdates
+- `contextMap` entries with non-empty `source`, `relevance`, and `use`
+- `agentGuideMarkdown` as either non-empty string or `null`
+- `agentGuideChangeReason` as a non-empty string
+
+Malformed or incomplete history output falls back to deterministic synthesis or aborts according to `fallbackMode`.
+
+The split-prefix pass remains a simple tagged block because it is a narrow prefix note, not a multi-artifact contract:
+
+```text
+<split-prefix>...</split-prefix>
+```
+
+## Compaction summary shape
 
 The final persisted summary contains:
 
-- `<continuation>`
-- optional `<split-prefix>`
-- optional `<continuation-compaction-details>` metadata when enabled
-- optional `<read-files>` and `<modified-files>` tags when explicitly enabled
+- a package-owned continuation block containing rendered `brief` fields
+- optional split-prefix block
+- optional compaction metadata when enabled
+- optional read/modified path tags when explicitly enabled
 
 Default summaries do not render file path registries. File operations are available to the synthesizer for curation and stored in compact details for lifecycle bookkeeping, but rendered path tags are opt-in.
 
 ## Evidence gate
 
-Generated continuation artifacts must include:
+Generated continuation artifacts use structured fields instead of mandatory read-now/do-now headings. The key behavioral fields are:
 
-- `## Must Read`: at most five high-signal paths/resources with why each matters
-- `## Start From Here`: the first concrete next action
+- `contextMap`: curated exact sources/resources with why each matters and how to use it
+- `workingEdge`: commands, edits, checks, sequencing constraints, or decision points needed to continue
+- `durableLearnings`: reusable user feedback, friction, corrected habits, and best-practice rules that remain valuable beyond the immediate subtask
+- `agentGuideUpdates`: candidate durable AGENTS.md changes or reasons no guide change is warranted
 
-The synthesizer preserves details only when they change the next agent's action, validation, safety, or reading route; prove current state; record a blocker, dirty state, failed validation, approval boundary, or exclusion; or encode explicit/repeated user requirements.
+There is no numeric cap in the prompt or code. The synthesizer preserves details only when they change the next agent's action, validation, safety, context routing, durable guide update, blocker handling, dirty-state handling, approval boundary, or repeated explicit user requirement.
 
 Terminal transcript and tool history are noisy evidence, not content to replay.
 
-## Optional repo document
+## Optional repo documents
 
-Default path:
+Default continuation document path:
 
 ```text
 <project-root>/CONTINUE.md
 ```
 
-`CONTINUE.md` is runtime output when continuation document sync is enabled. It is local project state, not tracked package corpus.
+Default agent guide path:
+
+```text
+<project-root>/AGENTS.md
+```
+
+Both are runtime output targets only when their sync modes are enabled. `CONTINUE.md` is ignored local state in this repo. `AGENTS.md` is tracked package corpus here, but automatic AGENTS.md writes remain off by default.
 
 Resolution:
 
 - project root is the git root when available, otherwise the current cwd
-- configured document path must stay repo-relative
-- invalid or escaping paths fall back to `CONTINUE.md`
+- configured document paths must stay repo-relative
+- invalid or escaping continuation paths fall back to `CONTINUE.md`
+- invalid or escaping agent-guide paths fall back to `AGENTS.md`
 
 Sync behavior:
 
 - default `continuationDocSyncMode` is `"off"`
-- `"always"` writes `<continuation-md>` to the configured path
+- `"always"` writes the rendered `document` artifact to the configured continuation path
+- default `agentGuideSyncMode` is `"off"`
+- `"always"` writes `agentGuideMarkdown` to the configured guide path only when the modeled artifact provides a full replacement
 - writes are normalized and skipped when content is unchanged
 - writes happen only after successful extension-owned compaction
 
@@ -171,6 +236,8 @@ Default values:
   "splitPrefixMaxTokens": null,
   "continuationDocPath": "CONTINUE.md",
   "continuationDocSyncMode": "off",
+  "agentGuidePath": "AGENTS.md",
+  "agentGuideSyncMode": "off",
   "midRunGuardEnabled": true,
   "appendCompactionMetadata": false,
   "appendFileTags": false,
@@ -204,6 +271,8 @@ Override roots:
 
 Precedence is controlled by `promptOverridePolicy`.
 
+Prompt assets are provider-agnostic. The default history prompts are tuned for current GPT-5-class behavior by being outcome-first, contract-explicit, concise, evidence-gated, and structured without prescribing a numeric reading quota.
+
 ## Compaction input contract
 
 Pi computes compaction preparation from the current branch after aborting and waiting for the agent to become idle. The package receives:
@@ -215,7 +284,15 @@ Pi computes compaction preparation from the current branch after aborting and wa
 - `fileOps`
 - Pi compaction settings
 
-The summarizer prompt is not a byte-for-byte session transcript. Pi converts preparation messages with `convertToLlm()` and serializes them with `serializeConversation()` inside `<conversation>` tags. Assistant tool-call names and JSON arguments are included. Text tool results are included but truncated to 2,000 characters with a truncation marker by Pi's serializer.
+The package supplies the summarizer with:
+
+- project root
+- configured continuation document path and existing content
+- configured agent guide path and existing content
+- custom compaction instructions
+- read and modified file-operation evidence
+
+The summarizer prompt is not a byte-for-byte session transcript. Pi converts preparation messages with `convertToLlm()` and serializes them with `serializeConversation()` inside conversation tags. Assistant tool-call names and JSON arguments are included. Text tool results are included but truncated to 2,000 characters with a truncation marker by Pi's serializer.
 
 After compaction, Pi reconstructs context as the compaction summary followed by raw kept messages from `firstKeptEntryId` onward and any later messages.
 
@@ -246,6 +323,9 @@ The package does not:
 - synthesize missing tool results
 - patch Pi core
 - fork or switch sessions
+- rewrite transcript history
 - read old config files or register old commands
+- write repo documents unless the matching sync mode is explicitly enabled
+- act as a memory system, context pruner, or custom compaction framework
 
 Incomplete tool-batch interruption should wait for a Pi-owned primitive that can settle pending tool-call/result pairs safely.

@@ -44,9 +44,8 @@ async function getGitRoot(pi: ExecApi, cwd: string): Promise<string | undefined>
 	return root.length > 0 ? root : undefined;
 }
 
-function sanitizeRepoRelativePath(projectRoot: string, configuredPath: string): string {
+function sanitizeRepoRelativePath(projectRoot: string, configuredPath: string, fallback: string): string {
 	const trimmed = normalize(configuredPath.trim()).replace(/^\.\//, "");
-	const fallback = "CONTINUE.md";
 	if (trimmed.length === 0) return fallback;
 	if (isAbsolute(trimmed)) return fallback;
 	const resolved = resolve(projectRoot, trimmed);
@@ -55,25 +54,33 @@ function sanitizeRepoRelativePath(projectRoot: string, configuredPath: string): 
 	return trimmed;
 }
 
-/** Resolve the per-repo CONTINUE.md target and current continuation document content. */
+function readOptionalFile(path: string): string | undefined {
+	return existsSync(path) ? readFileSync(path, "utf8") : undefined;
+}
+
+/** Resolve repo-local continuation and agent-guide targets plus current content. */
 export async function resolveProjectContext(
 	pi: ExecApi,
 	cwd: string,
 	configuredDocPath: string,
+	configuredAgentGuidePath = "AGENTS.md",
 ): Promise<ResolvedProjectContext> {
 	const projectRoot = (await getGitRoot(pi, cwd)) ?? cwd;
-	const repoRelativeDocPath = sanitizeRepoRelativePath(projectRoot, configuredDocPath);
+	const repoRelativeDocPath = sanitizeRepoRelativePath(projectRoot, configuredDocPath, "CONTINUE.md");
+	const repoRelativeAgentGuidePath = sanitizeRepoRelativePath(projectRoot, configuredAgentGuidePath, "AGENTS.md");
 	const continuationDocPath = join(projectRoot, repoRelativeDocPath);
-	const existingContinuationDoc = existsSync(continuationDocPath) ? readFileSync(continuationDocPath, "utf8") : undefined;
+	const agentGuidePath = join(projectRoot, repoRelativeAgentGuidePath);
 	return {
 		projectRoot,
 		continuationDocPath,
-		existingContinuationDoc,
+		existingContinuationDoc: readOptionalFile(continuationDocPath),
+		agentGuidePath,
+		existingAgentGuide: readOptionalFile(agentGuidePath),
 	};
 }
 
-/** Write the durable repo-local CONTINUE.md only when normalized content changes. */
-export async function writeContinuationDocument(path: string, content: string): Promise<"updated" | "unchanged"> {
+/** Write a durable repo-local document only when normalized content changes. */
+export async function writeRepoDocument(path: string, content: string): Promise<"updated" | "unchanged"> {
 	const normalized = normalizeDocumentContent(content);
 	const existing = existsSync(path) ? readFileSync(path, "utf8") : undefined;
 	if (existing !== undefined && normalizeDocumentContent(existing) === normalized) {
