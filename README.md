@@ -20,7 +20,7 @@ It is not a replacement compactor. It is a continuation layer around Pi's native
 - **Same-session resume:** sends a continuation prompt after compaction, so Pi keeps working in the current session.
 - **Discoverable `/continue`:** opens a compact TUI action palette, with typed shortcuts and autocomplete for power users.
 - **Custom prompts:** lets you override the system and user prompt assets without editing package source.
-- **Structured artifacts:** asks the summarizer for a strict JSON artifact object, then validates it before writing anything.
+- **Continuation Ledger artifacts:** asks the summarizer for a strict JSON reducer ledger, then validates it before writing anything.
 - **Model control:** inherits the current model/reasoning by default, or uses a pinned summarizer model.
 - **Optional repo documents:** can write a repo-local continuation document and AGENTS.md refinement when explicitly enabled.
 
@@ -224,37 +224,71 @@ assets/user/split_prefix.md
 
 `promptOverridePolicy` decides whether project overrides, global overrides, or package defaults win. `/continue preview` shows the exact prompt payloads and source paths that would be used if you compacted now.
 
-The default history prompts are provider-agnostic and optimized for current GPT-5-class behavior: outcome-first, explicit contract, concise evidence gate, structured output, and no arbitrary reading-count cap.
+The default history prompts are provider-agnostic and optimized for current GPT-5-class behavior: outcome-first, explicit contract, concise evidence gate, reducer-style continuation ledger output, recency/supersession handling, durable-promotion handling, and no arbitrary reading-count cap.
 
 ## Continuation output
 
-The history pass returns one strict JSON artifact object:
+The history pass returns one strict JSON artifact object. It is a Pi-native Continuation Ledger: a reducer that reconciles older durable state with newer evidence instead of stacking chronological summaries. The `recencyLedger` makes active request order and superseded plan state explicit so older `await direction` guidance cannot survive as the active plan when newer allowed work exists.
 
 ```json
 {
-  "version": "pi-continue-artifacts/v2",
+  "version": "pi-continue-artifacts/v3",
   "brief": {
     "task": "...",
+    "initiativeCharter": [],
+    "definitionOfDone": [],
+    "recencyLedger": [{
+      "status": "active|amended|superseded|stale|confirmed|unknown",
+      "subject": "...",
+      "evidence": "...",
+      "resolution": "..."
+    }],
+    "currentPlan": [],
+    "progress": [],
     "state": [],
     "decisions": [],
     "contextMap": [{ "source": "...", "relevance": "...", "use": "..." }],
     "workingEdge": [],
     "validation": [],
     "risks": [],
+    "dormantContext": [],
+    "retiredContext": [],
     "antiRework": [],
     "durableLearnings": [],
+    "durablePromotions": [{
+      "status": "apply|reject|defer|already-covered|none",
+      "targetSurface": "...",
+      "proposal": "...",
+      "evidence": "...",
+      "durability": "...",
+      "risk": "...",
+      "nextAction": "..."
+    }],
     "agentGuideUpdates": []
   },
   "document": {
     "task": "...",
+    "initiativeCharter": [],
+    "definitionOfDone": [],
+    "recencyLedger": [{
+      "status": "active|amended|superseded|stale|confirmed|unknown",
+      "subject": "...",
+      "evidence": "...",
+      "resolution": "..."
+    }],
+    "currentPlan": [],
+    "progress": [],
     "state": [],
     "decisions": [],
     "contextMap": [],
     "workingEdge": [],
     "validation": [],
     "risks": [],
+    "dormantContext": [],
+    "retiredContext": [],
     "antiRework": [],
     "durableLearnings": [],
+    "durablePromotions": [],
     "agentGuideUpdates": []
   },
   "agentGuideMarkdown": null,
@@ -268,18 +302,25 @@ Runtime behavior:
 - `document` is rendered as full content for optional repo-local continuation document sync.
 - `agentGuideMarkdown` is the full content for optional agent-guide sync, or `null` when no guide replacement is warranted.
 - `agentGuideChangeReason` is a non-empty explanation of why the guide should or should not change.
+- `durablePromotions` can propose durable changes to canonical docs such as AGENTS.md, ARCH.md, PLAN.md, HANDOFF.md, README.md, skill docs, or user-approved VISION.md; these are normal-work resolution items, not compaction write claims.
 - `agentGuideUpdates` can name candidate guide changes even when `agentGuideMarkdown` is `null`; candidates are guidance, not writes.
 
 The structured fields define the continuation contract:
 
+- `initiativeCharter`, `definitionOfDone`, `recencyLedger`, `currentPlan`, and `progress` preserve the durable purpose, completion criteria, active request/supersession resolution, plan of record, and milestone trail across repeated compactions.
+- `recencyLedger` must contain at least one entry and uses `active`, `amended`, `superseded`, `stale`, `confirmed`, or `unknown` to resolve request, plan, validation, or working-edge conflicts before the next agent acts.
 - `contextMap` is the curated source route: include sources only when they unlock a decision, prevent rework, or reduce risk.
 - `workingEdge` is the execution continuity map: commands, edits, checks, sequencing constraints, or decision points needed to continue.
+- `validation` records exact proof and freshness, including stale/deferred/failing checks.
+- `dormantContext` keeps inactive-but-important facts available; inactive is not obsolete.
+- `retiredContext` names obsolete facts with reason, evidence, and replacement when they could affect future behavior.
 - `durableLearnings` carries reusable user feedback, friction, corrected habits, and best-practice rules even when the immediate subtask is done.
+- `durablePromotions` uses `apply`, `reject`, `defer`, `already-covered`, or `none` to tell the next agent what durable doc work to resolve outside compaction.
 - `agentGuideUpdates` records candidate AGENTS.md refinements or why no guide update is warranted; only non-null `agentGuideMarkdown` can write the guide.
 
 There is no numeric cap for source routing in prompts or code. The contract asks for judgment, rationale, and action value rather than count targets.
 
-When guide sync is enabled and no full replacement is emitted, `pi-continue` leaves AGENTS.md unchanged and reports the modeled reason. The runtime continuation prompt tells the next turn to use the compaction summary as primary context, orient from the structured fields, avoid replaying completed discovery, treat AGENTS.md candidate updates as guidance unless written, and continue from the live working edge.
+When guide sync is enabled and no full replacement is emitted, `pi-continue` leaves AGENTS.md unchanged and reports the modeled reason. The runtime continuation prompt tells the next turn to use the compaction summary as the primary Continuation Ledger, orient from the structured fields, honor recency/supersession resolutions before older plan state, resolve non-`none` durable promotions through normal repo work, avoid replaying completed discovery, treat AGENTS.md candidate updates as guidance unless written, and continue from the live working edge.
 
 ## What the summarizer sees
 

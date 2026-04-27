@@ -15,7 +15,7 @@ const promptAssetPaths = [
 	"assets/user/split_prefix.md",
 ];
 
-test("package history prompts require evidence-gated structured continuation without numeric caps", () => {
+test("package history prompts require evidence-gated continuation ledger artifacts without numeric caps", () => {
 	for (const path of [
 		"assets/system/history_initial.md",
 		"assets/system/history_update.md",
@@ -24,6 +24,11 @@ test("package history prompts require evidence-gated structured continuation wit
 		"assets/user/history_update.md",
 	]) {
 		const content = readFileSync(path, "utf8");
+		assert.match(content, /Pi Continuation Ledger/);
+		assert.match(content, /durablePromotions/);
+		assert.match(content, /recencyLedger/);
+		assert.match(content, /at least one entry|not leave `recencyLedger` empty/);
+		assert.match(content, /supersed/i);
 		assert.match(content, /contextMap/);
 		assert.match(content, /workingEdge/);
 		assert.match(content, /durableLearnings/);
@@ -34,13 +39,26 @@ test("package history prompts require evidence-gated structured continuation wit
 		assert.doesNotMatch(content, /Resume Now/);
 		assert.doesNotMatch(content, /at most five/i);
 	}
+	for (const path of ["assets/system/history_initial.md", "assets/system/history_update.md", "assets/user/continuation_base.md"]) {
+		const content = readFileSync(path, "utf8");
+		assert.match(content, /initiativeCharter/);
+		assert.match(content, /definitionOfDone/);
+		assert.match(content, /recencyLedger/);
+		assert.match(content, /currentPlan/);
+		assert.match(content, /dormantContext/);
+		assert.match(content, /retiredContext/);
+		assert.match(content, /inactive is not obsolete/i);
+		assert.match(content, /Under token pressure/);
+	}
 	for (const path of ["assets/system/history_initial.md", "assets/system/history_update.md"]) {
 		const content = readFileSync(path, "utf8");
-		assert.match(content, /pi-continue-artifacts\/v2/);
+		assert.match(content, /pi-continue-artifacts\/v3/);
 		assert.match(content, /valid JSON/);
 		assert.match(content, /noisy evidence, not content to replay/);
 		assert.match(content, /Drop provenance-only details/);
 		assert.match(content, /Generalize repeated friction/);
+		assert.match(content, /Do not append another stacked ledger layer/);
+		assert.match(content, /older await-direction state/);
 		assert.match(content, /agent guide/);
 	}
 });

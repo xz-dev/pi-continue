@@ -1,23 +1,13 @@
 import type { Model } from "@mariozechner/pi-ai";
 import { completeSimple } from "@mariozechner/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { resolveSummarizerModel } from "./model-settings.ts";
 import type { ContinuationConfig, ContinuationReasoning } from "./types.ts";
+
+export { resolveSummarizerModel, resolveTokenBudget } from "./model-settings.ts";
 
 function isSupportedReasoning(level: ContinuationReasoning): level is Exclude<ContinuationReasoning, "inherit"> {
 	return level !== "inherit";
-}
-
-/** Resolve the effective summarizer model from config or the current session model. */
-export function resolveSummarizerModel(
-	ctx: ExtensionContext,
-	config: ContinuationConfig,
-): Model<unknown> | undefined {
-	if (config.summarizerModel === "inherit") return ctx.model;
-	const slashIndex = config.summarizerModel.indexOf("/");
-	if (slashIndex <= 0 || slashIndex === config.summarizerModel.length - 1) return undefined;
-	const provider = config.summarizerModel.slice(0, slashIndex);
-	const modelId = config.summarizerModel.slice(slashIndex + 1);
-	return ctx.modelRegistry.find(provider, modelId);
 }
 
 /** Resolve the requested reasoning level with model capability checks. */
@@ -28,16 +18,6 @@ export function resolveReasoningLevel(pi: ExtensionAPI, model: Model<unknown>, c
 		return inherited !== "off" ? inherited : undefined;
 	}
 	return isSupportedReasoning(config.reasoning) && config.reasoning !== "off" ? config.reasoning : undefined;
-}
-
-/** Match Pi default branch token formulas when no package override is configured. */
-export function resolveTokenBudget(
-	reserveTokens: number,
-	override: number | null,
-	kind: "history" | "split",
-): number {
-	if (override !== null) return override;
-	return kind === "history" ? Math.floor(0.8 * reserveTokens) : Math.floor(0.5 * reserveTokens);
 }
 
 /** Execute a summarization pass against the resolved model and auth. */

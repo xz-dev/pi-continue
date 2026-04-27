@@ -4,13 +4,15 @@ import type { MidRunGuardTrigger } from "./types.ts";
 export const CONTINUE_STATUS_KEY = "pi-continue";
 export const CONTINUATION_PROMPT = [
 	"Continue from the continuation compaction that was just created.",
-	"Use the compaction summary as the primary continuation context.",
-	"Orient from its task, current state, decisions, context map, working edge, validation, risks, anti-rework, durable learnings, and agent-guide update notes before broader discovery.",
-	"Read repo documents or mapped sources only when the summary says they unlock a decision, prevent rework, or reduce risk.",
-	"Treat AGENTS.md candidate updates as guidance unless the summary says they were written.",
+	"Use the compaction summary as the primary continuation ledger.",
+	"Orient from its task, initiative charter, definition of done, recency ledger, current plan, progress trail, current state, decisions, context map, working edge, validation, risks, dormant context, retired context, anti-rework, durable learnings, durable promotions, and agent-guide update notes before broader discovery.",
+	"Honor the recency ledger first: newer active user requests and supersession resolutions override older plan or await-direction state.",
+	"Resolve every non-none durable promotion through normal repo work before further mutation in the affected repo, unless newer evidence rejects or defers it.",
+	"Read repo documents or mapped sources only when the ledger says they unlock a decision, prevent rework, or reduce risk.",
+	"Treat AGENTS.md candidate updates as guidance unless the ledger says they were written; candidate notes alone are not writes.",
 	"Treat transcript and tool history as evidence, not replay.",
-	"Do not redo completed discovery.",
-	"Continue the user's active task from the live working edge while preserving all constraints, decisions, and durable learnings captured in the continuation.",
+	"Do not redo completed discovery or revive retired facts.",
+	"Continue the user's active task from the live working edge while preserving all constraints, decisions, completion criteria, and durable learnings captured in the continuation ledger.",
 ].join(" ");
 
 export type ContinuationRequestMode = "steer" | "queue";

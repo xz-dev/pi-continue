@@ -33,7 +33,7 @@ Canonical surfaces:
 - command: `/continue`
 - optional runtime continuation document: `CONTINUE.md`
 - optional agent guide target: `AGENTS.md`
-- history artifact version: `pi-continue-artifacts/v2`
+- history artifact version: `pi-continue-artifacts/v3`
 - compaction detail kind: `pi-continue/v2`
 
 Only the canonical surfaces above are package contract surfaces.
@@ -118,39 +118,73 @@ Top-level command aliases are absent.
 
 ## Runtime continuation prompt
 
-The runtime continuation prompt is extension-owned copy sent after successful compaction. It tells Pi to use the new compaction summary as primary context, orient from the structured task/state/decision/context-map/working-edge/validation/risk/anti-rework/durable-learning fields, treat transcript/tool history as evidence rather than replay material, treat AGENTS.md candidate updates as guidance unless the summary says they were written, and continue the active user task from the live working edge.
+The runtime continuation prompt is extension-owned copy sent after successful compaction. It tells Pi to use the new compaction summary as the primary Continuation Ledger, orient from the structured task, initiative charter, definition of done, recency ledger, current plan, progress trail, state, decisions, context map, working edge, validation, risks, dormant context, retired context, anti-rework, durable learnings, durable promotions, and agent-guide update notes, honor recency/supersession resolutions before older plan state, treat transcript/tool history as evidence rather than replay material, resolve non-`none` durable promotions through normal repo work before further mutation, treat AGENTS.md candidate updates as guidance unless the summary says they were written, and continue the active user task from the live working edge.
 
 This prompt is separate from the summarization prompt assets because it drives the next agent turn rather than shaping the compaction artifacts.
 
 ## Structured history artifact
 
-The history pass returns one strict JSON object:
+The history pass returns one strict JSON object. This is a Pi-native Continuation Ledger, not Codex's Markdown Initiative Ledger, but it carries the same conservation ideas in provider-portable JSON.
 
 ```json
 {
-  "version": "pi-continue-artifacts/v2",
+  "version": "pi-continue-artifacts/v3",
   "brief": {
     "task": "...",
+    "initiativeCharter": [],
+    "definitionOfDone": [],
+    "recencyLedger": [{
+      "status": "active|amended|superseded|stale|confirmed|unknown",
+      "subject": "...",
+      "evidence": "...",
+      "resolution": "..."
+    }],
+    "currentPlan": [],
+    "progress": [],
     "state": [],
     "decisions": [],
     "contextMap": [{ "source": "...", "relevance": "...", "use": "..." }],
     "workingEdge": [],
     "validation": [],
     "risks": [],
+    "dormantContext": [],
+    "retiredContext": [],
     "antiRework": [],
     "durableLearnings": [],
+    "durablePromotions": [{
+      "status": "apply|reject|defer|already-covered|none",
+      "targetSurface": "...",
+      "proposal": "...",
+      "evidence": "...",
+      "durability": "...",
+      "risk": "...",
+      "nextAction": "..."
+    }],
     "agentGuideUpdates": []
   },
   "document": {
     "task": "...",
+    "initiativeCharter": [],
+    "definitionOfDone": [],
+    "recencyLedger": [{
+      "status": "active|amended|superseded|stale|confirmed|unknown",
+      "subject": "...",
+      "evidence": "...",
+      "resolution": "..."
+    }],
+    "currentPlan": [],
+    "progress": [],
     "state": [],
     "decisions": [],
     "contextMap": [],
     "workingEdge": [],
     "validation": [],
     "risks": [],
+    "dormantContext": [],
+    "retiredContext": [],
     "antiRework": [],
     "durableLearnings": [],
+    "durablePromotions": [],
     "agentGuideUpdates": []
   },
   "agentGuideMarkdown": null,
@@ -160,17 +194,19 @@ The history pass returns one strict JSON object:
 
 Runtime validation requires:
 
-- `version` equal to `pi-continue-artifacts/v2`
+- `version` equal to `pi-continue-artifacts/v3`
 - `brief` and `document` objects with every required structured field
 - non-empty `task` strings
-- arrays for state, decisions, contextMap, workingEdge, validation, risks, antiRework, durableLearnings, and agentGuideUpdates
+- arrays for initiativeCharter, definitionOfDone, recencyLedger, currentPlan, progress, state, decisions, contextMap, workingEdge, validation, risks, dormantContext, retiredContext, antiRework, durableLearnings, durablePromotions, and agentGuideUpdates
+- at least one `recencyLedger` entry with status `active`, `amended`, `superseded`, `stale`, `confirmed`, or `unknown`, plus non-empty `subject`, `evidence`, and `resolution`
 - `contextMap` entries with non-empty `source`, `relevance`, and `use`
+- `durablePromotions` entries with status `apply`, `reject`, `defer`, `already-covered`, or `none`, plus non-empty `targetSurface`, `proposal`, `evidence`, `durability`, `risk`, and `nextAction`
 - `agentGuideMarkdown` as either non-empty string or `null`
 - `agentGuideChangeReason` as a non-empty string
 
 Malformed or incomplete history output falls back to deterministic synthesis or aborts according to `fallbackMode`.
 
-The split-prefix pass remains a simple tagged block because it is a narrow prefix note, not a multi-artifact contract:
+The split-prefix pass remains a simple tagged block because it is a narrow prefix note, not a multi-artifact contract. It may carry newer request or supersession facts for the history pass to resolve into `recencyLedger`:
 
 ```text
 <split-prefix>...</split-prefix>
@@ -191,12 +227,20 @@ Default summaries do not render file path registries. File operations are availa
 
 Generated continuation artifacts use structured fields instead of mandatory read-now/do-now headings. The key behavioral fields are:
 
+- `initiativeCharter`: durable purpose, problem, user value, strategy, non-goals, and must-not-forget context
+- `definitionOfDone`: completion criteria and blockers to declaring done
+- `recencyLedger`: mandatory explicit active/amended/superseded/stale/confirmed/unknown resolution for request, plan, validation, and working-edge conflicts, especially when newer user requests supersede older await-direction state
+- `currentPlan` and `progress`: the plan of record and milestone trail that prevent context collapse into a shallow next step
 - `contextMap`: curated exact sources/resources with why each matters and how to use it
 - `workingEdge`: commands, edits, checks, sequencing constraints, or decision points needed to continue
+- `validation`: pass/fail/deferred/stale proof with exact commands and freshness when known
+- `dormantContext`: inactive but important facts plus their reactivation trigger; inactive is not obsolete
+- `retiredContext`: obsolete facts retired with reason, evidence, and replacement when they could affect future behavior
 - `durableLearnings`: reusable user feedback, friction, corrected habits, and best-practice rules that remain valuable beyond the immediate subtask
+- `durablePromotions`: durable changes to resolve outside compaction in canonical docs; non-`none` statuses are proposals for normal repo work, not proof of writes
 - `agentGuideUpdates`: candidate durable AGENTS.md changes or reasons no guide change is warranted; candidate notes do not write the guide without a full `agentGuideMarkdown` replacement
 
-There is no numeric cap in the prompt or code. The synthesizer preserves details only when they change the next agent's action, validation, safety, context routing, durable guide update, blocker handling, dirty-state handling, approval boundary, or repeated explicit user requirement.
+There is no numeric cap in the prompt or code. The synthesizer preserves details only when they change the next agent's action, validation, safety, context routing, recency/supersession handling, durable promotion, durable guide update, blocker handling, dirty-state handling, approval boundary, dormant-state handling, retirement of obsolete facts, or repeated explicit user requirement.
 
 Terminal transcript and tool history are noisy evidence, not content to replay.
 
@@ -230,6 +274,7 @@ Sync behavior:
 - default `agentGuideSyncMode` is `"off"`
 - `"always"` writes `agentGuideMarkdown` to the configured guide path only when the modeled artifact provides a full replacement
 - `agentGuideUpdates` are continuation notes only; they never write the guide by themselves
+- `durablePromotions` are normal-work resolution proposals for canonical docs; they never prove a file write by themselves
 - compaction details persist the agent-guide write status (`sync-off`, `no-replacement`, or `replacement-pending`) and the modeled change reason for operator observability
 - writes are normalized and skipped when content is unchanged
 - writes happen only after successful extension-owned compaction

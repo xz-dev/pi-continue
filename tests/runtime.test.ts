@@ -54,10 +54,14 @@ const trigger = {
 	lastUsageIndex: 3,
 };
 
-test("continuation prompt prioritizes structured continuation routing", () => {
-	assert.match(CONTINUATION_PROMPT, /Use the compaction summary as the primary continuation context/);
-	assert.match(CONTINUATION_PROMPT, /task, current state, decisions, context map, working edge, validation, risks, anti-rework, durable learnings/);
-	assert.match(CONTINUATION_PROMPT, /Read repo documents or mapped sources only when the summary says they unlock a decision/);
+test("continuation prompt prioritizes structured continuation ledger routing", () => {
+	assert.match(CONTINUATION_PROMPT, /Use the compaction summary as the primary continuation ledger/);
+	assert.match(CONTINUATION_PROMPT, /initiative charter, definition of done, recency ledger, current plan, progress trail/);
+	assert.match(CONTINUATION_PROMPT, /Honor the recency ledger first/);
+	assert.match(CONTINUATION_PROMPT, /newer active user requests and supersession resolutions override older plan/);
+	assert.match(CONTINUATION_PROMPT, /dormant context, retired context, anti-rework, durable learnings, durable promotions/);
+	assert.match(CONTINUATION_PROMPT, /Resolve every non-none durable promotion/);
+	assert.match(CONTINUATION_PROMPT, /Read repo documents or mapped sources only when the ledger says they unlock a decision/);
 	assert.match(CONTINUATION_PROMPT, /Treat AGENTS\.md candidate updates as guidance/);
 	assert.match(CONTINUATION_PROMPT, /Treat transcript and tool history as evidence, not replay/);
 	assert.doesNotMatch(CONTINUATION_PROMPT, /Read Before Acting/);

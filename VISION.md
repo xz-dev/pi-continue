@@ -18,7 +18,7 @@ Long tool-heavy runs can grow context between normal auto-compaction checkpoints
 - Use Pi's native compaction pipeline and session format.
 - Act only at safe mid-run checkpoints after complete tool-result batches.
 - Never interrupt running tools or incomplete assistant/tool-result pairs.
-- Make continuation actionable through structured task, state, decisions, context-map, working-edge, validation, risk, anti-rework, durable-learning, and agent-guide-update fields.
+- Make continuation actionable through a structured Continuation Ledger: task, initiative charter, definition of done, recency ledger, current plan, progress trail, state, decisions, context map, working edge, validation, risks, dormant context, retired context, anti-rework, durable learnings, durable promotions, and agent-guide updates.
 - Trust model judgment for curated reading routes; do not impose arbitrary numeric caps in prompts or code.
 - Treat transcript, tool output, file lists, and logs as evidence, not material to replay.
 - Preserve durable user feedback and repeated operational learning instead of dropping it because a subtask ended.
@@ -32,9 +32,9 @@ Long tool-heavy runs can grow context between normal auto-compaction checkpoints
 - Pi avoids sending another over-threshold provider request when an extension-visible safe checkpoint exists.
 - The next turn continues the user's active task without redoing completed discovery.
 - Native compaction checkpoints that would keep everything and summarize nothing are adjusted before continuation synthesis.
-- Continuation summaries are evidence-gated, structured, and immediately actionable.
+- Continuation summaries are evidence-gated reducer ledgers, structured, and immediately actionable.
 - Read routes are high-signal and justified by action/risk, not capped by arbitrary counts or expanded from raw file activity.
-- Durable learnings appear in continuation artifacts, and reusable operating-rule updates can be promoted to the configured agent guide when explicitly enabled.
+- Active request recency, superseded plans, durable learnings, dormant-but-important context, retired facts, and durable promotions appear in continuation artifacts, and reusable operating-rule updates can be promoted to the configured agent guide when explicitly enabled.
 - Operators can discover continuation actions from exact `/continue`, add optional focus through a separate prompt, and still rely on typed shortcuts with autocomplete.
 - Operators can inspect config, prompt provenance, and the exact prompt payloads used for continuation.
 - Public docs, examples, prompt assets, tests, and package metadata describe one coherent product contract.

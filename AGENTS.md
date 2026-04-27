@@ -29,11 +29,12 @@ Keep all surfaces aligned to these invariants:
 - Mid-run guard acts only after complete assistant/tool-result batches.
 - Never interrupt running tools or incomplete assistant/tool-result pairs.
 - Use Pi's threshold owner: `contextTokens > model.contextWindow - compaction.reserveTokens`.
-- Continuation artifacts must use the structured `pi-continue-artifacts/v2` fields: task, state, decisions, contextMap, workingEdge, validation, risks, antiRework, durableLearnings, and agentGuideUpdates.
-- Do not preserve mandatory read-now/do-now heading constraints. Use `contextMap` for justified source routing and `workingEdge` for execution continuity.
+- Continuation artifacts must use the structured `pi-continue-artifacts/v3` Continuation Ledger fields: task, initiativeCharter, definitionOfDone, recencyLedger, currentPlan, progress, state, decisions, contextMap, workingEdge, validation, risks, dormantContext, retiredContext, antiRework, durableLearnings, durablePromotions, and agentGuideUpdates. `recencyLedger` must have at least one entry.
+- Do not preserve mandatory read-now/do-now heading constraints. Use `contextMap` for justified source routing, `workingEdge` for execution continuity, `recencyLedger` for active-request/supersession resolution, and the initiative-spine fields for durable purpose, plan, completion criteria, dormant context, and retired facts.
 - Do not impose numeric read-route caps in prompts or code; ask for high-signal justified curation instead.
 - Transcript, tool output, file lists, and logs are evidence, not replay material.
-- Durable learnings and repeated user feedback should survive compaction when they still govern future action.
+- The continuation ledger is a reducer, not a chronological summary; reconcile older durable state with newer evidence instead of stacking summary layers.
+- Durable learnings, durable promotions, dormant-but-important context, and repeated user feedback should survive compaction when they still govern future action.
 - Prompt behavior is intentionally customizable through system/user prompt assets.
 - `/continue` UX must prefer discoverable UI and autocomplete over memorized subcommands: exact `/continue` opens the compact action palette when UI-capable, while typed subcommands remain shortcuts.
 - AGENTS.md refinement is a configurable side effect and must stay off by default.
@@ -52,11 +53,12 @@ Prefer:
 - "custom system/user prompt assets"
 - "native Pi compaction"
 - "structured continuation artifacts"
-- "context map", "working edge", "durable learnings", and "agent guide updates"
+- "Continuation Ledger"
+- "initiative charter", "definition of done", "recency ledger", "current plan", "context map", "working edge", "dormant context", "retired context", "durable promotions", "durable learnings", and "agent guide updates"
 
 Avoid leading with jargon such as "unsafe model call" or burying the product value under hook names. Hook names belong in architecture/runtime sections, not the opening pitch.
 
-README should stay friendly, concise, and high-signal. Do not omit the core features: mid-run continuation, native compaction, same-session resume, `/continue`, customizable prompts, structured artifacts, and optional repo-document sync.
+README should stay friendly, concise, and high-signal. Do not omit the core features: mid-run continuation, native compaction, same-session resume, `/continue`, customizable prompts, Continuation Ledger artifacts, durable promotions, and optional repo-document sync.
 
 ## Runtime boundaries
 
@@ -89,11 +91,13 @@ Do not patch or edit Pi vendor code.
 - `src/pi-settings.ts` reads effective Pi compaction settings.
 - `src/mid-run-guard.ts` owns guard eligibility and threshold decisions.
 - `src/runtime.ts` owns `/continue` action modes, compaction lifecycle state, continuation prompt dispatch, duplicate/failure guards.
-- `src/commands.ts` owns `/continue status`, `/continue settings`, `/continue reset`, and `/continue preview` operator flows.
-- `src/model.ts` resolves summarizer model/reasoning and runs prompt passes.
+- `src/commands.ts` owns `/continue settings`, `/continue reset`, and `/continue preview` operator flows plus status command orchestration.
+- `src/status.ts` owns `/continue status` rendering, prompt provenance, compaction threshold display, and document-write semantics.
+- `src/model-settings.ts` owns import-light summarizer model resolution and token-budget math.
+- `src/model.ts` owns reasoning resolution and prompt-pass execution through the Pi AI adapter.
 - `src/assets.ts` owns prompt override precedence.
 - `src/prompt.ts` compiles runtime prompt payloads.
-- `src/blocks.ts` parses the strict `pi-continue-artifacts/v2` JSON artifact and split-prefix block.
+- `src/blocks.ts` parses the strict `pi-continue-artifacts/v3` Continuation Ledger JSON artifact and split-prefix block.
 - `src/compaction-preparation.ts` owns package-level repair of native no-op compaction preparations that would summarize nothing while keeping the whole branch.
 - `src/compose.ts` renders the persisted compaction summary.
 - `src/details.ts` owns `pi-continue/v2` compaction details, including agent-guide write status and change reason.
@@ -107,13 +111,14 @@ Prompt assets are public product surface. When changing them:
 
 - Keep the Evidence Gate and structured continuation field semantics intact.
 - Preserve the strict JSON history artifact contract: `version`, `brief`, `document`, `agentGuideMarkdown`, and `agentGuideChangeReason`.
+- Preserve Continuation Ledger reducer semantics: initiative charter, definition of done, recency/supersession resolution, current plan, progress trail, dormant context, retired context, validation freshness, anti-rework, and durable promotions.
 - Preserve split-prefix behavior for compactions that cut inside a turn.
 - Do not emit raw standalone XML/HTML tag lines in Markdown prompt assets; `tests/assets.test.ts` forbids them.
 - Keep prompts concise, direct, outcome-first, and grounded.
 - Do not ask the model to invent progress, validation, file contents, root cause, or AGENTS.md writes.
 - Do not add numeric read-route caps. Ask for justified curation based on rework/risk/action value.
 - Remember that operators can override both system and user prompt assets through global/project prompt roots.
-- Keep `agentGuideUpdates` as candidate notes and `agentGuideMarkdown` as the only modeled write payload.
+- Keep `durablePromotions` as normal-work resolution proposals, `agentGuideUpdates` as candidate notes, and `agentGuideMarkdown` as the only modeled guide-write payload.
 
 ## Config and local state
 
@@ -168,7 +173,12 @@ git diff --check
 git status -sb
 git add -A
 git commit -m "..."
-npm version patch
+```
+
+If `package.json` still needs a version bump, run `npm version <major|minor|patch|x.y.z>` after the change commit so npm creates the version commit and tag. If `package.json` is already at the intended release version, do not run `npm version`; create the matching tag after the commit instead:
+
+```bash
+git tag "v$(node -p 'require("./package.json").version')"
 npm publish
 git push origin main --follow-tags
 ```

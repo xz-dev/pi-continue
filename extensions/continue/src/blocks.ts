@@ -1,6 +1,23 @@
 import type { ParsedHistoryArtifacts } from "./types.ts";
 
-const HISTORY_ARTIFACT_VERSION = "pi-continue-artifacts/v2";
+const HISTORY_ARTIFACT_VERSION = "pi-continue-artifacts/v3";
+
+const DURABLE_PROMOTION_STATUSES = new Set<string>([
+	"apply",
+	"reject",
+	"defer",
+	"already-covered",
+	"none",
+]);
+
+const RECENCY_LEDGER_STATUSES = new Set<string>([
+	"active",
+	"amended",
+	"superseded",
+	"stale",
+	"confirmed",
+	"unknown",
+]);
 
 interface ContextMapEntry {
 	source: string;
@@ -8,16 +25,41 @@ interface ContextMapEntry {
 	use: string;
 }
 
+interface DurablePromotion {
+	status: string;
+	targetSurface: string;
+	proposal: string;
+	evidence: string;
+	durability: string;
+	risk: string;
+	nextAction: string;
+}
+
+interface RecencyLedgerEntry {
+	status: string;
+	subject: string;
+	evidence: string;
+	resolution: string;
+}
+
 interface StructuredContinuation {
 	task: string;
+	initiativeCharter: string[];
+	definitionOfDone: string[];
+	recencyLedger: RecencyLedgerEntry[];
+	currentPlan: string[];
+	progress: string[];
 	state: string[];
 	decisions: string[];
 	contextMap: ContextMapEntry[];
 	workingEdge: string[];
 	validation: string[];
 	risks: string[];
+	dormantContext: string[];
+	retiredContext: string[];
 	antiRework: string[];
 	durableLearnings: string[];
+	durablePromotions: DurablePromotion[];
 	agentGuideUpdates: string[];
 }
 
@@ -64,31 +106,84 @@ function parseContextMap(value: unknown): ContextMapEntry[] | undefined {
 	return result;
 }
 
+function parseDurablePromotions(value: unknown): DurablePromotion[] | undefined {
+	if (!Array.isArray(value)) return undefined;
+	const result: DurablePromotion[] = [];
+	for (const entry of value) {
+		if (!isRecord(entry)) return undefined;
+		const status = nonEmptyString(entry.status);
+		const targetSurface = nonEmptyString(entry.targetSurface);
+		const proposal = nonEmptyString(entry.proposal);
+		const evidence = nonEmptyString(entry.evidence);
+		const durability = nonEmptyString(entry.durability);
+		const risk = nonEmptyString(entry.risk);
+		const nextAction = nonEmptyString(entry.nextAction);
+		if (!status || !DURABLE_PROMOTION_STATUSES.has(status) || !targetSurface || !proposal || !evidence || !durability || !risk || !nextAction) {
+			return undefined;
+		}
+		result.push({ status, targetSurface, proposal, evidence, durability, risk, nextAction });
+	}
+	return result;
+}
+
+function parseRecencyLedger(value: unknown): RecencyLedgerEntry[] | undefined {
+	if (!Array.isArray(value)) return undefined;
+	const result: RecencyLedgerEntry[] = [];
+	for (const entry of value) {
+		if (!isRecord(entry)) return undefined;
+		const status = nonEmptyString(entry.status);
+		const subject = nonEmptyString(entry.subject);
+		const evidence = nonEmptyString(entry.evidence);
+		const resolution = nonEmptyString(entry.resolution);
+		if (!status || !RECENCY_LEDGER_STATUSES.has(status) || !subject || !evidence || !resolution) {
+			return undefined;
+		}
+		result.push({ status, subject, evidence, resolution });
+	}
+	return result.length > 0 ? result : undefined;
+}
+
 function parseStructuredContinuation(value: unknown): StructuredContinuation | undefined {
 	if (!isRecord(value)) return undefined;
 	const task = nonEmptyString(value.task);
+	const initiativeCharter = stringList(value.initiativeCharter);
+	const definitionOfDone = stringList(value.definitionOfDone);
+	const recencyLedger = parseRecencyLedger(value.recencyLedger);
+	const currentPlan = stringList(value.currentPlan);
+	const progress = stringList(value.progress);
 	const state = stringList(value.state);
 	const decisions = stringList(value.decisions);
 	const contextMap = parseContextMap(value.contextMap);
 	const workingEdge = stringList(value.workingEdge);
 	const validation = stringList(value.validation);
 	const risks = stringList(value.risks);
+	const dormantContext = stringList(value.dormantContext);
+	const retiredContext = stringList(value.retiredContext);
 	const antiRework = stringList(value.antiRework);
 	const durableLearnings = stringList(value.durableLearnings);
+	const durablePromotions = parseDurablePromotions(value.durablePromotions);
 	const agentGuideUpdates = stringList(value.agentGuideUpdates);
-	if (!task || !state || !decisions || !contextMap || !workingEdge || !validation || !risks || !antiRework || !durableLearnings || !agentGuideUpdates) {
+	if (!task || !initiativeCharter || !definitionOfDone || !recencyLedger || !currentPlan || !progress || !state || !decisions || !contextMap || !workingEdge || !validation || !risks || !dormantContext || !retiredContext || !antiRework || !durableLearnings || !durablePromotions || !agentGuideUpdates) {
 		return undefined;
 	}
 	return {
 		task,
+		initiativeCharter,
+		definitionOfDone,
+		recencyLedger,
+		currentPlan,
+		progress,
 		state,
 		decisions,
 		contextMap,
 		workingEdge,
 		validation,
 		risks,
+		dormantContext,
+		retiredContext,
 		antiRework,
 		durableLearnings,
+		durablePromotions,
 		agentGuideUpdates,
 	};
 }
@@ -106,18 +201,42 @@ function renderContextMap(values: ContextMapEntry[]): string | undefined {
 	].join("\n");
 }
 
+function renderDurablePromotions(values: DurablePromotion[]): string | undefined {
+	if (values.length === 0) return undefined;
+	return [
+		`## Durable Promotions`,
+		...values.map((entry) => `- ${entry.status}: ${entry.targetSurface} — ${entry.proposal}; evidence: ${entry.evidence}; durability: ${entry.durability}; risk: ${entry.risk}; next: ${entry.nextAction}`),
+	].join("\n");
+}
+
+function renderRecencyLedger(values: RecencyLedgerEntry[]): string | undefined {
+	if (values.length === 0) return undefined;
+	return [
+		`## Recency And Supersession`,
+		...values.map((entry) => `- ${entry.status}: ${entry.subject} — evidence: ${entry.evidence}; resolution: ${entry.resolution}`),
+	].join("\n");
+}
+
 function renderStructuredContinuation(value: StructuredContinuation, title: string | undefined): string {
 	const sections = [
 		title,
 		`## Task\n${value.task}`,
+		renderStringSection("Initiative Charter", value.initiativeCharter),
+		renderStringSection("Definition Of Done", value.definitionOfDone),
+		renderRecencyLedger(value.recencyLedger),
+		renderStringSection("Current Plan", value.currentPlan),
+		renderStringSection("Progress And Milestone Trail", value.progress),
 		renderStringSection("Current State", value.state),
 		renderStringSection("Decisions and Constraints", value.decisions),
 		renderContextMap(value.contextMap),
 		renderStringSection("Working Edge", value.workingEdge),
 		renderStringSection("Validation", value.validation),
 		renderStringSection("Risks", value.risks),
+		renderStringSection("Dormant But Important", value.dormantContext),
+		renderStringSection("Retired Or Obsolete", value.retiredContext),
 		renderStringSection("Anti-Rework", value.antiRework),
 		renderStringSection("Durable Learnings", value.durableLearnings),
+		renderDurablePromotions(value.durablePromotions),
 		renderStringSection("Agent Guide Updates", value.agentGuideUpdates),
 	].filter((section): section is string => section !== undefined && section.length > 0);
 	return sections.join("\n\n");

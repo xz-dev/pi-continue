@@ -1,11 +1,11 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { loadHistoryPromptAssets, loadSplitPromptAssets } from "./assets.ts";
 import { DEFAULT_CONTINUE_CONFIG, loadContinuationConfig, loadScopeConfig, resetContinuationConfig, saveContinuationConfig } from "./config.ts";
-import { resolveTokenBudget, resolveSummarizerModel } from "./model.ts";
 import { readEffectivePiCompactionSettings } from "./pi-settings.ts";
 import { loadPiInternals } from "./pi-internals.ts";
 import { compileHistoryPrompt, compileSplitPrompt, renderPromptPreview } from "./prompt.ts";
 import { resolveProjectContext } from "./project.ts";
+import { renderStatus } from "./status.ts";
 import { commandHasUi } from "./ui.ts";
 import type { ConfigScope, ContinuationConfig, PreviewPayload } from "./types.ts";
 
@@ -23,12 +23,6 @@ async function requireUi(ctx: ExtensionCommandContext): Promise<boolean> {
 	return commandHasUi(ctx);
 }
 
-function describeModel(config: ContinuationConfig, ctx: ExtensionCommandContext): string {
-	const resolved = resolveSummarizerModel(ctx, config);
-	if (!resolved) return `unresolved (${config.summarizerModel})`;
-	return `${resolved.provider}/${resolved.id}`;
-}
-
 function buildFileSnapshot(fileOps: { read: Set<string>; written: Set<string>; edited: Set<string> }): {
 	readFiles: string[];
 	modifiedFiles: string[];
@@ -40,14 +34,6 @@ function buildFileSnapshot(fileOps: { read: Set<string>; written: Set<string>; e
 		readFiles: [...reads].sort((left, right) => left.localeCompare(right)),
 		modifiedFiles: [...modified].sort((left, right) => left.localeCompare(right)),
 	};
-}
-
-function renderSharedCompactionThreshold(ctx: ExtensionCommandContext, reserveTokens: number): string {
-	const contextWindow = ctx.model?.contextWindow;
-	if (!contextWindow || !Number.isFinite(contextWindow) || contextWindow <= reserveTokens) return "unavailable";
-	const thresholdTokens = contextWindow - reserveTokens;
-	const thresholdPercent = (thresholdTokens / contextWindow) * 100;
-	return `${thresholdTokens.toLocaleString()} tokens (${thresholdPercent.toFixed(1)}% of ${contextWindow.toLocaleString()})`;
 }
 
 async function buildPromptPreviewPayload(
@@ -98,61 +84,6 @@ async function buildPromptPreviewPayload(
 		scenario,
 		isSplitTurn: preparation.isSplitTurn,
 	};
-}
-
-function renderStatus(
-	ctx: ExtensionCommandContext,
-	config: ContinuationConfig,
-	projectRoot: string,
-	continuationDocPath: string,
-	agentGuidePath: string,
-	payload: PreviewPayload | undefined,
-): string {
-	const piCompactionSettings = readEffectivePiCompactionSettings(projectRoot);
-	const modelDescription = describeModel(config, ctx);
-	const historyBudget = resolveTokenBudget(piCompactionSettings.reserveTokens, config.historyMaxTokens, "history");
-	const splitBudget = resolveTokenBudget(piCompactionSettings.reserveTokens, config.splitPrefixMaxTokens, "split");
-	const lines = [
-		`# Continuation Status`,
-		``,
-		`## Effective Config`,
-		`- Enabled: ${config.enabled ? "yes" : "no"}`,
-		`- Model: ${config.summarizerModel} -> ${modelDescription}`,
-		`- Reasoning: ${config.reasoning}`,
-		`- History tokens: ${config.historyMaxTokens ?? `pi-default (${historyBudget})`}`,
-		`- Split tokens: ${config.splitPrefixMaxTokens ?? `pi-default (${splitBudget})`}`,
-		`- Continuation doc: ${continuationDocPath}`,
-		`- Continuation sync: ${config.continuationDocSyncMode}`,
-		`- Agent guide: ${agentGuidePath}`,
-		`- Agent guide sync: ${config.agentGuideSyncMode}`,
-		`- Agent guide writes: ${config.agentGuideSyncMode === "always" ? "full replacement only" : "off"}`,
-		`- Mid-run guard: ${config.midRunGuardEnabled ? "yes" : "no"}`,
-		`- Append compaction metadata: ${config.appendCompactionMetadata ? "yes" : "no"}`,
-		`- Append file tags: ${config.appendFileTags ? "yes" : "no"}`,
-		`- Prompt override policy: ${config.promptOverridePolicy}`,
-		`- Fallback mode: ${config.fallbackMode}`,
-		``,
-		`## Pi Core Compaction`,
-		`- Enabled: ${piCompactionSettings.enabled ? "yes" : "no"}`,
-		`- Reserve tokens: ${piCompactionSettings.reserveTokens}`,
-		`- Trigger: ${renderSharedCompactionThreshold(ctx, piCompactionSettings.reserveTokens)}`,
-		`- Keep recent: ${piCompactionSettings.keepRecentTokens}`,
-		``,
-		`## Write Semantics`,
-		`- Continuation doc sync writes the modeled document artifact when set to always.`,
-		`- Agent guide sync writes only when the model emits a full agentGuideMarkdown replacement; candidate notes alone do not modify AGENTS.md.`,
-		``,
-		`## Project`,
-		`- Root: ${projectRoot}`,
-		payload ? `- Scenario: ${payload.scenario}` : `- Scenario: unavailable`,
-		payload ? `- Split now: ${payload.isSplitTurn ? "yes" : "no"}` : `- Split now: unavailable`,
-		payload ? `- History system: ${payload.history.sources.system}` : undefined,
-		payload ? `- History base: ${payload.history.sources.baseUser}` : undefined,
-		payload ? `- History scenario: ${payload.history.sources.scenarioUser}` : undefined,
-		payload?.split ? `- Split system: ${payload.split.sources.system}` : undefined,
-		payload?.split ? `- Split scenario: ${payload.split.sources.scenarioUser}` : undefined,
-	].filter((line): line is string => line !== undefined);
-	return `${lines.join("\n")}\n`;
 }
 
 async function showText(ctx: ExtensionCommandContext, title: string, content: string): Promise<void> {
