@@ -71,4 +71,6 @@ test("package metadata and package contents align with the public contract", () 
 		"extensions/",
 	]);
 	assert.deepEqual(packageJson.pi.extensions, ["./extensions/continue/index.ts"]);
+	assert.equal(packageJson.pi.image, "https://raw.githubusercontent.com/Tiziano-AI/pi-continue/v0.4.3/assets/gallery/pi-continue-gallery.webp");
+	assert.equal(existsSync("assets/gallery/pi-continue-gallery.webp"), true);
 });

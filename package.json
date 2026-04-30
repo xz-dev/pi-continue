@@ -42,6 +42,7 @@
   "pi": {
     "extensions": [
       "./extensions/continue/index.ts"
-    ]
+    ],
+    "image": "https://raw.githubusercontent.com/Tiziano-AI/pi-continue/v0.4.3/assets/gallery/pi-continue-gallery.webp"
   }
 }
