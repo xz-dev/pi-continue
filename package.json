@@ -1,6 +1,6 @@
 {
   "name": "pi-continue",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "type": "module",
   "description": "Pi extension for same-session continuation when context fills mid-run, using native compaction and structured Continuation Ledger artifacts.",
   "keywords": [
