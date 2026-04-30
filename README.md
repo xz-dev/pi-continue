@@ -17,6 +17,7 @@ It is a narrow continuation layer around Pi's native compaction, not a replaceme
 - **Continuation Ledger:** turns noisy transcript and tool history into structured fields for task, plan, recency, context routing, validation, risks, durable learnings, durable promotions, and agent-guide notes.
 - **Discoverable command:** exact `/continue` opens an action palette in the TUI, while typed shortcuts and autocomplete remain available.
 - **Custom prompt assets:** system and user prompt assets can be overridden globally or per project without editing package source.
+- **Continuation aftercare:** `/continue status` calmly explains the latest continuation state, fallback use, prompt dispatch, and optional document-sync outcome.
 - **Optional repo docs:** continuation document and AGENTS.md sync are explicit opt-ins and are off by default.
 
 ## Canonical corpus
@@ -71,7 +72,7 @@ Continue
   Queue until idle    Wait, then compact
 Inspect
   Preview prompts     Show prompts; no compaction
-  Status              Show config and trigger
+  Status              Show aftercare, config, and trigger
 Configure
   Project settings
   Global settings
@@ -97,7 +98,7 @@ Shortcut behavior:
 - `steer [focus]`: compact now, aborting active Pi work if needed, then continue in this session.
 - `queue [focus]`: wait until Pi is idle, compact, then continue in this session.
 - `preview [focus]`: show the exact prompt payloads that would be used now.
-- `status`: show effective config, prompt sources, threshold, and write semantics.
+- `status`: show latest continuation aftercare, effective config, prompt sources, threshold, and write semantics.
 - `settings [project|global]`: edit scoped package settings in the TUI.
 - `reset [project|global]`: delete scoped package settings after confirmation.
 
@@ -119,6 +120,8 @@ Pi finishes an assistant/tool-result batch
 -> Pi saves the extension-owned continuation summary
 -> pi-continue sends the same-session continuation prompt
 ```
+
+Use `/continue status` after a continuation to see what happened: whether the guard or a manual command started it, whether native compaction completed, whether the Continuation Ledger parsed successfully or deterministic fallback was used, whether the same-session continuation prompt was sent, and whether optional document sync updated, skipped, or failed. The status view stores no transcript or document content and reports only the latest event from the current extension runtime.
 
 The trigger uses Pi core's threshold owner:
 

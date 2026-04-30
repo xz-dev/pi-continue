@@ -68,6 +68,7 @@ export async function runMidRunGuard(
 	ctx: ExtensionContext,
 	runtime: ContinuationRuntimeState,
 	messages: unknown[],
+	onContinuationFailed?: (eventId: string) => void,
 ): Promise<void> {
 	if (!shouldEvaluateMidRunContext(messages) || !ctx.model || runtime.compactionRunning) return;
 	const initialProjectContext = await resolveProjectContext(pi, ctx.cwd, DEFAULT_CONTINUE_CONFIG.continuationDocPath);
@@ -90,5 +91,6 @@ export async function runMidRunGuard(
 		abortActiveRun: true,
 		continueAfterComplete: true,
 		sendContinuation: (prompt) => pi.sendUserMessage(prompt),
+		onContinuationFailed,
 	});
 }

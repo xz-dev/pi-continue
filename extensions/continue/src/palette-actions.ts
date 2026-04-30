@@ -53,7 +53,7 @@ export const PALETTE_ACTIONS: PaletteAction[] = [
 		id: "status",
 		section: "Inspect",
 		label: "Status",
-		desc: "Show config and trigger.",
+		desc: "Show aftercare, config, and trigger.",
 		effect: "Opens a read-only status document.",
 	},
 	{

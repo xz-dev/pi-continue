@@ -1,5 +1,13 @@
 import type { ExtensionCommandContext, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import type { MidRunGuardTrigger } from "./types.ts";
+import {
+	beginContinuationEvent,
+	finishContinuationEvent,
+	isActiveRunningContinuationEvent,
+	recordBlockedContinuationEvent,
+	markContinuationPromptSent,
+	sanitizeEventReason,
+} from "./continuation-event.ts";
+import type { ContinuationEventSource, ContinuationEventStore, ContinuationLatestEvent, MidRunGuardTrigger } from "./types.ts";
 
 export const CONTINUE_STATUS_KEY = "pi-continue";
 export const CONTINUATION_PROMPT = [
@@ -16,9 +24,9 @@ export const CONTINUATION_PROMPT = [
 ].join(" ");
 
 export type ContinuationRequestMode = "steer" | "queue";
-export type ContinuationRequestSource = "command-steer" | "command-queue" | "mid-run-guard";
+export type ContinuationRequestSource = ContinuationEventSource;
 
-export interface ContinuationRuntimeState {
+export interface ContinuationRuntimeState extends ContinuationEventStore {
 	compactionRunning: boolean;
 	guardFailureKey: string | undefined;
 }
@@ -35,6 +43,7 @@ export interface StartContinuationCompactionOptions {
 	abortActiveRun: boolean;
 	continueAfterComplete: boolean;
 	sendContinuation: (prompt: string) => void;
+	onContinuationFailed?: (eventId: string) => void;
 }
 
 const MODE_TOKENS = new Set<string>(["steer", "queue"]);
@@ -70,7 +79,15 @@ export function createContinuationRuntimeState(): ContinuationRuntimeState {
 	return {
 		compactionRunning: false,
 		guardFailureKey: undefined,
+		latestEvent: undefined,
+		activeEventId: undefined,
+		nextEventSequence: 0,
 	};
+}
+
+/** Return the runtime-local latest event rendered by /continue status. */
+export function getLatestContinuationEvent(runtime: ContinuationRuntimeState): ContinuationLatestEvent | undefined {
+	return runtime.latestEvent;
 }
 
 export function describeGuardTrigger(trigger: MidRunGuardTrigger): string {
@@ -114,9 +131,8 @@ function setStatus(ctx: ExtensionContext, value: string | undefined): void {
 	ctx.ui.setStatus(CONTINUE_STATUS_KEY, value);
 }
 
-function sendContinuationPrompt(ctx: ExtensionContext, label: string, sendContinuation: (prompt: string) => void): void {
+function sendContinuationPrompt(sendContinuation: (prompt: string) => void): void {
 	sendContinuation(CONTINUATION_PROMPT);
-	notify(ctx, `${label}: continuation prompt sent.`, "info");
 }
 
 /** Start the package-owned compaction pipeline once, with visible lifecycle settlement. */
@@ -133,11 +149,23 @@ export function startContinuationCompaction(
 	const guardKey = options.trigger ? buildGuardFailureKey(options.trigger) : undefined;
 	if (options.source === "mid-run-guard" && guardKey && runtime.guardFailureKey === guardKey) {
 		ctx.abort();
+		recordBlockedContinuationEvent(
+			runtime,
+			options.source,
+			options.trigger,
+			"Mid-run continuation guard blocked a repeated over-threshold retry after the previous compaction failed.",
+		);
 		notify(ctx, "Mid-run continuation guard is still blocking an over-threshold request after a failed compaction.", "error");
 		setStatus(ctx, "continuation guard blocked retry after failure");
 		return false;
 	}
 	runtime.compactionRunning = true;
+	const event = beginContinuationEvent(
+		runtime,
+		options.source,
+		options.trigger,
+		options.continueAfterComplete ? "pending" : "not-requested",
+	);
 	if (options.abortActiveRun) ctx.abort();
 	const label = sourceLabel(options.source);
 	const triggerText = options.trigger ? ` (${describeGuardTrigger(options.trigger)})` : "";
@@ -147,25 +175,55 @@ export function startContinuationCompaction(
 		options.instructions,
 		options.trigger ? buildGuardInstructions(options.trigger) : undefined,
 	]);
-	ctx.compact({
-		customInstructions,
-		onComplete: () => {
-			runtime.compactionRunning = false;
-			runtime.guardFailureKey = undefined;
-			if (options.continueAfterComplete) {
-				setStatus(ctx, `${label}: sending continuation`);
-				sendContinuationPrompt(ctx, label, options.sendContinuation);
-			}
-			setStatus(ctx, undefined);
-			notify(ctx, `${label}: continuation compaction completed.`, "info");
-		},
-		onError: (error) => {
-			runtime.compactionRunning = false;
-			if (guardKey) runtime.guardFailureKey = guardKey;
-			setStatus(ctx, `${label}: failed`);
-			notify(ctx, `${label}: continuation compaction failed: ${error.message}`, "error");
-		},
-	});
+	try {
+		ctx.compact({
+			customInstructions,
+			onComplete: () => {
+				if (!isActiveRunningContinuationEvent(runtime, event.id)) return;
+				runtime.compactionRunning = false;
+				runtime.guardFailureKey = undefined;
+				if (options.continueAfterComplete) {
+					setStatus(ctx, `${label}: sending continuation`);
+					try {
+						sendContinuationPrompt(options.sendContinuation);
+						markContinuationPromptSent(runtime, event.id);
+						notify(ctx, `${label}: continuation prompt sent.`, "info");
+					} catch (error) {
+						const message = error instanceof Error ? error.message : String(error);
+						const safeMessage = sanitizeEventReason(message);
+						options.onContinuationFailed?.(event.id);
+						finishContinuationEvent(runtime, event.id, "failed", safeMessage);
+						setStatus(ctx, `${label}: failed`);
+						notify(ctx, `${label}: continuation prompt failed: ${safeMessage}`, "error");
+						return;
+					}
+				}
+				finishContinuationEvent(runtime, event.id, "completed", undefined);
+				setStatus(ctx, undefined);
+				notify(ctx, `${label}: continuation compaction completed.`, "info");
+			},
+			onError: (error) => {
+				if (!isActiveRunningContinuationEvent(runtime, event.id)) return;
+				runtime.compactionRunning = false;
+				if (guardKey) runtime.guardFailureKey = guardKey;
+				const safeMessage = sanitizeEventReason(error.message);
+				options.onContinuationFailed?.(event.id);
+				finishContinuationEvent(runtime, event.id, "failed", safeMessage);
+				setStatus(ctx, `${label}: failed`);
+				notify(ctx, `${label}: continuation compaction failed: ${safeMessage}`, "error");
+			},
+		});
+	} catch (error) {
+		runtime.compactionRunning = false;
+		if (guardKey) runtime.guardFailureKey = guardKey;
+		const message = error instanceof Error ? error.message : String(error);
+		const safeMessage = sanitizeEventReason(message);
+		options.onContinuationFailed?.(event.id);
+		finishContinuationEvent(runtime, event.id, "failed", safeMessage);
+		setStatus(ctx, `${label}: failed`);
+		notify(ctx, `${label}: continuation compaction failed: ${safeMessage}`, "error");
+		return false;
+	}
 	return true;
 }
 
@@ -175,6 +233,7 @@ export async function runContinuationCommand(
 	runtime: ContinuationRuntimeState,
 	args: string | undefined,
 	sendContinuation: (prompt: string) => void,
+	onContinuationFailed?: (eventId: string) => void,
 ): Promise<void> {
 	const request = parseContinuationRequest(args);
 	if (request.mode === "queue") {
@@ -187,6 +246,7 @@ export async function runContinuationCommand(
 			abortActiveRun: false,
 			continueAfterComplete: true,
 			sendContinuation,
+			onContinuationFailed,
 		});
 		return;
 	}
@@ -197,5 +257,6 @@ export async function runContinuationCommand(
 		abortActiveRun: !ctx.isIdle(),
 		continueAfterComplete: true,
 		sendContinuation,
+		onContinuationFailed,
 	});
 }

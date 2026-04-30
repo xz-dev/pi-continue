@@ -93,9 +93,14 @@ test("startContinuationCompaction aborts active runs and sends continuation on c
 	assert.equal(started, true);
 	assert.equal(owner.aborts, 1);
 	assert.equal(runtime.compactionRunning, true);
+	assert.equal(runtime.latestEvent?.source, "command-steer");
+	assert.equal(runtime.latestEvent?.status, "running");
+	assert.equal(runtime.latestEvent?.artifactStatus, "pending");
 	assert.equal(owner.compactOptions.customInstructions, "preserve blockers");
 	owner.compactOptions.onComplete({});
 	assert.equal(runtime.compactionRunning, false);
+	assert.equal(runtime.latestEvent?.status, "completed");
+	assert.equal(runtime.latestEvent?.promptStatus, "sent");
 	assert.deepEqual(continuations, [CONTINUATION_PROMPT]);
 });
 
@@ -113,8 +118,10 @@ test("failed guard records a failure key and blocks identical retries", () => {
 		sendContinuation: (prompt) => continuations.push(prompt),
 	});
 	assert.equal(started, true);
-	owner.compactOptions.onError(new Error("failed"));
+	owner.compactOptions.onError(new Error("Provider failed sk-secret-token"));
 	assert.equal(runtime.compactionRunning, false);
+	assert.equal(runtime.latestEvent?.status, "failed");
+	assert.equal(runtime.latestEvent?.failureReason, "Summarizer provider failed; check model, authentication, or context settings.");
 	assert.equal(continuations.length, 0);
 	const retry = startContinuationCompaction(ctx, runtime, {
 		source: "mid-run-guard",
@@ -126,6 +133,71 @@ test("failed guard records a failure key and blocks identical retries", () => {
 	});
 	assert.equal(retry, false);
 	assert.equal(owner.aborts, 2);
+	assert.equal(runtime.latestEvent?.status, "blocked");
+	assert.equal(runtime.latestEvent?.failureReason, "Repeated over-threshold retry was blocked after a failed compaction.");
+});
+
+test("prompt dispatch failure settles the latest event", () => {
+	const owner = createContext(true);
+	const ctx = bindContext(owner);
+	const runtime = createContinuationRuntimeState();
+	const started = startContinuationCompaction(ctx, runtime, {
+		source: "command-steer",
+		instructions: undefined,
+		trigger: undefined,
+		abortActiveRun: false,
+		continueAfterComplete: true,
+		sendContinuation: () => {
+			throw new Error("OPENAI_API_KEY=secretvalue");
+		},
+	});
+	assert.equal(started, true);
+	owner.compactOptions.onComplete({});
+	assert.equal(runtime.compactionRunning, false);
+	assert.equal(runtime.activeEventId, undefined);
+	assert.equal(runtime.latestEvent?.status, "failed");
+	assert.equal(runtime.latestEvent?.promptStatus, "failed");
+	assert.equal(runtime.latestEvent?.failureReason, "Summarizer provider failed; check model, authentication, or context settings.");
+});
+
+test("duplicate terminal callbacks do not revive failed events", () => {
+	const owner = createContext(false);
+	const ctx = bindContext(owner);
+	const runtime = createContinuationRuntimeState();
+	const continuations = [];
+	const started = startContinuationCompaction(ctx, runtime, {
+		source: "mid-run-guard",
+		instructions: undefined,
+		trigger,
+		abortActiveRun: true,
+		continueAfterComplete: true,
+		sendContinuation: (prompt) => continuations.push(prompt),
+	});
+	assert.equal(started, true);
+	owner.compactOptions.onError(new Error("provider failed"));
+	owner.compactOptions.onComplete({});
+	assert.equal(runtime.latestEvent?.status, "failed");
+	assert.equal(runtime.latestEvent?.promptStatus, "failed");
+	assert.equal(continuations.length, 0);
+});
+
+test("compaction failures call the pending-write cleanup hook", () => {
+	const owner = createContext(true);
+	const ctx = bindContext(owner);
+	const runtime = createContinuationRuntimeState();
+	const failedEvents = [];
+	const started = startContinuationCompaction(ctx, runtime, {
+		source: "command-steer",
+		instructions: undefined,
+		trigger: undefined,
+		abortActiveRun: false,
+		continueAfterComplete: true,
+		sendContinuation: () => {},
+		onContinuationFailed: (eventId) => failedEvents.push(eventId),
+	});
+	assert.equal(started, true);
+	owner.compactOptions.onError(new Error("permission denied"));
+	assert.deepEqual(failedEvents, ["continue-1"]);
 });
 
 test("runContinuationCommand queue waits for idle before compaction", async () => {

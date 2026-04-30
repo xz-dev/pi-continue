@@ -96,6 +96,38 @@ export interface ParsedHistoryArtifacts {
 	agentGuideChangeReason: string;
 }
 
+export type ContinuationEventSource = "command-steer" | "command-queue" | "mid-run-guard";
+export type ContinuationEventStatus = "running" | "completed" | "failed" | "blocked";
+export type ContinuationArtifactStatus = "pending" | "modeled" | "fallback" | "aborted";
+export type ContinuationPromptStatus = "pending" | "sent" | "not-requested" | "failed";
+export type ContinuationSyncStatus = "off" | "pending" | "updated" | "unchanged" | "failed" | "no-replacement";
+export type ContinuationDocumentSyncTarget = "continuation-doc" | "agent-guide";
+
+export interface ContinuationDocumentSyncStatus {
+	continuationDoc: ContinuationSyncStatus;
+	agentGuide: ContinuationSyncStatus;
+}
+
+/** Latest operator-facing continuation lifecycle snapshot. It stores no transcript or document content. */
+export interface ContinuationLatestEvent {
+	id: string;
+	source: ContinuationEventSource;
+	status: ContinuationEventStatus;
+	startedAt: number;
+	completedAt?: number;
+	trigger?: MidRunGuardTrigger;
+	artifactStatus: ContinuationArtifactStatus;
+	promptStatus: ContinuationPromptStatus;
+	documentSync: ContinuationDocumentSyncStatus;
+	failureReason?: string;
+}
+
+export interface ContinuationEventStore {
+	latestEvent: ContinuationLatestEvent | undefined;
+	activeEventId: string | undefined;
+	nextEventSequence: number;
+}
+
 /** Persisted status for whether a compaction attempted an AGENTS.md replacement. */
 export type AgentGuideWriteStatus = "sync-off" | "no-replacement" | "replacement-pending";
 
@@ -114,6 +146,8 @@ export interface PendingDocumentWrite {
 	path: string;
 	content: string;
 	label: string;
+	target: ContinuationDocumentSyncTarget;
+	eventId: string | undefined;
 }
 
 export interface PiCompactionSettings {

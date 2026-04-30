@@ -36,7 +36,7 @@ Long tool-heavy runs can grow context between normal auto-compaction checkpoints
 - Read routes are high-signal and justified by action/risk, not capped by arbitrary counts or expanded from raw file activity.
 - Active request recency, superseded plans, durable learnings, dormant-but-important context, retired facts, and durable promotions appear in continuation artifacts, and reusable operating-rule updates can be promoted to the configured agent guide when explicitly enabled.
 - Operators can discover continuation actions from exact `/continue`, add optional focus through a separate prompt, and still rely on typed shortcuts with autocomplete.
-- Operators can inspect config, prompt provenance, and the exact prompt payloads used for continuation.
+- Operators can inspect config, prompt provenance, the exact prompt payloads used for continuation, and calm latest-event aftercare for what is happening or what just happened.
 - Public docs, examples, prompt assets, tests, and package metadata describe one coherent product contract.
 
 ## Non-goals

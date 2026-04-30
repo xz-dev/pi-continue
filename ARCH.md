@@ -10,6 +10,7 @@ The package owns:
 - a safe mid-run guard at Pi's awaited pre-provider `context` seam
 - package-shaped compaction summaries for continuation
 - the runtime prompt that resumes the same task after compaction
+- the latest-event aftercare snapshot rendered by `/continue status`
 - optional repo-local continuation document sync when explicitly enabled
 - optional repo-local agent guide refinement when explicitly enabled
 - customizable system/user prompt assets and prompt override precedence for continuation synthesis
@@ -93,7 +94,7 @@ In UI-capable sessions, exact `/continue` opens the package-owned action palette
 - `Continue now` for immediate native compaction and same-session resume.
 - `Queue until idle` for safe idle-point compaction.
 - `Preview prompts` for read-only prompt inspection.
-- `Status` for config, prompt provenance, and trigger state.
+- `Status` for latest continuation aftercare, config, prompt provenance, and trigger state.
 - `Project settings` and `Global settings`.
 - `Reset project` and `Reset global`.
 
@@ -115,6 +116,23 @@ In non-interactive modes, exact `/continue` preserves direct `steer` behavior in
 Successful compaction sends the runtime continuation prompt. Duplicate compaction starts are rejected while one is already running. If an automatic guard compaction fails for the same token estimate, the next identical guard event aborts the unsafe over-threshold replay and refuses to loop compaction repeatedly.
 
 Top-level command aliases are absent.
+
+## Continuation aftercare
+
+`/continue status` renders a calm latest-event snapshot before the lower-level config and prompt provenance sections. The snapshot is runtime-local and intentionally bounded: it is not a durable history log, transcript replay, telemetry feed, or provider debug dump.
+
+The runtime owns one latest event with:
+
+- source: automatic mid-run guard, `/continue steer`, or queued `/continue`
+- lifecycle status: running, completed, failed, or blocked
+- trigger estimate and threshold when the automatic guard started the event
+- safe checkpoint description for guard, queue, or manual compaction paths
+- artifact status: pending, modeled Continuation Ledger, deterministic fallback, or aborted synthesis
+- same-session continuation prompt status
+- optional continuation-document and agent-guide sync outcome
+- allowlisted failure copy when an operator action is useful
+
+Status rendering never includes transcript text, prompt payloads, document contents, read-file paths, modified-file paths, provider credentials, raw provider errors, or raw model output. Stale post-compaction document-sync updates must match the latest event id before they can update the visible snapshot.
 
 ## Runtime continuation prompt
 

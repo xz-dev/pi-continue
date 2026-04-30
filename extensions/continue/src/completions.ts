@@ -24,7 +24,7 @@ const TOP_LEVEL_COMMANDS: CommandCompletion[] = [
 	},
 	{
 		name: "status",
-		description: "Inspect effective config, prompt sources, and the Pi compaction trigger.",
+		description: "Inspect latest aftercare, effective config, prompt sources, and the Pi compaction trigger.",
 	},
 	{
 		name: "settings",

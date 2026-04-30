@@ -93,7 +93,8 @@ Do not patch or edit Pi vendor code.
 - `src/mid-run-guard.ts` owns guard eligibility and threshold decisions.
 - `src/runtime.ts` owns `/continue` action modes, compaction lifecycle state, continuation prompt dispatch, duplicate/failure guards.
 - `src/commands.ts` owns `/continue settings`, `/continue reset`, and `/continue preview` operator flows plus status command orchestration.
-- `src/status.ts` owns `/continue status` rendering, prompt provenance, compaction threshold display, and document-write semantics.
+- `src/status.ts` owns `/continue status` rendering, latest-event aftercare copy, prompt provenance, compaction threshold display, and document-write semantics.
+- `src/continuation-event.ts` owns the bounded latest continuation event snapshot, allowlisted failure copy, stale-event denial, and document-sync outcome updates.
 - `src/model-settings.ts` owns import-light summarizer model resolution and token-budget math.
 - `src/model.ts` owns reasoning resolution and prompt-pass execution through the Pi AI adapter.
 - `src/assets.ts` owns prompt override precedence.

@@ -8,6 +8,16 @@ import { getContinueArgumentCompletions } from "./src/completions.ts";
 import { normalizeCompactionPreparation, type FileOperations } from "./src/compaction-preparation.ts";
 import { composeCompactionSummary } from "./src/compose.ts";
 import { loadContinuationConfig } from "./src/config.ts";
+import {
+	abandonActiveContinuationEvent,
+	failPendingDocumentSyncForEvent,
+	getActiveContinuationEventId,
+	isLatestContinuationEvent,
+	markActiveContinuationArtifact,
+	planActiveDocumentSync,
+	recordDocumentSyncResult,
+	sanitizeEventReason,
+} from "./src/continuation-event.ts";
 import { buildContinuationDetails, parseContinuationDetails } from "./src/details.ts";
 import { buildHistoryFallback, buildSplitFallback } from "./src/fallback.ts";
 import { runMidRunGuard } from "./src/mid-run-guard.ts";
@@ -18,7 +28,7 @@ import { resolveProjectContext, writeRepoDocument } from "./src/project.ts";
 import { showContinuePalette } from "./src/palette.ts";
 import type { ContinuePaletteResult } from "./src/palette-actions.ts";
 import { createContinuationRuntimeState, runContinuationCommand, type ContinuationRuntimeState } from "./src/runtime.ts";
-import type { AgentGuideWriteStatus, DocumentSyncMode, PendingDocumentWrite } from "./src/types.ts";
+import type { AgentGuideWriteStatus, DocumentSyncMode, ParsedHistoryArtifacts, PendingDocumentWrite } from "./src/types.ts";
 
 async function runEnabledContinuationCommand(
 	pi: ExtensionAPI,
@@ -26,6 +36,7 @@ async function runEnabledContinuationCommand(
 	runtime: ContinuationRuntimeState,
 	args: string | undefined,
 	sendContinuation: (prompt: string) => void,
+	onContinuationFailed: (eventId: string) => void,
 ): Promise<void> {
 	const projectContext = await resolveProjectContext(pi, ctx.cwd, "CONTINUE.md");
 	const config = loadContinuationConfig(projectContext.projectRoot);
@@ -33,7 +44,7 @@ async function runEnabledContinuationCommand(
 		if (ctx.hasUI) ctx.ui.notify("pi-continue is disabled. Re-enable it with /continue settings.", "warning");
 		return;
 	}
-	await runContinuationCommand(ctx, runtime, args, sendContinuation);
+	await runContinuationCommand(ctx, runtime, args, sendContinuation, onContinuationFailed);
 }
 
 async function runContinuePaletteResult(
@@ -41,9 +52,10 @@ async function runContinuePaletteResult(
 	ctx: ExtensionCommandContext,
 	runtime: ContinuationRuntimeState,
 	result: ContinuePaletteResult,
+	onContinuationFailed: (eventId: string) => void,
 ): Promise<void> {
 	if (result.kind === "status") {
-		await runStatusCommand(pi, ctx);
+		await runStatusCommand(pi, ctx, runtime);
 		return;
 	}
 	if (result.kind === "settings") {
@@ -64,6 +76,7 @@ async function runContinuePaletteResult(
 		runtime,
 		buildContinuationCommandArgs(result.mode, result.instructions),
 		(prompt) => pi.sendUserMessage(prompt),
+		onContinuationFailed,
 	);
 }
 
@@ -85,13 +98,21 @@ function decideAgentGuideWriteStatus(syncMode: DocumentSyncMode, agentGuideMd: s
 	return agentGuideMd ? "replacement-pending" : "no-replacement";
 }
 
-function clipNotification(value: string, maxLength: number): string {
-	return value.length <= maxLength ? value : `${value.slice(0, maxLength - 3)}...`;
-}
-
 export default function (pi: ExtensionAPI) {
 	const pendingDocumentWrites = new Map<string, PendingDocumentWrite>();
 	const runtime = createContinuationRuntimeState();
+
+	function cleanupPendingDocumentWrites(eventId: string): void {
+		let removed = false;
+		for (const [syncId, pending] of pendingDocumentWrites) {
+			if (pending.eventId !== eventId) continue;
+			pendingDocumentWrites.delete(syncId);
+			removed = true;
+		}
+		if (removed) {
+			failPendingDocumentSyncForEvent(runtime, eventId, "Document sync did not complete before continuation failed.");
+		}
+	}
 
 	pi.registerCommand("continue", {
 		description: "Open continuation actions; shortcuts: steer, queue, preview, status, settings, reset",
@@ -99,12 +120,12 @@ export default function (pi: ExtensionAPI) {
 		handler: async (args, ctx) => {
 			if (shouldOpenContinuePalette(args, ctx.hasUI)) {
 				const result = await showContinuePalette(pi, ctx, runtime);
-				if (result) await runContinuePaletteResult(pi, ctx, runtime, result);
+				if (result) await runContinuePaletteResult(pi, ctx, runtime, result, (eventId) => cleanupPendingDocumentWrites(eventId));
 				return;
 			}
 			const subcommand = splitContinueSubcommand(args);
 			if (subcommand?.name === "status") {
-				await runStatusCommand(pi, ctx);
+				await runStatusCommand(pi, ctx, runtime);
 				return;
 			}
 			if (subcommand?.name === "settings") {
@@ -119,12 +140,19 @@ export default function (pi: ExtensionAPI) {
 				await runPreviewCommand(pi, ctx, subcommand.rest);
 				return;
 			}
-			await runEnabledContinuationCommand(pi, ctx, runtime, args, (prompt) => pi.sendUserMessage(prompt));
+			await runEnabledContinuationCommand(
+				pi,
+				ctx,
+				runtime,
+				args,
+				(prompt) => pi.sendUserMessage(prompt),
+				(eventId) => cleanupPendingDocumentWrites(eventId),
+			);
 		},
 	});
 
 	pi.on("context", async (event, ctx) => {
-		await runMidRunGuard(pi, ctx, runtime, event.messages);
+		await runMidRunGuard(pi, ctx, runtime, event.messages, (eventId) => cleanupPendingDocumentWrites(eventId));
 	});
 
 	pi.on("session_before_compact", async (event, ctx) => {
@@ -199,7 +227,7 @@ export default function (pi: ExtensionAPI) {
 				customInstructions: event.customInstructions,
 			}
 			: undefined;
-		let historyArtifacts;
+		let historyArtifacts: ParsedHistoryArtifacts;
 		let splitPrefix: string | undefined;
 		try {
 			const historyTask = runPromptPass(pi, ctx, config, historyPrompt, historyBudget, event.signal);
@@ -217,20 +245,26 @@ export default function (pi: ExtensionAPI) {
 					throw new Error("Split-prefix pass omitted <split-prefix>");
 				}
 			}
+			markActiveContinuationArtifact(runtime, "modeled", undefined);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			if (config.fallbackMode === "abort") {
+				markActiveContinuationArtifact(runtime, "aborted", message);
 				throw error instanceof Error ? error : new Error(message);
 			}
+			markActiveContinuationArtifact(runtime, "fallback", message);
 			historyArtifacts = buildHistoryFallback(historyInputForFallback, message);
 			splitPrefix = splitInputForFallback ? buildSplitFallback(splitInputForFallback, message) : undefined;
 		}
+		const activeEventId = getActiveContinuationEventId(runtime);
 		const documentSyncId = config.continuationDocSyncMode === "always" ? randomUUID() : undefined;
 		if (documentSyncId) {
 			pendingDocumentWrites.set(documentSyncId, {
 				path: resolvedProjectContext.continuationDocPath,
 				content: historyArtifacts.continuationMd,
 				label: "continuation document",
+				target: "continuation-doc",
+				eventId: activeEventId,
 			});
 		}
 		const agentGuideWriteStatus = decideAgentGuideWriteStatus(config.agentGuideSyncMode, historyArtifacts.agentGuideMd);
@@ -240,8 +274,21 @@ export default function (pi: ExtensionAPI) {
 				path: resolvedProjectContext.agentGuidePath,
 				content: historyArtifacts.agentGuideMd,
 				label: "agent guide",
+				target: "agent-guide",
+				eventId: activeEventId,
 			});
 		}
+		planActiveDocumentSync(
+			runtime,
+			{
+				continuationDoc: documentSyncId ? "pending" : "off",
+				agentGuide: agentGuideWriteStatus === "replacement-pending"
+					? "pending"
+					: agentGuideWriteStatus === "no-replacement"
+						? "no-replacement"
+						: "off",
+			},
+		);
 		const details = buildContinuationDetails(
 			preparation.fileOps,
 			documentSyncId,
@@ -271,22 +318,31 @@ export default function (pi: ExtensionAPI) {
 			const pending = pendingDocumentWrites.get(syncId);
 			pendingDocumentWrites.delete(syncId);
 			if (!pending) continue;
-			const result = await writeRepoDocument(pending.path, pending.content);
-			if (ctx.hasUI) {
-				ctx.ui.notify(
-					result === "updated"
-						? `Updated ${pending.label} at ${pending.path}`
-						: `${pending.label} unchanged at ${pending.path}`,
-					"info",
-				);
+			if (pending.eventId && !isLatestContinuationEvent(runtime, pending.eventId)) continue;
+			try {
+				const result = await writeRepoDocument(pending.path, pending.content);
+				recordDocumentSyncResult(runtime, pending.eventId, pending.target, result, undefined);
+				if (ctx.hasUI) {
+					ctx.ui.notify(
+						result === "updated"
+							? `Updated ${pending.label}.`
+							: `${pending.label} unchanged.`,
+						"info",
+					);
+				}
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				recordDocumentSyncResult(runtime, pending.eventId, pending.target, "failed", message);
+				if (ctx.hasUI) ctx.ui.notify(`${pending.label} sync failed: ${sanitizeEventReason(message)}`, "error");
 			}
 		}
 		if (ctx.hasUI && details.agentGuideWriteStatus === "no-replacement" && details.agentGuideChangeReason) {
-			ctx.ui.notify(`Agent guide unchanged: ${clipNotification(details.agentGuideChangeReason, 240)}`, "info");
+			ctx.ui.notify("Agent guide unchanged; no full replacement was produced.", "info");
 		}
 	});
 
 	pi.on("session_shutdown", async () => {
+		abandonActiveContinuationEvent(runtime, "Pi session shut down before continuation aftercare settled.");
 		pendingDocumentWrites.clear();
 		runtime.compactionRunning = false;
 		runtime.guardFailureKey = undefined;

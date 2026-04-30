@@ -5,6 +5,7 @@ import { readEffectivePiCompactionSettings } from "./pi-settings.ts";
 import { loadPiInternals } from "./pi-internals.ts";
 import { compileHistoryPrompt, compileSplitPrompt, renderPromptPreview } from "./prompt.ts";
 import { resolveProjectContext } from "./project.ts";
+import { getLatestContinuationEvent, type ContinuationRuntimeState } from "./runtime.ts";
 import { renderStatus } from "./status.ts";
 import { commandHasUi } from "./ui.ts";
 import type { ConfigScope, ContinuationConfig, PreviewPayload } from "./types.ts";
@@ -278,13 +279,25 @@ export async function runSettingsDialog(pi: ExtensionAPI, ctx: ExtensionCommandC
 }
 
 /** Show effective config and prompt provenance. */
-export async function runStatusCommand(pi: ExtensionAPI, ctx: ExtensionCommandContext): Promise<void> {
+export async function runStatusCommand(pi: ExtensionAPI, ctx: ExtensionCommandContext, runtime: ContinuationRuntimeState): Promise<void> {
 	if (!(await requireUi(ctx))) return;
 	const initialProjectContext = await resolveProjectContext(pi, ctx.cwd, DEFAULT_CONTINUE_CONFIG.continuationDocPath);
 	const config = loadContinuationConfig(initialProjectContext.projectRoot);
 	const projectContext = await resolveProjectContext(pi, ctx.cwd, config.continuationDocPath, config.agentGuidePath);
 	const payload = await buildPromptPreviewPayload(pi, ctx, undefined);
-	await showText(ctx, "continuation status", renderStatus(ctx, config, projectContext.projectRoot, projectContext.continuationDocPath, projectContext.agentGuidePath, payload));
+	await showText(
+		ctx,
+		"continuation status",
+		renderStatus(
+			ctx,
+			config,
+			projectContext.projectRoot,
+			projectContext.continuationDocPath,
+			projectContext.agentGuidePath,
+			payload,
+			getLatestContinuationEvent(runtime),
+		),
+	);
 }
 
 /** Reset scoped config. */
