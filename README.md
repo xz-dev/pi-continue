@@ -1,56 +1,37 @@
 # pi-continue
 
-`pi-continue` is a Pi extension for the moment when context fills up while Pi is still working.
+`pi-continue` is a Pi package that keeps long Pi runs moving when context fills up mid-run.
 
-Pi already has native compaction. The rough edge is timing: during a long tool-heavy run, Pi can collect enough tool output to exceed the compaction threshold before normal auto-compaction gets a turn. The next model request may fail with `context_length_exceeded`, waste a large request, retry awkwardly, or stop even though the task was going fine.
+Pi already has native compaction. The rough edge is timing: a tool-heavy task can collect enough output to cross the compaction threshold before Pi reaches its normal auto-compaction checkpoint. The next model request can fail, retry badly, or stop the run even though the work was progressing.
 
-This is the user-facing problem reported in Pi issues such as:
+`pi-continue` watches the safe checkpoint after a completed assistant/tool-result batch and before the next provider request. When the session is over Pi's own threshold, it aborts the unsafe request, runs Pi native compaction, writes a structured Continuation Ledger into the compaction summary, and sends a same-session continuation prompt so Pi resumes the active task.
 
-- [badlogic/pi-mono#2871](https://github.com/badlogic/pi-mono/issues/2871): auto-compaction is not checked mid-turn, so context can grow through long tool loops.
-- [badlogic/pi-mono#3609](https://github.com/badlogic/pi-mono/issues/3609): Pi can send requests above the compaction threshold, especially with smaller local-model windows.
+It is a narrow continuation layer around Pi's native compaction, not a replacement session format, memory system, context pruner, or vendor patch.
 
-`pi-continue` catches the safe checkpoint after a completed tool batch and before the next model request. If context is over Pi's threshold, it runs Pi's own compaction and then asks Pi to continue the same task from the new summary.
+## Why it is interesting
 
-It is not a replacement compactor. It is a continuation layer around Pi's native compaction.
-
-## Highlights
-
-- **Mid-run continuation:** detects a full context during a run, before the next provider request is sent.
-- **Native Pi compaction:** uses `ctx.compact()`, `session_before_compact`, and Pi's normal session format.
-- **Same-session resume:** sends a continuation prompt after compaction, so Pi keeps working in the current session.
-- **Discoverable `/continue`:** opens a compact TUI action palette, with typed shortcuts and autocomplete for power users.
-- **Custom prompts:** lets you override the system and user prompt assets without editing package source.
-- **Continuation Ledger artifacts:** asks the summarizer for a strict JSON reducer ledger, then validates it before writing anything.
-- **Model control:** inherits the current model/reasoning by default, or uses a pinned summarizer model.
-- **Optional repo documents:** can write a repo-local continuation document and AGENTS.md refinement when explicitly enabled.
+- **Mid-run continuation:** catches context pressure during long tool loops, before the next oversized provider request is sent.
+- **Same-session resume:** keeps the current Pi session and uses `pi.sendUserMessage()` after compaction instead of forking or switching sessions.
+- **Native compaction:** uses Pi's `ctx.compact()`, `session_before_compact`, and `session_compact` pipeline.
+- **Safe checkpointing:** acts only after complete assistant/tool-result batches; it never interrupts running tools or incomplete tool-call pairs.
+- **Continuation Ledger:** turns noisy transcript and tool history into structured fields for task, plan, recency, context routing, validation, risks, durable learnings, durable promotions, and agent-guide notes.
+- **Discoverable command:** exact `/continue` opens an action palette in the TUI, while typed shortcuts and autocomplete remain available.
+- **Custom prompt assets:** system and user prompt assets can be overridden globally or per project without editing package source.
+- **Optional repo docs:** continuation document and AGENTS.md sync are explicit opt-ins and are off by default.
 
 ## Canonical corpus
 
-- [`AGENTS.md`](AGENTS.md) — repo-local operating guide for coding agents.
-- [`VISION.md`](VISION.md) — product intent, user problem, principles, success criteria, and non-goals.
-- [`README.md`](README.md) — user/operator guide: install, commands, config, prompt customization, and boundaries.
-- [`ARCH.md`](ARCH.md) — architecture contract: Pi boundaries, guard semantics, config ownership, artifacts, and runtime flow.
-- [`examples/pi-continue.json`](examples/pi-continue.json) — full package config example.
-- [`examples/pi-settings-compaction-75pct-272k.json`](examples/pi-settings-compaction-75pct-272k.json) — Pi compaction-threshold example.
-- [`examples/continuation-output-shape.md`](examples/continuation-output-shape.md) — example continuation markdown shape.
-- [`assets/`](assets/) — default system/user prompt corpus and the files you can override.
+- [`README.md`](README.md): front door, install, command, config, operator behavior, boundaries.
+- [`VISION.md`](VISION.md): product promise, user problem, principles, success criteria, non-goals.
+- [`ARCH.md`](ARCH.md): precise architecture contract for Pi seams, guard semantics, artifacts, config ownership, and runtime flow.
+- [`AGENTS.md`](AGENTS.md): repo-local operating guide for coding agents.
+- [`assets/`](assets/): default system/user prompt corpus and override targets.
+- [`examples/pi-continue.json`](examples/pi-continue.json): full package config example.
+- [`examples/pi-settings-compaction-75pct-272k.json`](examples/pi-settings-compaction-75pct-272k.json): Pi compaction-threshold example.
+- [`examples/continuation-output-shape.md`](examples/continuation-output-shape.md): rendered Continuation Ledger shape.
+- [`tests/`](tests/): executable product and drift contract.
 
-`CONTINUE.md` is optional runtime output when continuation-document sync is enabled. It is local state, not part of the tracked package corpus.
-
-## How automatic continuation works
-
-```text
-Pi finishes an assistant/tool-result batch
--> pi-continue sees the completed tool results in the awaited context hook
--> estimated context is over Pi's compaction threshold
--> pi-continue aborts before the oversized request is sent
--> Pi prepares native compaction
--> pi-continue adjusts any checkpoint that would keep everything and summarize nothing
--> Pi saves the native compaction with pi-continue's structured summary
--> pi-continue sends a prompt telling Pi to continue from that summary
-```
-
-The guard only acts after Pi has complete tool results. It does not interrupt running tools or incomplete tool-call batches.
+`CONTINUE.md` is optional runtime output when continuation-document sync is enabled. It is local state, not tracked package corpus.
 
 ## Install
 
@@ -76,13 +57,13 @@ Pi packages run with your local user permissions. Review package source before i
 
 ## Command
 
-`pi-continue` exposes one slash command:
+The package registers one slash command:
 
 ```text
 /continue
 ```
 
-In the interactive TUI, exact `/continue` opens a compact action palette:
+In a UI-capable Pi session, exact `/continue` opens the action palette:
 
 ```text
 Continue
@@ -98,49 +79,82 @@ Configure
   Reset global
 ```
 
-Press `Enter` to run or open the selected action. For actions that accept steering text, press `f` to open a separate optional focus prompt, then leave it blank to continue normally or add a short note such as `finish validation before release`.
+Press `Enter` to run or open the selected action. For continuation actions, press `f` to add optional focus text such as `finish validation before release`.
 
-Typed shortcuts remain supported and autocompleted:
+Typed shortcuts are still supported and autocompleted:
 
 ```text
-/continue steer focus on the failing auth migration and exact next commands
-/continue queue preserve current file state and remaining validation steps
-/continue preview focus on validation and AGENTS.md candidate updates
+/continue steer [focus]
+/continue queue [focus]
+/continue preview [focus]
 /continue status
-/continue settings project
-/continue settings global
-/continue reset project
-/continue reset global
+/continue settings [project|global]
+/continue reset [project|global]
 ```
 
 Shortcut behavior:
 
-- `steer [focus]`: continue now; abort active work if needed, compact, then send the continuation prompt.
-- `queue [focus]`: wait for Pi to become idle, compact, then send the continuation prompt.
+- `steer [focus]`: compact now, aborting active Pi work if needed, then continue in this session.
+- `queue [focus]`: wait until Pi is idle, compact, then continue in this session.
 - `preview [focus]`: show the exact prompt payloads that would be used now.
-- `status`: show effective config, prompt sources, compaction threshold, and document-write semantics.
-- `settings [project|global]`: edit package settings in the TUI.
-- `reset [project|global]`: delete the selected config file after confirmation.
+- `status`: show effective config, prompt sources, threshold, and write semantics.
+- `settings [project|global]`: edit scoped package settings in the TUI.
+- `reset [project|global]`: delete scoped package settings after confirmation.
 
-In non-interactive modes, exact `/continue` keeps the safe direct behavior and runs `steer` instead of opening a palette, so RPC/automation never waits on an unavailable UI.
+In non-interactive modes, exact `/continue` keeps the safe direct behavior and runs `steer` instead of opening a palette, so automation never waits on an unavailable UI.
 
-Only `/continue` is registered. Use exact `/continue` for the palette or `/continue status`, `/continue settings`, `/continue reset`, and `/continue preview` as shortcuts.
+Only `/continue` is registered. There are no command aliases.
+
+## Automatic continuation
+
+Automatic mid-run continuation is enabled by default.
+
+```text
+Pi finishes an assistant/tool-result batch
+-> pi-continue sees the completed batch in Pi's awaited context hook
+-> estimated context is over Pi's compaction threshold
+-> pi-continue aborts before the oversized request is sent
+-> Pi prepares native compaction
+-> pi-continue repairs no-op native preparations when needed
+-> Pi saves the extension-owned continuation summary
+-> pi-continue sends the same-session continuation prompt
+```
+
+The trigger uses Pi core's threshold owner:
+
+```text
+estimated context tokens > model.contextWindow - compaction.reserveTokens
+```
+
+Configure that threshold in Pi settings, not in `pi-continue`:
+
+```json
+{
+  "compaction": {
+    "enabled": true,
+    "reserveTokens": 68000,
+    "keepRecentTokens": 20000
+  }
+}
+```
+
+`reserveTokens` and `keepRecentTokens` are absolute token counts. For a 272K context model, `reserveTokens: 68000` triggers near 75 percent usage. See [`examples/pi-settings-compaction-75pct-272k.json`](examples/pi-settings-compaction-75pct-272k.json).
 
 ## Configuration
 
-Global config:
+Global package config:
 
 ```text
 ~/.pi/agent/extensions/pi-continue.json
 ```
 
-Project config:
+Project package config:
 
 ```text
 <project-root>/.pi/extensions/pi-continue.json
 ```
 
-Default config:
+Default package config:
 
 ```json
 {
@@ -161,47 +175,23 @@ Default config:
 }
 ```
 
-Useful settings:
+Common settings:
 
+- `enabled`: disables all package behavior when false.
 - `midRunGuardEnabled`: enables the automatic mid-run guard.
-- `summarizerModel`: `"inherit"` or a pinned `"provider/model"` summarizer.
+- `summarizerModel`: `"inherit"` uses the active Pi model, or pin `"provider/model"` for summaries.
 - `reasoning`: `"inherit"`, `"off"`, `"minimal"`, `"low"`, `"medium"`, `"high"`, or `"xhigh"`.
-- `continuationDocPath`: repo-relative path for the optional continuation document.
-- `continuationDocSyncMode`: `"off"` by default; set `"always"` to write the continuation document after successful extension-owned compaction.
-- `agentGuidePath`: repo-relative path for the optional agent guide refinement target.
-- `agentGuideSyncMode`: `"off"` by default; set `"always"` to allow AGENTS.md writes only when the modeled artifact includes a full `agentGuideMarkdown` replacement.
+- `historyMaxTokens` and `splitPrefixMaxTokens`: optional summary-token overrides; `null` uses Pi-derived defaults.
+- `continuationDocSyncMode`: `"off"` by default; `"always"` writes the modeled continuation document after successful extension-owned compaction.
+- `agentGuideSyncMode`: `"off"` by default; `"always"` allows AGENTS.md writes only when the artifact includes a full `agentGuideMarkdown` replacement.
 - `promptOverridePolicy`: `"project-override"`, `"global-override"`, or `"package-default"`.
-- `fallbackMode`: `"deterministic-summary"` or `"abort"` when modeled summary synthesis fails.
+- `fallbackMode`: `"deterministic-summary"` or `"abort"` when modeled synthesis fails.
 
 Malformed JSON config fails loudly instead of silently falling back to defaults. Config and command names outside this contract are not read.
 
-AGENTS.md writes are off by default. Enable `agentGuideSyncMode: "always"` only when you want the model to be allowed to replace the configured guide after it identifies durable operating guidance, command corrections, or reusable repo rules. `agentGuideUpdates` are candidate notes in the continuation summary; they do not write the file by themselves. A write happens only when `agentGuideMarkdown` is non-null and contains the full replacement guide.
+## Prompt assets
 
-## Pi compaction threshold
-
-`pi-continue` uses the same threshold as Pi core:
-
-```text
-estimated context tokens > model.contextWindow - compaction.reserveTokens
-```
-
-Configure the shared threshold in Pi settings:
-
-```json
-{
-  "compaction": {
-    "enabled": true,
-    "reserveTokens": 68000,
-    "keepRecentTokens": 20000
-  }
-}
-```
-
-`reserveTokens` and `keepRecentTokens` are absolute token counts. For a 272K context model, `reserveTokens: 68000` triggers near 75% usage.
-
-## Prompt customization
-
-The continuation summary is shaped by prompt assets under `assets/`. You can override both system prompts and user prompts without editing package source.
+The continuation summary is shaped by Markdown prompt assets. Operators can override them without editing package source.
 
 Override roots:
 
@@ -222,123 +212,63 @@ assets/user/history_update.md
 assets/user/split_prefix.md
 ```
 
-`promptOverridePolicy` decides whether project overrides, global overrides, or package defaults win. `/continue preview` shows the exact prompt payloads and source paths that would be used if you compacted now.
+`promptOverridePolicy` decides whether project overrides, global overrides, or package defaults win. `/continue preview` shows the exact prompt payloads and source paths that would be used now.
 
-The default history prompts are provider-agnostic and optimized for current GPT-5-class behavior: outcome-first, explicit contract, concise evidence gate, reducer-style continuation ledger output, recency/supersession handling, durable-promotion handling, and no arbitrary reading-count cap.
+The default prompts are provider-agnostic and outcome-first. They ask for justified curation, not numeric source quotas.
 
-## Continuation output
+## Continuation Ledger
 
-The history pass returns one strict JSON artifact object. It is a Pi-native Continuation Ledger: a reducer that reconciles older durable state with newer evidence instead of stacking chronological summaries. The `recencyLedger` makes active request order and superseded plan state explicit so older `await direction` guidance cannot survive as the active plan when newer allowed work exists.
+The history pass returns one strict JSON artifact with version `pi-continue-artifacts/v3`.
 
-```json
-{
-  "version": "pi-continue-artifacts/v3",
-  "brief": {
-    "task": "...",
-    "initiativeCharter": [],
-    "definitionOfDone": [],
-    "recencyLedger": [{
-      "status": "active|amended|superseded|stale|confirmed|unknown",
-      "subject": "...",
-      "evidence": "...",
-      "resolution": "..."
-    }],
-    "currentPlan": [],
-    "progress": [],
-    "state": [],
-    "decisions": [],
-    "contextMap": [{ "source": "...", "relevance": "...", "use": "..." }],
-    "workingEdge": [],
-    "validation": [],
-    "risks": [],
-    "dormantContext": [],
-    "retiredContext": [],
-    "antiRework": [],
-    "durableLearnings": [],
-    "durablePromotions": [{
-      "status": "apply|reject|defer|already-covered|none",
-      "targetSurface": "...",
-      "proposal": "...",
-      "evidence": "...",
-      "durability": "...",
-      "risk": "...",
-      "nextAction": "..."
-    }],
-    "agentGuideUpdates": []
-  },
-  "document": {
-    "task": "...",
-    "initiativeCharter": [],
-    "definitionOfDone": [],
-    "recencyLedger": [{
-      "status": "active|amended|superseded|stale|confirmed|unknown",
-      "subject": "...",
-      "evidence": "...",
-      "resolution": "..."
-    }],
-    "currentPlan": [],
-    "progress": [],
-    "state": [],
-    "decisions": [],
-    "contextMap": [],
-    "workingEdge": [],
-    "validation": [],
-    "risks": [],
-    "dormantContext": [],
-    "retiredContext": [],
-    "antiRework": [],
-    "durableLearnings": [],
-    "durablePromotions": [],
-    "agentGuideUpdates": []
-  },
-  "agentGuideMarkdown": null,
-  "agentGuideChangeReason": "No durable guide change is warranted."
-}
+It contains:
+
+- `brief`: rendered into Pi's compaction summary inside the package-owned continuation block.
+- `document`: rendered as the optional repo-local continuation document when sync is enabled.
+- `agentGuideMarkdown`: a full guide replacement when guide sync is enabled and a durable guide write is warranted, otherwise `null`.
+- `agentGuideChangeReason`: the modeled reason for changing or not changing the guide.
+
+The ledger fields are the contract:
+
+```text
+task, initiativeCharter, definitionOfDone, recencyLedger,
+currentPlan, progress, state, decisions, contextMap,
+workingEdge, validation, risks, dormantContext,
+retiredContext, antiRework, durableLearnings,
+durablePromotions, agentGuideUpdates
 ```
 
-Runtime behavior:
+`recencyLedger` must have at least one entry. It resolves active, amended, superseded, stale, confirmed, or unknown request and plan conflicts before the next agent acts.
 
-- `brief` is rendered into Pi's compaction summary inside the package-owned continuation block.
-- `document` is rendered as full content for optional repo-local continuation document sync.
-- `agentGuideMarkdown` is the full content for optional agent-guide sync, or `null` when no guide replacement is warranted.
-- `agentGuideChangeReason` is a non-empty explanation of why the guide should or should not change.
-- `durablePromotions` can propose durable changes to canonical docs such as AGENTS.md, ARCH.md, PLAN.md, HANDOFF.md, README.md, skill docs, or user-approved VISION.md; these are normal-work resolution items, not compaction write claims.
-- `agentGuideUpdates` can name candidate guide changes even when `agentGuideMarkdown` is `null`; candidates are guidance, not writes.
+`contextMap` is the curated source route. `workingEdge` is the execution continuity map. `validation` records exact proof and freshness. `durablePromotions` are normal-work proposals for durable docs; they are not proof that a file was written. `agentGuideUpdates` are candidate notes; they do not write AGENTS.md by themselves.
 
-The structured fields define the continuation contract:
+See [`ARCH.md`](ARCH.md#structured-history-artifact) for the full JSON contract and [`examples/continuation-output-shape.md`](examples/continuation-output-shape.md) for rendered output.
 
-- `initiativeCharter`, `definitionOfDone`, `recencyLedger`, `currentPlan`, and `progress` preserve the durable purpose, completion criteria, active request/supersession resolution, plan of record, and milestone trail across repeated compactions.
-- `recencyLedger` must contain at least one entry and uses `active`, `amended`, `superseded`, `stale`, `confirmed`, or `unknown` to resolve request, plan, validation, or working-edge conflicts before the next agent acts.
-- `contextMap` is the curated source route: include sources only when they unlock a decision, prevent rework, or reduce risk.
-- `workingEdge` is the execution continuity map: commands, edits, checks, sequencing constraints, or decision points needed to continue.
-- `validation` records exact proof and freshness, including stale/deferred/failing checks.
-- `dormantContext` keeps inactive-but-important facts available; inactive is not obsolete.
-- `retiredContext` names obsolete facts with reason, evidence, and replacement when they could affect future behavior.
-- `durableLearnings` carries reusable user feedback, friction, corrected habits, and best-practice rules even when the immediate subtask is done.
-- `durablePromotions` uses `apply`, `reject`, `defer`, `already-covered`, or `none` to tell the next agent what durable doc work to resolve outside compaction.
-- `agentGuideUpdates` records candidate AGENTS.md refinements or why no guide update is warranted; only non-null `agentGuideMarkdown` can write the guide.
+## Optional repo documents
 
-There is no numeric cap for source routing in prompts or code. The contract asks for judgment, rationale, and action value rather than count targets.
+Default continuation document path:
 
-When guide sync is enabled and no full replacement is emitted, `pi-continue` leaves AGENTS.md unchanged and reports the modeled reason. The runtime continuation prompt tells the next turn to use the compaction summary as the primary Continuation Ledger, orient from the structured fields, honor recency/supersession resolutions before older plan state, resolve non-`none` durable promotions through normal repo work, avoid replaying completed discovery, treat AGENTS.md candidate updates as guidance unless written, and continue from the live working edge.
+```text
+<project-root>/CONTINUE.md
+```
 
-## What the summarizer sees
+Default agent guide path:
 
-Pi prepares compaction from the current session branch after aborting and waiting for the agent to become idle. `pi-continue` receives Pi's compaction preparation:
+```text
+<project-root>/AGENTS.md
+```
 
-- `messagesToSummarize`
-- optional `turnPrefixMessages` for split turns
-- `previousSummary`
-- `firstKeptEntryId`
-- `tokensBefore`
-- file-operation metadata
-- compaction settings
+Both write paths are repo-relative and are resolved against the project git root when available.
 
-`pi-continue` also supplies the configured continuation document path/content, configured agent guide path/content, custom instructions, and read/modified path evidence.
+Write semantics:
 
-Pi converts messages with `convertToLlm()` and serializes them with `serializeConversation()` inside conversation tags. Tool-call names and JSON arguments are included. Text tool results are included, but Pi's serializer truncates each serialized tool result to 2,000 characters with a truncation marker.
+- `continuationDocSyncMode: "off"` is the default.
+- `continuationDocSyncMode: "always"` writes the rendered `document` artifact after successful extension-owned compaction.
+- `agentGuideSyncMode: "off"` is the default.
+- `agentGuideSyncMode: "always"` writes only a full non-null `agentGuideMarkdown` replacement.
+- `agentGuideUpdates` and `durablePromotions` are guidance/proposal fields, not write claims.
+- Writes are normalized and skipped when content is unchanged.
 
-After compaction, Pi reconstructs context as the compaction summary followed by raw kept messages from `firstKeptEntryId` onward and any later messages.
+In this repository, `CONTINUE.md` is ignored local state. `AGENTS.md` is tracked package corpus, but automatic AGENTS.md writes remain off by default.
 
 ## Boundaries
 
@@ -350,25 +280,33 @@ After compaction, Pi reconstructs context as the compaction summary followed by 
 - interrupt running tools or incomplete tool-call batches
 - synthesize missing tool results
 - preserve partial in-flight model output as completed history
-- act as a memory system, context pruner, or general custom compaction framework
+- act as a memory system, context pruner, or general custom-compaction framework
 - register alternate command aliases
 - write `CONTINUE.md` or `AGENTS.md` unless the relevant sync mode is explicitly enabled
 
-`pi-continue` deliberately stays narrow: it combines the extension-visible mid-run checkpoint, Pi native compaction, and automatic same-session continuation without claiming to own broader memory or compaction behavior.
+The detailed runtime and Pi integration contract lives in [`ARCH.md`](ARCH.md).
 
-## Development
+## Development and release proof
+
+Canonical local checks:
 
 ```bash
-git clone https://github.com/Tiziano-AI/pi-continue.git
-cd pi-continue
 pnpm test
 jq empty examples/*.json package.json
 npm pack --dry-run --json
+git diff --check
+```
+
+For command-surface changes, also verify the command list when feasible:
+
+```bash
 printf '{"type":"get_commands"}\n' | pi --mode rpc --no-session --no-context-files
 ```
 
-Expected command surface:
+Expected extension command surface:
 
 ```text
 continue
 ```
+
+`npm pack --dry-run --json` should include `AGENTS.md`, `README.md`, `VISION.md`, `ARCH.md`, `LICENSE`, `assets/`, `examples/`, and `extensions/`. It should not include tests, `.pi/`, tarballs, or `CONTINUE.md`.

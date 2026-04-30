@@ -2,13 +2,16 @@
   "name": "pi-continue",
   "version": "0.4.0",
   "type": "module",
-  "description": "Resume long Pi runs in the same session when context fills mid-run, using native compaction and structured continuation.",
+  "description": "Pi extension for same-session continuation when context fills mid-run, using native compaction and structured Continuation Ledger artifacts.",
   "keywords": [
     "pi-package",
     "pi",
+    "pi-extension",
     "continue",
     "continuation",
-    "compaction"
+    "mid-run",
+    "compaction",
+    "continuation-ledger"
   ],
   "license": "MIT",
   "repository": {

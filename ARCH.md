@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`pi-continue` owns the extension-layer continuation path for long Pi runs that fill context mid-run.
+`pi-continue` owns the extension-layer continuation path for long Pi runs that fill context mid-run. `README.md` is the operator front door; this file is the precise runtime and artifact contract.
 
 The package owns:
 
@@ -40,7 +40,7 @@ Only the canonical surfaces above are package contract surfaces.
 
 ## Pi boundary
 
-Pi 0.70.2 supplies the required primitives:
+The installed Pi runtime verified for this contract is `@mariozechner/pi-coding-agent` 0.70.6. The required primitives are:
 
 - `context` handlers are awaited before provider payload conversion.
 - `ctx.abort()` aborts the active run.

@@ -66,7 +66,8 @@ Pi integration depends on Pi extension semantics. Re-read installed Pi docs/sour
 
 - `/opt/homebrew/lib/node_modules/@mariozechner/pi-coding-agent/docs/extensions.md`
 - `/opt/homebrew/lib/node_modules/@mariozechner/pi-coding-agent/docs/compaction.md`
-- `/opt/homebrew/lib/node_modules/@mariozechner/pi-coding-agent/docs/session.md`
+- `/opt/homebrew/lib/node_modules/@mariozechner/pi-coding-agent/docs/sessions.md`
+- `/opt/homebrew/lib/node_modules/@mariozechner/pi-coding-agent/docs/session-format.md`
 - installed runtime under `/opt/homebrew/lib/node_modules/@mariozechner/pi-coding-agent/dist/`
 
 Current documented boundary:
