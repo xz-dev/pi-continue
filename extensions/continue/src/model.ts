@@ -1,17 +1,21 @@
-import type { Model } from "@mariozechner/pi-ai";
+import type { Api, Model } from "@mariozechner/pi-ai";
 import { completeSimple } from "@mariozechner/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { resolveSummarizerModel } from "./model-settings.ts";
-import type { ContinuationConfig, ContinuationReasoning } from "./types.ts";
+import type { ContinuationConfig, ContinuationReasoning, PromptPassTelemetry } from "./types.ts";
 
 export { resolveSummarizerModel, resolveTokenBudget } from "./model-settings.ts";
+
+export interface PromptPassResult extends PromptPassTelemetry {
+	text: string;
+}
 
 function isSupportedReasoning(level: ContinuationReasoning): level is Exclude<ContinuationReasoning, "inherit"> {
 	return level !== "inherit";
 }
 
 /** Resolve the requested reasoning level with model capability checks. */
-export function resolveReasoningLevel(pi: ExtensionAPI, model: Model<unknown>, config: ContinuationConfig): string | undefined {
+export function resolveReasoningLevel(pi: ExtensionAPI, model: Model<Api>, config: ContinuationConfig): string | undefined {
 	if (!model.reasoning) return undefined;
 	if (config.reasoning === "inherit") {
 		const inherited = pi.getThinkingLevel();
@@ -28,7 +32,7 @@ export async function runPromptPass(
 	prompt: { systemPrompt: string; userPrompt: string },
 	maxTokens: number,
 	signal: AbortSignal,
-): Promise<string> {
+): Promise<PromptPassResult> {
 	const model = resolveSummarizerModel(ctx, config);
 	if (!model) {
 		throw new Error(`Unable to resolve summarizer model from setting ${config.summarizerModel}`);
@@ -38,6 +42,7 @@ export async function runPromptPass(
 		throw new Error(auth.error);
 	}
 	const reasoning = resolveReasoningLevel(pi, model, config);
+	let httpStatus: number | undefined;
 	const response = await completeSimple(
 		model,
 		{
@@ -57,20 +62,44 @@ export async function runPromptPass(
 					maxTokens,
 					reasoning,
 					signal,
+					onResponse: (providerResponse) => {
+						httpStatus = providerResponse.status;
+					},
 				}
 			: {
 					apiKey: auth.apiKey,
 					headers: auth.headers,
 					maxTokens,
 					signal,
+					onResponse: (providerResponse) => {
+						httpStatus = providerResponse.status;
+					},
 				},
 	);
 	if (response.stopReason === "error") {
 		throw new Error(response.errorMessage || "Unknown compaction synthesis error");
 	}
-	return response.content
+	if (response.stopReason === "aborted") {
+		throw new Error("Compaction synthesis was aborted");
+	}
+	const text = response.content
 		.filter((block): block is { type: "text"; text: string } => block.type === "text")
 		.map((block) => block.text)
 		.join("\n")
 		.trim();
+	return {
+		text,
+		requestedModel: `${model.provider}/${model.id}`,
+		responseModel: response.responseModel,
+		responseId: response.responseId,
+		usage: {
+			input: response.usage.input,
+			output: response.usage.output,
+			cacheRead: response.usage.cacheRead,
+			cacheWrite: response.usage.cacheWrite,
+			totalTokens: response.usage.totalTokens,
+			costTotal: response.usage.cost.total,
+		},
+		httpStatus,
+	};
 }

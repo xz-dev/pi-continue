@@ -7,6 +7,7 @@ import type {
 	ContinuationConfig,
 	DocumentSyncMode,
 	ContinuationReasoning,
+	LedgerDisplayMode,
 	PromptOverridePolicy,
 } from "./types.ts";
 import { resolveAgentDir } from "./agent-dir.ts";
@@ -27,6 +28,7 @@ const PROMPT_OVERRIDE_POLICIES = new Set<PromptOverridePolicy>([
 ]);
 const DOCUMENT_SYNC_MODES = new Set<DocumentSyncMode>(["always", "off"]);
 const FALLBACK_MODES = new Set<FallbackMode>(["deterministic-summary", "abort"]);
+const LEDGER_DISPLAY_MODES = new Set<LedgerDisplayMode>(["overlay", "off"]);
 const mutationQueues = new Map<string, Promise<void>>();
 
 async function withConfigMutationQueue(path: string, work: () => Promise<void>): Promise<void> {
@@ -55,6 +57,7 @@ export const DEFAULT_CONTINUE_CONFIG: ContinuationConfig = {
 	appendFileTags: false,
 	promptOverridePolicy: "project-override",
 	fallbackMode: "deterministic-summary",
+	ledgerDisplayMode: "overlay",
 };
 
 interface PartialContinuationConfig {
@@ -72,6 +75,7 @@ interface PartialContinuationConfig {
 	appendFileTags?: boolean;
 	promptOverridePolicy?: string;
 	fallbackMode?: string;
+	ledgerDisplayMode?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -112,6 +116,7 @@ function parsePartialConfig(value: unknown): PartialContinuationConfig {
 		appendFileTags: asBoolean(value.appendFileTags),
 		promptOverridePolicy: asString(value.promptOverridePolicy),
 		fallbackMode: asString(value.fallbackMode),
+		ledgerDisplayMode: asString(value.ledgerDisplayMode),
 	};
 }
 
@@ -152,6 +157,12 @@ function normalizeFallbackMode(value: string | undefined): FallbackMode {
 		: DEFAULT_CONTINUE_CONFIG.fallbackMode;
 }
 
+function normalizeLedgerDisplayMode(value: string | undefined): LedgerDisplayMode {
+	return value !== undefined && LEDGER_DISPLAY_MODES.has(value as LedgerDisplayMode)
+		? (value as LedgerDisplayMode)
+		: DEFAULT_CONTINUE_CONFIG.ledgerDisplayMode;
+}
+
 function normalizePath(value: string | undefined, fallback: string): string {
 	const trimmed = value?.trim();
 	return trimmed && trimmed.length > 0 ? trimmed : fallback;
@@ -184,6 +195,7 @@ function normalizeConfig(partial: PartialContinuationConfig): ContinuationConfig
 		appendFileTags: partial.appendFileTags ?? DEFAULT_CONTINUE_CONFIG.appendFileTags,
 		promptOverridePolicy: normalizePromptOverridePolicy(partial.promptOverridePolicy),
 		fallbackMode: normalizeFallbackMode(partial.fallbackMode),
+		ledgerDisplayMode: normalizeLedgerDisplayMode(partial.ledgerDisplayMode),
 	};
 }
 

@@ -3,8 +3,11 @@ import assert from "node:assert/strict";
 import {
 	CONTINUATION_PROMPT,
 	createContinuationRuntimeState,
+	failRunningAwaitingContinuationResume,
+	markAwaitingContinuationResumeStarted,
 	parseContinuationRequest,
 	runContinuationCommand,
+	settleAwaitingContinuationResumeFromAssistant,
 	startContinuationCompaction,
 } from "../extensions/continue/src/runtime.ts";
 
@@ -99,9 +102,228 @@ test("startContinuationCompaction aborts active runs and sends continuation on c
 	assert.equal(owner.compactOptions.customInstructions, "preserve blockers");
 	owner.compactOptions.onComplete({});
 	assert.equal(runtime.compactionRunning, false);
-	assert.equal(runtime.latestEvent?.status, "completed");
+	assert.equal(runtime.latestEvent?.status, "running");
 	assert.equal(runtime.latestEvent?.promptStatus, "sent");
+	assert.equal(runtime.latestEvent?.resume.status, "pending");
 	assert.deepEqual(continuations, [CONTINUATION_PROMPT]);
+	assert.equal(markAwaitingContinuationResumeStarted(runtime), "continue-1");
+	settleAwaitingContinuationResumeFromAssistant(runtime, {
+		role: "assistant",
+		provider: "openai",
+		model: "gpt-test",
+		content: [{ type: "text", text: "continuing" }],
+		usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+		stopReason: "stop",
+		timestamp: 0,
+	});
+	assert.equal(runtime.latestEvent?.status, "completed");
+	assert.equal(runtime.latestEvent?.resume.status, "completed");
+	assert.equal(runtime.activeEventId, undefined);
+});
+
+test("stale assistant message_end cannot settle resume before start proof", () => {
+	const owner = createContext(true);
+	const ctx = bindContext(owner);
+	const runtime = createContinuationRuntimeState();
+	const continuations = [];
+	const started = startContinuationCompaction(ctx, runtime, {
+		source: "command-steer",
+		instructions: undefined,
+		trigger: undefined,
+		abortActiveRun: false,
+		continueAfterComplete: true,
+		sendContinuation: (prompt) => continuations.push(prompt),
+	});
+	assert.equal(started, true);
+	owner.compactOptions.onComplete({});
+	const stale = settleAwaitingContinuationResumeFromAssistant(runtime, {
+		role: "assistant",
+		provider: "openai",
+		model: "gpt-test",
+		content: [{ type: "text", text: "stale" }],
+		usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+		stopReason: "stop",
+		timestamp: 0,
+	});
+	assert.equal(stale, undefined);
+	assert.equal(runtime.latestEvent?.status, "running");
+	assert.equal(runtime.latestEvent?.resume.status, "pending");
+	assert.equal(runtime.awaitingResumeEventId, "continue-1");
+});
+
+test("agent-end resume failure requires start proof", () => {
+	const owner = createContext(true);
+	const ctx = bindContext(owner);
+	const runtime = createContinuationRuntimeState();
+	const continuations = [];
+	const started = startContinuationCompaction(ctx, runtime, {
+		source: "command-steer",
+		instructions: undefined,
+		trigger: undefined,
+		abortActiveRun: false,
+		continueAfterComplete: true,
+		sendContinuation: (prompt) => continuations.push(prompt),
+	});
+	assert.equal(started, true);
+	owner.compactOptions.onComplete({});
+	assert.equal(failRunningAwaitingContinuationResume(runtime, "Continuation resume did not produce an assistant response."), undefined);
+	assert.equal(runtime.latestEvent?.status, "running");
+	assert.equal(markAwaitingContinuationResumeStarted(runtime), "continue-1");
+	const settlement = failRunningAwaitingContinuationResume(runtime, "Continuation resume did not produce an assistant response.");
+	assert.deepEqual(settlement, { eventId: "continue-1", status: "failed" });
+	assert.equal(runtime.latestEvent?.status, "failed");
+	assert.equal(runtime.latestEvent?.resume.status, "failed");
+	assert.equal(runtime.latestEvent?.resume.failureReason, "Continuation resume did not produce an assistant response.");
+	assert.equal(runtime.awaitingResumeEventId, undefined);
+});
+
+test("mid-run guard aborts over-threshold request while compaction is already running", () => {
+	const owner = createContext(true);
+	const ctx = bindContext(owner);
+	const runtime = createContinuationRuntimeState();
+	const continuations = [];
+	const first = startContinuationCompaction(ctx, runtime, {
+		source: "command-steer",
+		instructions: undefined,
+		trigger: undefined,
+		abortActiveRun: false,
+		continueAfterComplete: true,
+		sendContinuation: (prompt) => continuations.push(prompt),
+	});
+	assert.equal(first, true);
+	const guard = startContinuationCompaction(ctx, runtime, {
+		source: "mid-run-guard",
+		instructions: undefined,
+		trigger,
+		abortActiveRun: true,
+		continueAfterComplete: true,
+		sendContinuation: (prompt) => continuations.push(prompt),
+	});
+	assert.equal(guard, false);
+	assert.equal(owner.aborts, 1);
+	assert.equal(runtime.latestEvent?.id, "continue-1");
+	assert.equal(runtime.compactionRunning, true);
+	assert.equal(continuations.length, 0);
+});
+
+test("pending resume blocks new continuation without clobbering aftercare", () => {
+	const owner = createContext(true);
+	const ctx = bindContext(owner);
+	const runtime = createContinuationRuntimeState();
+	const continuations = [];
+	const first = startContinuationCompaction(ctx, runtime, {
+		source: "command-steer",
+		instructions: undefined,
+		trigger: undefined,
+		abortActiveRun: false,
+		continueAfterComplete: true,
+		sendContinuation: (prompt) => continuations.push(prompt),
+	});
+	assert.equal(first, true);
+	owner.compactOptions.onComplete({});
+	assert.equal(runtime.activeEventId, "continue-1");
+	assert.equal(runtime.awaitingResumeEventId, "continue-1");
+	const second = startContinuationCompaction(ctx, runtime, {
+		source: "command-steer",
+		instructions: undefined,
+		trigger: undefined,
+		abortActiveRun: true,
+		continueAfterComplete: true,
+		sendContinuation: (prompt) => continuations.push(prompt),
+	});
+	assert.equal(second, false);
+	assert.equal(owner.aborts, 0);
+	assert.equal(runtime.latestEvent?.id, "continue-1");
+	assert.equal(runtime.activeEventId, "continue-1");
+	assert.equal(runtime.awaitingResumeEventId, "continue-1");
+	assert.equal(continuations.length, 1);
+});
+
+test("mid-run guard aborts over-threshold request while preserving pending aftercare", () => {
+	const owner = createContext(true);
+	const ctx = bindContext(owner);
+	const runtime = createContinuationRuntimeState();
+	const continuations = [];
+	const first = startContinuationCompaction(ctx, runtime, {
+		source: "command-steer",
+		instructions: undefined,
+		trigger: undefined,
+		abortActiveRun: false,
+		continueAfterComplete: true,
+		sendContinuation: (prompt) => continuations.push(prompt),
+	});
+	assert.equal(first, true);
+	owner.compactOptions.onComplete({});
+	const guard = startContinuationCompaction(ctx, runtime, {
+		source: "mid-run-guard",
+		instructions: undefined,
+		trigger,
+		abortActiveRun: true,
+		continueAfterComplete: true,
+		sendContinuation: (prompt) => continuations.push(prompt),
+	});
+	assert.equal(guard, false);
+	assert.equal(owner.aborts, 1);
+	assert.equal(runtime.latestEvent?.id, "continue-1");
+	assert.equal(runtime.latestEvent?.status, "running");
+	assert.equal(runtime.latestEvent?.resume.status, "pending");
+	assert.equal(runtime.awaitingResumeEventId, "continue-1");
+	assert.equal(continuations.length, 1);
+});
+
+test("duplicate compaction terminal callbacks cannot double-send or fail pending resume", () => {
+	const owner = createContext(true);
+	const ctx = bindContext(owner);
+	const runtime = createContinuationRuntimeState();
+	const continuations = [];
+	const failedEvents = [];
+	const started = startContinuationCompaction(ctx, runtime, {
+		source: "command-steer",
+		instructions: undefined,
+		trigger: undefined,
+		abortActiveRun: false,
+		continueAfterComplete: true,
+		sendContinuation: (prompt) => continuations.push(prompt),
+		onContinuationFailed: (eventId) => failedEvents.push(eventId),
+	});
+	assert.equal(started, true);
+	owner.compactOptions.onComplete({});
+	owner.compactOptions.onComplete({});
+	owner.compactOptions.onError(new Error("provider failed"));
+	assert.deepEqual(continuations, [CONTINUATION_PROMPT]);
+	assert.deepEqual(failedEvents, []);
+	assert.equal(runtime.latestEvent?.status, "running");
+	assert.equal(runtime.latestEvent?.promptStatus, "sent");
+	assert.equal(runtime.latestEvent?.resume.status, "pending");
+	assert.equal(runtime.activeEventId, "continue-1");
+});
+
+test("resume start timeout settles prompt dispatch that never starts", async () => {
+	const owner = createContext(true);
+	const ctx = bindContext(owner);
+	const runtime = createContinuationRuntimeState();
+	const failedEvents = [];
+	const continuations = [];
+	const started = startContinuationCompaction(ctx, runtime, {
+		source: "command-steer",
+		instructions: undefined,
+		trigger: undefined,
+		abortActiveRun: false,
+		continueAfterComplete: true,
+		sendContinuation: (prompt) => continuations.push(prompt),
+		onContinuationFailed: (eventId) => failedEvents.push(eventId),
+		resumeStartTimeoutMs: 0,
+	});
+	assert.equal(started, true);
+	owner.compactOptions.onComplete({});
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	assert.deepEqual(continuations, [CONTINUATION_PROMPT]);
+	assert.deepEqual(failedEvents, ["continue-1"]);
+	assert.equal(runtime.latestEvent?.status, "failed");
+	assert.equal(runtime.latestEvent?.resume.status, "failed");
+	assert.equal(runtime.latestEvent?.failureReason, "Continuation prompt dispatch failed.");
+	assert.equal(runtime.activeEventId, undefined);
+	assert.equal(runtime.awaitingResumeEventId, undefined);
 });
 
 test("failed guard records a failure key and blocks identical retries", () => {

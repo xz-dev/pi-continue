@@ -10,6 +10,7 @@ export type ContinuationReasoning =
 export type PromptOverridePolicy = "package-default" | "global-override" | "project-override";
 export type DocumentSyncMode = "always" | "off";
 export type FallbackMode = "deterministic-summary" | "abort";
+export type LedgerDisplayMode = "overlay" | "off";
 export type ConfigScope = "global" | "project";
 export type HistoryScenario = "initial" | "update";
 
@@ -28,6 +29,7 @@ export interface ContinuationConfig {
 	appendFileTags: boolean;
 	promptOverridePolicy: PromptOverridePolicy;
 	fallbackMode: FallbackMode;
+	ledgerDisplayMode: LedgerDisplayMode;
 }
 
 export interface ResolvedProjectContext {
@@ -100,8 +102,43 @@ export type ContinuationEventSource = "command-steer" | "command-queue" | "mid-r
 export type ContinuationEventStatus = "running" | "completed" | "failed" | "blocked";
 export type ContinuationArtifactStatus = "pending" | "modeled" | "fallback" | "aborted";
 export type ContinuationPromptStatus = "pending" | "sent" | "not-requested" | "failed";
+export type ContinuationResumeStatus = "not-requested" | "pending" | "running" | "completed" | "failed" | "aborted";
 export type ContinuationSyncStatus = "off" | "pending" | "updated" | "unchanged" | "failed" | "no-replacement";
 export type ContinuationDocumentSyncTarget = "continuation-doc" | "agent-guide";
+
+export interface PromptPassUsageTelemetry {
+	input: number;
+	output: number;
+	cacheRead: number;
+	cacheWrite: number;
+	totalTokens: number;
+	costTotal: number;
+}
+
+export interface PromptPassTelemetry {
+	requestedModel: string;
+	responseModel?: string;
+	responseId?: string;
+	usage: PromptPassUsageTelemetry;
+	httpStatus?: number;
+}
+
+export interface ContinuationSynthesisTelemetry {
+	history?: PromptPassTelemetry;
+	split?: PromptPassTelemetry;
+	totalCost?: number;
+	totalTokens?: number;
+}
+
+export interface ContinuationResumeOutcome {
+	status: ContinuationResumeStatus;
+	startedAt?: number;
+	completedAt?: number;
+	stopReason?: string;
+	requestedModel?: string;
+	responseModel?: string;
+	failureReason?: string;
+}
 
 export interface ContinuationDocumentSyncStatus {
 	continuationDoc: ContinuationSyncStatus;
@@ -119,6 +156,8 @@ export interface ContinuationLatestEvent {
 	artifactStatus: ContinuationArtifactStatus;
 	promptStatus: ContinuationPromptStatus;
 	documentSync: ContinuationDocumentSyncStatus;
+	resume: ContinuationResumeOutcome;
+	synthesis?: ContinuationSynthesisTelemetry;
 	failureReason?: string;
 }
 
@@ -131,15 +170,26 @@ export interface ContinuationEventStore {
 /** Persisted status for whether a compaction attempted an AGENTS.md replacement. */
 export type AgentGuideWriteStatus = "sync-off" | "no-replacement" | "replacement-pending";
 
+export type ContinuationCompactionDetailsKind = "pi-continue/v2" | "pi-continue/v3";
+
 /** Package-owned details saved on Pi compaction entries for lifecycle bookkeeping. */
 export interface ContinuationCompactionDetails {
-	kind: "pi-continue/v2";
+	kind: ContinuationCompactionDetailsKind;
 	readFiles: string[];
 	modifiedFiles: string[];
 	documentSyncId?: string;
 	agentGuideSyncId?: string;
 	agentGuideWriteStatus?: AgentGuideWriteStatus;
 	agentGuideChangeReason?: string;
+	continuationEventId?: string;
+	synthesis?: ContinuationSynthesisTelemetry;
+}
+
+export interface ContinuationLedgerSnapshot {
+	eventId: string | undefined;
+	compactionEntryId: string;
+	content: string;
+	capturedAt: number;
 }
 
 export interface PendingDocumentWrite {

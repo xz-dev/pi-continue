@@ -40,12 +40,13 @@ test("ContinuePaletteComponent renders a compact action palette", () => {
 	assert.match(text, /Continue now/);
 	assert.match(text, /Queue until idle/);
 	assert.match(text, /Preview prompts/);
+	assert.match(text, /Show ledger/);
 	assert.match(text, /Project settings/);
 	assert.match(text, /Reset project/);
 	assert.match(text, /Effect: Aborts active Pi work before compaction/);
 	assert.match(text, /Up\/Down \| Enter run\/open \| f focus \| Esc/);
 	assert.doesNotMatch(text, /Project: \/tmp\/project/);
-	assert.equal(lines.length, 17);
+	assert.equal(lines.length, 18);
 	assertLineWidths(lines, 96);
 });
 
@@ -56,7 +57,7 @@ test("ContinuePaletteComponent keeps palette height stable while browsing", () =
 		component.handleInput("down");
 		heights.push(component.render(72).length);
 	}
-	assert.deepEqual([...new Set(heights)], [17]);
+	assert.deepEqual([...new Set(heights)], [18]);
 });
 
 test("ContinuePaletteComponent runs selected actions without hidden focus text", () => {

@@ -1,13 +1,14 @@
 import { randomUUID } from "node:crypto";
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import type { AssistantMessage } from "@mariozechner/pi-ai";
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { loadHistoryPromptAssets, loadSplitPromptAssets } from "./src/assets.ts";
 import { parseHistoryArtifacts, parseSplitPrefix } from "./src/blocks.ts";
 import { splitContinueSubcommand, shouldOpenContinuePalette, buildContinuationCommandArgs } from "./src/command-shape.ts";
-import { runPreviewCommand, runResetCommand, runSettingsDialog, runStatusCommand } from "./src/commands.ts";
+import { runLedgerCommand, runPreviewCommand, runResetCommand, runSettingsDialog, runStatusCommand } from "./src/commands.ts";
 import { getContinueArgumentCompletions } from "./src/completions.ts";
-import { normalizeCompactionPreparation, type FileOperations } from "./src/compaction-preparation.ts";
+import { normalizeCompactionPreparation, snapshotFileOperations } from "./src/compaction-preparation.ts";
 import { composeCompactionSummary } from "./src/compose.ts";
-import { loadContinuationConfig } from "./src/config.ts";
+import { DEFAULT_CONTINUE_CONFIG, loadContinuationConfig } from "./src/config.ts";
 import {
 	abandonActiveContinuationEvent,
 	failPendingDocumentSyncForEvent,
@@ -15,11 +16,13 @@ import {
 	isLatestContinuationEvent,
 	markActiveContinuationArtifact,
 	planActiveDocumentSync,
+	recordActiveSynthesisTelemetry,
 	recordDocumentSyncResult,
 	sanitizeEventReason,
 } from "./src/continuation-event.ts";
-import { buildContinuationDetails, parseContinuationDetails } from "./src/details.ts";
-import { buildHistoryFallback, buildSplitFallback } from "./src/fallback.ts";
+import { buildContinuationDetails, buildContinuationSynthesisTelemetry, parseContinuationDetails } from "./src/details.ts";
+import { buildHistoryFallback, buildSplitFallback, buildSynthesisAbortError } from "./src/fallback.ts";
+import { buildLedgerSnapshot, showContinuationLedgerOverlaySoon } from "./src/ledger-viewer.ts";
 import { runMidRunGuard } from "./src/mid-run-guard.ts";
 import { resolveTokenBudget, runPromptPass } from "./src/model.ts";
 import { loadPiInternals } from "./src/pi-internals.ts";
@@ -27,8 +30,22 @@ import { compileHistoryPrompt, compileSplitPrompt } from "./src/prompt.ts";
 import { resolveProjectContext, writeRepoDocument } from "./src/project.ts";
 import { showContinuePalette } from "./src/palette.ts";
 import type { ContinuePaletteResult } from "./src/palette-actions.ts";
-import { createContinuationRuntimeState, runContinuationCommand, type ContinuationRuntimeState } from "./src/runtime.ts";
-import type { AgentGuideWriteStatus, DocumentSyncMode, ParsedHistoryArtifacts, PendingDocumentWrite } from "./src/types.ts";
+import {
+	CONTINUATION_PROMPT,
+	CONTINUE_STATUS_KEY,
+	clearResumeStartTimeout,
+	createContinuationRuntimeState,
+	failRunningAwaitingContinuationResume,
+	markAwaitingContinuationResumeStarted,
+	runContinuationCommand,
+	settleAwaitingContinuationResumeFromAssistant,
+	type ContinuationRuntimeState,
+} from "./src/runtime.ts";
+import type { AgentGuideWriteStatus, ContinuationSynthesisTelemetry, DocumentSyncMode, ParsedHistoryArtifacts, PendingDocumentWrite } from "./src/types.ts";
+import {
+	clearWorkingVisuals,
+	settleWorkingVisuals,
+} from "./src/working-ui.ts";
 
 async function runEnabledContinuationCommand(
 	pi: ExtensionAPI,
@@ -58,6 +75,10 @@ async function runContinuePaletteResult(
 		await runStatusCommand(pi, ctx, runtime);
 		return;
 	}
+	if (result.kind === "ledger") {
+		await runLedgerCommand(ctx, runtime);
+		return;
+	}
 	if (result.kind === "settings") {
 		await runSettingsDialog(pi, ctx, result.scope);
 		return;
@@ -80,22 +101,22 @@ async function runContinuePaletteResult(
 	);
 }
 
-function computeFileListsSnapshot(fileOps: FileOperations): {
-	readFiles: string[];
-	modifiedFiles: string[];
-} {
-	const modified = new Set<string>([...fileOps.written, ...fileOps.edited]);
-	const reads = new Set<string>(fileOps.read);
-	for (const file of modified) reads.delete(file);
-	return {
-		readFiles: [...reads].sort((left, right) => left.localeCompare(right)),
-		modifiedFiles: [...modified].sort((left, right) => left.localeCompare(right)),
-	};
-}
-
 function decideAgentGuideWriteStatus(syncMode: DocumentSyncMode, agentGuideMd: string | undefined): AgentGuideWriteStatus {
 	if (syncMode === "off") return "sync-off";
 	return agentGuideMd ? "replacement-pending" : "no-replacement";
+}
+
+function isAssistantMessage(message: unknown): message is AssistantMessage {
+	return typeof message === "object" && message !== null && "role" in message && message.role === "assistant";
+}
+
+function safeFailureMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
+function setRuntimeStatus(ctx: ExtensionContext, value: string | undefined): void {
+	if (!ctx.hasUI) return;
+	ctx.ui.setStatus(CONTINUE_STATUS_KEY, value);
 }
 
 export default function (pi: ExtensionAPI) {
@@ -115,17 +136,23 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	pi.registerCommand("continue", {
-		description: "Open continuation actions; shortcuts: steer, queue, preview, status, settings, reset",
+		description: "Continuation actions: steer, queue, preview, status, ledger, settings, reset",
 		getArgumentCompletions: getContinueArgumentCompletions,
 		handler: async (args, ctx) => {
 			if (shouldOpenContinuePalette(args, ctx.hasUI)) {
-				const result = await showContinuePalette(pi, ctx, runtime);
-				if (result) await runContinuePaletteResult(pi, ctx, runtime, result, (eventId) => cleanupPendingDocumentWrites(eventId));
-				return;
+				const palette = await showContinuePalette(pi, ctx, runtime);
+				if (palette.supported) {
+					if (palette.result) await runContinuePaletteResult(pi, ctx, runtime, palette.result, (eventId) => cleanupPendingDocumentWrites(eventId));
+					return;
+				}
 			}
 			const subcommand = splitContinueSubcommand(args);
 			if (subcommand?.name === "status") {
 				await runStatusCommand(pi, ctx, runtime);
+				return;
+			}
+			if (subcommand?.name === "ledger") {
+				await runLedgerCommand(ctx, runtime);
 				return;
 			}
 			if (subcommand?.name === "settings") {
@@ -151,6 +178,40 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	pi.on("before_agent_start", async (event, ctx) => {
+		if (event.prompt !== CONTINUATION_PROMPT) return;
+		const eventId = markAwaitingContinuationResumeStarted(runtime);
+		if (!eventId) return;
+		setRuntimeStatus(ctx, "continuation resume running");
+	});
+
+	pi.on("message_start", async (event, ctx) => {
+		if (!isAssistantMessage(event.message)) return;
+		const eventId = runtime.awaitingResumeEventId;
+		if (!eventId || runtime.latestEvent?.id !== eventId || runtime.latestEvent.resume.status !== "running") return;
+		setRuntimeStatus(ctx, "continuation resume running");
+	});
+
+	pi.on("agent_end", async (_event, ctx) => {
+		const settlement = failRunningAwaitingContinuationResume(runtime, "Continuation resume did not produce an assistant response.");
+		if (!settlement) return;
+		settleWorkingVisuals(ctx, runtime, settlement.eventId);
+		setRuntimeStatus(ctx, "pi-continue resume failed");
+	});
+
+	pi.on("message_end", async (event, ctx) => {
+		if (!isAssistantMessage(event.message)) return;
+		const settlement = settleAwaitingContinuationResumeFromAssistant(runtime, event.message);
+		if (!settlement) return;
+		const statusText = settlement.status === "completed"
+			? undefined
+			: settlement.status === "aborted"
+				? "pi-continue resume aborted"
+				: "pi-continue resume failed";
+		settleWorkingVisuals(ctx, runtime, settlement.eventId);
+		setRuntimeStatus(ctx, statusText);
+	});
+
 	pi.on("context", async (event, ctx) => {
 		await runMidRunGuard(pi, ctx, runtime, event.messages, (eventId) => cleanupPendingDocumentWrites(eventId));
 	});
@@ -162,9 +223,9 @@ export default function (pi: ExtensionAPI) {
 		const resolvedProjectContext = await resolveProjectContext(pi, ctx.cwd, config.continuationDocPath, config.agentGuidePath);
 		const preparation = normalizeCompactionPreparation(event.preparation, event.branchEntries);
 		if (preparation.repairedNoOpCut && ctx.hasUI) {
-			ctx.ui.notify("Adjusted native compaction checkpoint so continuation has real history.", "warning");
+			ctx.ui.notify("Adjusted native compaction checkpoint for continuation.", "warning");
 		}
-		const fileOpsSnapshot = computeFileListsSnapshot(preparation.fileOps);
+		const fileOpsSnapshot = snapshotFileOperations(preparation.fileOps);
 		const internals = await loadPiInternals();
 		const historyPrompt = compileHistoryPrompt(
 			loadHistoryPromptAssets(
@@ -229,28 +290,36 @@ export default function (pi: ExtensionAPI) {
 			: undefined;
 		let historyArtifacts: ParsedHistoryArtifacts;
 		let splitPrefix: string | undefined;
+		let synthesis: ContinuationSynthesisTelemetry | undefined;
 		try {
 			const historyTask = runPromptPass(pi, ctx, config, historyPrompt, historyBudget, event.signal);
 			const splitTask = splitPrompt
 				? runPromptPass(pi, ctx, config, splitPrompt, splitBudget, event.signal)
 				: Promise.resolve(undefined);
-			const [historyOutput, splitOutput] = await Promise.all([historyTask, splitTask]);
-			historyArtifacts = parseHistoryArtifacts(historyOutput);
+			const [historyResult, splitResult] = await Promise.allSettled([historyTask, splitTask]);
+			const historyOutput = historyResult.status === "fulfilled" ? historyResult.value : undefined;
+			const splitOutput = splitResult.status === "fulfilled" ? splitResult.value : undefined;
+			synthesis = buildContinuationSynthesisTelemetry(historyOutput, splitOutput);
+			recordActiveSynthesisTelemetry(runtime, synthesis);
+			if (historyResult.status === "rejected") throw historyResult.reason;
+			if (splitResult.status === "rejected") throw splitResult.reason;
+			if (!historyOutput) throw new Error("History pass omitted a summarizer response");
+			historyArtifacts = parseHistoryArtifacts(historyOutput.text);
 			if (!historyArtifacts) {
 				throw new Error("History pass omitted required pi-continue JSON artifacts");
 			}
 			if (splitPrompt) {
-				splitPrefix = splitOutput ? parseSplitPrefix(splitOutput) : undefined;
+				splitPrefix = splitOutput ? parseSplitPrefix(splitOutput.text) : undefined;
 				if (!splitPrefix) {
 					throw new Error("Split-prefix pass omitted <split-prefix>");
 				}
 			}
 			markActiveContinuationArtifact(runtime, "modeled", undefined);
 		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
+			const message = safeFailureMessage(error);
 			if (config.fallbackMode === "abort") {
 				markActiveContinuationArtifact(runtime, "aborted", message);
-				throw error instanceof Error ? error : new Error(message);
+				throw buildSynthesisAbortError(message);
 			}
 			markActiveContinuationArtifact(runtime, "fallback", message);
 			historyArtifacts = buildHistoryFallback(historyInputForFallback, message);
@@ -289,12 +358,15 @@ export default function (pi: ExtensionAPI) {
 						: "off",
 			},
 		);
+		const continuationEventId = getActiveContinuationEventId(runtime);
 		const details = buildContinuationDetails(
 			preparation.fileOps,
 			documentSyncId,
 			agentGuideSyncId,
 			agentGuideWriteStatus,
 			historyArtifacts.agentGuideChangeReason,
+			synthesis,
+			continuationEventId,
 		);
 		return {
 			compaction: {
@@ -313,6 +385,21 @@ export default function (pi: ExtensionAPI) {
 		if (!event.fromExtension) return;
 		const details = parseContinuationDetails(event.compactionEntry.details);
 		if (!details) return;
+		const ledgerOwnerId = details.continuationEventId;
+		const canUpdateLedger = ledgerOwnerId ? isLatestContinuationEvent(runtime, ledgerOwnerId) : getActiveContinuationEventId(runtime) === undefined;
+		const ledger = canUpdateLedger
+			? buildLedgerSnapshot(event.compactionEntry.summary, ledgerOwnerId, event.compactionEntry.id)
+			: undefined;
+		if (ledger) {
+			runtime.latestLedger = ledger;
+			const projectContext = await resolveProjectContext(pi, ctx.cwd, DEFAULT_CONTINUE_CONFIG.continuationDocPath);
+			const config = loadContinuationConfig(projectContext.projectRoot);
+			if (config.enabled && config.ledgerDisplayMode === "overlay") {
+				showContinuationLedgerOverlaySoon(ctx, ledger, (reason) => {
+					if (ctx.hasUI) ctx.ui.notify(`Continuation Ledger overlay failed: ${sanitizeEventReason(reason)}`, "error");
+				});
+			}
+		}
 		for (const syncId of [details.documentSyncId, details.agentGuideSyncId]) {
 			if (!syncId) continue;
 			const pending = pendingDocumentWrites.get(syncId);
@@ -341,10 +428,13 @@ export default function (pi: ExtensionAPI) {
 		}
 	});
 
-	pi.on("session_shutdown", async () => {
+	pi.on("session_shutdown", async (_event, ctx) => {
 		abandonActiveContinuationEvent(runtime, "Pi session shut down before continuation aftercare settled.");
 		pendingDocumentWrites.clear();
+		clearWorkingVisuals(ctx, runtime);
 		runtime.compactionRunning = false;
 		runtime.guardFailureKey = undefined;
+		clearResumeStartTimeout(runtime);
+		runtime.awaitingResumeEventId = undefined;
 	});
 }

@@ -1,13 +1,13 @@
 import type { ContinuationRequestMode } from "./runtime.ts";
 
-export type ContinueOperatorSubcommandName = "status" | "settings" | "reset" | "preview";
+export type ContinueOperatorSubcommandName = "status" | "settings" | "reset" | "preview" | "ledger";
 
 export interface ContinueOperatorSubcommand {
 	name: ContinueOperatorSubcommandName;
 	rest: string | undefined;
 }
 
-const OPERATOR_SUBCOMMANDS = new Set<string>(["status", "settings", "reset", "preview"]);
+const OPERATOR_SUBCOMMANDS = new Set<string>(["status", "settings", "reset", "preview", "ledger"]);
 
 function isOperatorSubcommandName(name: string): name is ContinueOperatorSubcommandName {
 	return OPERATOR_SUBCOMMANDS.has(name);

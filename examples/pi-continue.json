@@ -12,5 +12,6 @@
   "appendCompactionMetadata": false,
   "appendFileTags": false,
   "promptOverridePolicy": "project-override",
-  "fallbackMode": "deterministic-summary"
+  "fallbackMode": "deterministic-summary",
+  "ledgerDisplayMode": "overlay"
 }

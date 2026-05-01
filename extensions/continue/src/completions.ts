@@ -27,6 +27,10 @@ const TOP_LEVEL_COMMANDS: CommandCompletion[] = [
 		description: "Inspect latest aftercare, effective config, prompt sources, and the Pi compaction trigger.",
 	},
 	{
+		name: "ledger",
+		description: "Show the latest Continuation Ledger in a transient TUI overlay.",
+	},
+	{
 		name: "settings",
 		description: "Configure project or global pi-continue settings in the TUI.",
 	},

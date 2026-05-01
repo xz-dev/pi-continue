@@ -43,8 +43,9 @@ In a UI-capable Pi session, exact `/continue` opens a small action palette. In n
 | `/continue` | Open the palette when UI is available; otherwise continue now. |
 | `/continue steer [focus]` | Compact now, aborting active Pi work first if needed, then resume. |
 | `/continue queue [focus]` | Wait until Pi is idle, compact, then resume. |
-| `/continue preview [focus]` | Show the prompt payloads that would be used; no compaction. |
-| `/continue status` | Show latest continuation aftercare, config, prompt sources, threshold, and write state. |
+| `/continue preview [focus]` | Show the prompt payloads that would be used in a read-only scrollable overlay; no compaction. |
+| `/continue status` | Show latest continuation aftercare, config, prompt sources, threshold, and write state in a read-only scrollable overlay. |
+| `/continue ledger` | Show the latest Continuation Ledger in a transient TUI overlay; no transcript entry is appended. |
 | `/continue settings [project\|global]` | Edit package settings. |
 | `/continue reset [project\|global]` | Delete package settings after confirmation. |
 
@@ -84,7 +85,7 @@ Configure the threshold in Pi settings:
 
 `reserveTokens` and `keepRecentTokens` are absolute token counts. For a 272K context model, `reserveTokens: 68000` triggers near 75 percent usage. See [`examples/pi-settings-compaction-75pct-272k.json`](examples/pi-settings-compaction-75pct-272k.json).
 
-Use `/continue status` after a continuation to see what happened. Status reports the latest local event: source, checkpoint, artifact or fallback state, prompt dispatch, optional document sync, and the next safe action. It does not show transcript text, prompt payloads, document contents, provider errors, or raw model output.
+Use `/continue status` after a continuation to see what happened. Status reports the latest local event: source, checkpoint, artifact or fallback state, summarizer provenance, prompt dispatch, resume outcome, optional document sync, and the next safe action. UI sessions can also show the latest Continuation Ledger as a transient overlay; this never appends another transcript entry. Status and overlay copy do not show transcript text, prompt payloads, document contents, provider errors, or raw model output.
 
 ## Configuration
 
@@ -117,7 +118,8 @@ Default package config:
   "appendCompactionMetadata": false,
   "appendFileTags": false,
   "promptOverridePolicy": "project-override",
-  "fallbackMode": "deterministic-summary"
+  "fallbackMode": "deterministic-summary",
+  "ledgerDisplayMode": "overlay"
 }
 ```
 
@@ -134,6 +136,7 @@ Common settings:
 | `agentGuideSyncMode` | `"off"` by default; `"always"` allows AGENTS.md replacement only when the artifact includes full guide content. |
 | `promptOverridePolicy` | Chooses project overrides, global overrides, or package defaults. |
 | `fallbackMode` | Uses deterministic fallback summaries, or aborts when modeled synthesis fails. |
+| `ledgerDisplayMode` | `"overlay"` shows the latest Continuation Ledger as transient TUI aftercare; `"off"` disables automatic display. |
 
 Malformed JSON config fails loudly. Unknown config keys and command aliases are not read.
 
@@ -248,7 +251,7 @@ git diff --check
 For command-surface changes, also verify the command list when feasible:
 
 ```bash
-printf '{"type":"get_commands"}\n' | pi --mode rpc --no-session --no-context-files
+printf '{"type":"get_commands"}\n' | pi --mode rpc --no-session --no-context-files --no-skills --no-extensions -e /path/to/pi-continue
 ```
 
 Expected extension command surface:

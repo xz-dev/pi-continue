@@ -1,11 +1,14 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { loadHistoryPromptAssets, loadSplitPromptAssets } from "./assets.ts";
+import { snapshotFileOperations } from "./compaction-preparation.ts";
 import { DEFAULT_CONTINUE_CONFIG, loadContinuationConfig, loadScopeConfig, resetContinuationConfig, saveContinuationConfig } from "./config.ts";
+import { showLatestContinuationLedger } from "./ledger-viewer.ts";
+import { showScrollableTextOverlay } from "./text-viewer.ts";
 import { readEffectivePiCompactionSettings } from "./pi-settings.ts";
 import { loadPiInternals } from "./pi-internals.ts";
 import { compileHistoryPrompt, compileSplitPrompt, renderPromptPreview } from "./prompt.ts";
 import { resolveProjectContext } from "./project.ts";
-import { getLatestContinuationEvent, type ContinuationRuntimeState } from "./runtime.ts";
+import { getLatestContinuationEvent, getLatestContinuationLedger, type ContinuationRuntimeState } from "./runtime.ts";
 import { renderStatus } from "./status.ts";
 import { commandHasUi } from "./ui.ts";
 import type { ConfigScope, ContinuationConfig, PreviewPayload } from "./types.ts";
@@ -22,19 +25,6 @@ function joinArgs(args: string | undefined): string | undefined {
 
 async function requireUi(ctx: ExtensionCommandContext): Promise<boolean> {
 	return commandHasUi(ctx);
-}
-
-function buildFileSnapshot(fileOps: { read: Set<string>; written: Set<string>; edited: Set<string> }): {
-	readFiles: string[];
-	modifiedFiles: string[];
-} {
-	const modified = new Set<string>([...fileOps.written, ...fileOps.edited]);
-	const reads = new Set<string>(fileOps.read);
-	for (const file of modified) reads.delete(file);
-	return {
-		readFiles: [...reads].sort((left, right) => left.localeCompare(right)),
-		modifiedFiles: [...modified].sort((left, right) => left.localeCompare(right)),
-	};
 }
 
 async function buildPromptPreviewPayload(
@@ -57,7 +47,7 @@ async function buildPromptPreviewPayload(
 	if (!preparation) return undefined;
 	const scenario = preparation.previousSummary ? "update" : "initial";
 	const historyTranscript = internals.serializeConversation(internals.convertToLlm(preparation.messagesToSummarize));
-	const fileOps = buildFileSnapshot(preparation.fileOps);
+	const fileOps = snapshotFileOperations(preparation.fileOps);
 	const historyAssets = loadHistoryPromptAssets(projectContext.projectRoot, config.promptOverridePolicy, scenario);
 	const history = compileHistoryPrompt(historyAssets, {
 		scenario,
@@ -89,7 +79,8 @@ async function buildPromptPreviewPayload(
 
 async function showText(ctx: ExtensionCommandContext, title: string, content: string): Promise<void> {
 	if (!(await requireUi(ctx, title))) return;
-	await ctx.ui.editor(title, content);
+	const shown = await showScrollableTextOverlay(ctx, { title, content });
+	if (!shown) ctx.ui.notify(`${title} overlay is unavailable in this Pi mode.`, "warning");
 }
 
 async function chooseModel(ctx: ExtensionCommandContext): Promise<string | undefined> {
@@ -107,6 +98,11 @@ async function chooseModel(ctx: ExtensionCommandContext): Promise<string | undef
 async function chooseReasoning(ctx: ExtensionCommandContext): Promise<ContinuationConfig["reasoning"] | undefined> {
 	const selected = await ctx.ui.select("Reasoning level", ["inherit", "off", "minimal", "low", "medium", "high", "xhigh"]);
 	return selected as ContinuationConfig["reasoning"] | undefined;
+}
+
+async function chooseLedgerDisplayMode(ctx: ExtensionCommandContext): Promise<ContinuationConfig["ledgerDisplayMode"] | undefined> {
+	const selected = await ctx.ui.select("Ledger display", ["overlay", "off"]);
+	return selected as ContinuationConfig["ledgerDisplayMode"] | undefined;
 }
 
 async function chooseTokenOverride(
@@ -159,6 +155,7 @@ export async function runSettingsDialog(pi: ExtensionAPI, ctx: ExtensionCommandC
 			`append file tags: ${config.appendFileTags ? "yes" : "no"}`,
 			`prompt override policy: ${config.promptOverridePolicy}`,
 			`fallback mode: ${config.fallbackMode}`,
+			`ledger display: ${config.ledgerDisplayMode}`,
 			`reset ${scope} config`,
 			"done",
 		]);
@@ -267,6 +264,13 @@ export async function runSettingsDialog(pi: ExtensionAPI, ctx: ExtensionCommandC
 			});
 			continue;
 		}
+		if (selected.startsWith("ledger display:")) {
+			config = await updateSetting(scope, projectContext.projectRoot, config, async (current) => {
+				const next = await chooseLedgerDisplayMode(ctx);
+				return next ? { ...current, ledgerDisplayMode: next } : undefined;
+			});
+			continue;
+		}
 		if (selected === `reset ${scope} config`) {
 			const confirmed = await ctx.ui.confirm("Reset config", `Delete ${scope} config?`);
 			if (confirmed) {
@@ -298,6 +302,11 @@ export async function runStatusCommand(pi: ExtensionAPI, ctx: ExtensionCommandCo
 			getLatestContinuationEvent(runtime),
 		),
 	);
+}
+
+/** Show the latest in-memory Continuation Ledger without mutating the transcript. */
+export async function runLedgerCommand(ctx: ExtensionCommandContext, runtime: ContinuationRuntimeState): Promise<void> {
+	await showLatestContinuationLedger(ctx, getLatestContinuationLedger(runtime));
 }
 
 /** Reset scoped config. */

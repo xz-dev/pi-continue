@@ -1,9 +1,9 @@
 import type { ConfigScope } from "./types.ts";
 import type { ContinuationRequestMode } from "./runtime.ts";
 
-export type OperatorAction = "status" | "preview" | "settings" | "reset";
+export type OperatorAction = "status" | "preview" | "ledger" | "settings" | "reset";
 export type FocusActionId = "continue-now" | "queue" | "preview";
-export type PaletteActionId = FocusActionId | "status" | "settings-project" | "settings-global" | "reset-project" | "reset-global";
+export type PaletteActionId = FocusActionId | "status" | "ledger" | "settings-project" | "settings-global" | "reset-project" | "reset-global";
 
 export interface PaletteAction {
 	id: PaletteActionId;
@@ -57,6 +57,13 @@ export const PALETTE_ACTIONS: PaletteAction[] = [
 		effect: "Opens a read-only status document.",
 	},
 	{
+		id: "ledger",
+		section: "Inspect",
+		label: "Show ledger",
+		desc: "Open latest Continuation Ledger.",
+		effect: "Transient overlay; no transcript entry is appended.",
+	},
+	{
 		id: "settings-project",
 		section: "Configure",
 		label: "Project settings",
@@ -100,6 +107,7 @@ export function selectionFor(action: PaletteAction, instructions: string | undef
 	if (action.id === "continue-now") return { kind: "continue", mode: "steer", instructions: focus };
 	if (action.id === "queue") return { kind: "continue", mode: "queue", instructions: focus };
 	if (action.id === "preview") return { kind: "preview", instructions: focus };
+	if (action.id === "ledger") return { kind: "ledger" };
 	if (action.id === "settings-project") return { kind: "settings", scope: "project" };
 	if (action.id === "settings-global") return { kind: "settings", scope: "global" };
 	if (action.id === "reset-project") return { kind: "reset", scope: "project" };

@@ -9,8 +9,8 @@ async function withTempAgent(work) {
 	const root = mkdtempSync(join(tmpdir(), "pi-continuation-config-"));
 	const previousCodingAgentDir = process.env.PI_CODING_AGENT_DIR;
 	const previousAgentDir = process.env.PI_AGENT_DIR;
-	delete process.env.PI_CODING_AGENT_DIR;
-	process.env.PI_AGENT_DIR = join(root, "agent");
+	process.env.PI_CODING_AGENT_DIR = join(root, "agent");
+	delete process.env.PI_AGENT_DIR;
 	try {
 		return await work(root);
 	} finally {
@@ -39,6 +39,17 @@ test("loadContinuationConfig uses current-session model, reasoning, guard, and s
 		assert.equal(config.midRunGuardEnabled, true);
 		assert.equal(config.appendCompactionMetadata, false);
 		assert.equal(config.appendFileTags, false);
+		assert.equal(config.ledgerDisplayMode, "overlay");
+	});
+});
+
+test("loadContinuationConfig falls back for invalid ledger display mode", async () => {
+	await withTempAgent(async (root) => {
+		const configDir = join(root, ".pi", "extensions");
+		mkdirSync(configDir, { recursive: true });
+		writeFileSync(join(configDir, "pi-continue.json"), JSON.stringify({ ledgerDisplayMode: "modal" }), "utf8");
+		const config = loadContinuationConfig(root);
+		assert.equal(config.ledgerDisplayMode, "overlay");
 	});
 });
 
@@ -46,9 +57,10 @@ test("loadContinuationConfig preserves explicit mid-run guard false", async () =
 	await withTempAgent(async (root) => {
 		const configDir = join(root, ".pi", "extensions");
 		mkdirSync(configDir, { recursive: true });
-		writeFileSync(join(configDir, "pi-continue.json"), JSON.stringify({ midRunGuardEnabled: false }), "utf8");
+		writeFileSync(join(configDir, "pi-continue.json"), JSON.stringify({ midRunGuardEnabled: false, ledgerDisplayMode: "off" }), "utf8");
 		const config = loadContinuationConfig(root);
 		assert.equal(config.midRunGuardEnabled, false);
+		assert.equal(config.ledgerDisplayMode, "off");
 	});
 });
 

@@ -342,11 +342,20 @@ export class ContinuePaletteComponent {
 	}
 }
 
-/** Show the discoverable /continue action palette and return the selected action. */
-export async function showContinuePalette(pi: ExtensionAPI, ctx: ExtensionCommandContext, runtime: ContinuationRuntimeState): Promise<ContinuePaletteResult | undefined> {
+export interface ContinuePaletteResponse {
+	supported: boolean;
+	result: ContinuePaletteResult | undefined;
+}
+
+/** Show the discoverable /continue action palette and report whether Pi actually opened custom UI. */
+export async function showContinuePalette(pi: ExtensionAPI, ctx: ExtensionCommandContext, runtime: ContinuationRuntimeState): Promise<ContinuePaletteResponse> {
 	const snapshot = await buildPaletteSnapshot(pi, ctx, runtime);
-	return ctx.ui.custom<ContinuePaletteResult | undefined>(
-		(tui, theme, _keybindings, done) => new ContinuePaletteComponent(snapshot, theme, done, () => tui.requestRender()),
+	let supported = false;
+	const result = await ctx.ui.custom<ContinuePaletteResult | undefined>(
+		(tui, theme, _keybindings, done) => {
+			supported = true;
+			return new ContinuePaletteComponent(snapshot, theme, done, () => tui.requestRender());
+		},
 		{
 			overlay: true,
 			overlayOptions: {
@@ -358,4 +367,5 @@ export async function showContinuePalette(pi: ExtensionAPI, ctx: ExtensionComman
 			},
 		},
 	);
+	return { supported, result };
 }

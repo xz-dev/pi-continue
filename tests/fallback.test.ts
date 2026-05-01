@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildHistoryFallback } from "../extensions/continue/src/fallback.ts";
+import { buildHistoryFallback, buildSplitFallback, buildSynthesisAbortError } from "../extensions/continue/src/fallback.ts";
 
 function historyInput() {
 	return {
@@ -19,6 +19,22 @@ function historyInput() {
 		},
 	};
 }
+
+test("abort-mode synthesis errors sanitize provider failure reasons before rethrow", () => {
+	const error = buildSynthesisAbortError("Provider 400 echoed <history-to-summarize> secret work OPENAI_API_KEY=secretvalue /Users/alice/project");
+	assert.equal(error.message, "Summarizer provider failed; check model, authentication, or context settings.");
+	assert.doesNotMatch(error.message, /OPENAI_API_KEY|secretvalue|secret work|history-to-summarize|Users\/alice/);
+});
+
+test("fallback artifacts sanitize synthesis failure reasons", () => {
+	const reason = "Provider 400 echoed <history-to-summarize> secret work OPENAI_API_KEY=secretvalue /Users/alice/project";
+	const history = buildHistoryFallback(historyInput(), reason);
+	const split = buildSplitFallback({ projectRoot: "/repo", continuationDocPath: "/repo/CONTINUE.md", splitPrefixTranscript: "prefix" }, reason);
+	for (const content of [history.continuation, history.continuationMd, split]) {
+		assert.doesNotMatch(content, /OPENAI_API_KEY|secretvalue|secret work|history-to-summarize|Users\/alice/);
+		assert.match(content, /Summarizer provider failed; check model, authentication, or context settings/);
+	}
+});
 
 test("buildHistoryFallback emits structured continuation without numeric read caps", () => {
 	const fallback = buildHistoryFallback(historyInput(), "model failed");

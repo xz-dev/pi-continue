@@ -65,6 +65,14 @@ test("renderStatus summarizes a completed latest continuation calmly", () => {
 			},
 			artifactStatus: "modeled",
 			promptStatus: "sent",
+			resume: {
+				status: "completed",
+				startedAt: 500,
+				completedAt: 900,
+				stopReason: "stop",
+				requestedModel: "openai/gpt-test",
+				responseModel: "openai/gpt-routed",
+			},
 			documentSync: {
 				continuationDoc: "off",
 				agentGuide: "off",
@@ -89,6 +97,95 @@ test("renderStatus summarizes a completed latest continuation calmly", () => {
 	}
 });
 
+test("renderStatus reports compaction failure without failed-resume copy", () => {
+	const root = mkdtempSync(join(tmpdir(), "pi-continuation-status-"));
+	try {
+		const ctx = {
+			model: {
+				provider: "openai",
+				id: "gpt-test",
+				contextWindow: 1000,
+			},
+		};
+		const latestEvent: ContinuationLatestEvent = {
+			id: "continue-2",
+			source: "command-steer",
+			status: "failed",
+			startedAt: 0,
+			completedAt: 1000,
+			artifactStatus: "pending",
+			promptStatus: "failed",
+			resume: { status: "not-requested" },
+			documentSync: {
+				continuationDoc: "off",
+				agentGuide: "off",
+			},
+			failureReason: "Summarizer provider failed; check model, authentication, or context settings.",
+		};
+		const rendered = renderStatus(
+			ctx,
+			DEFAULT_CONTINUE_CONFIG,
+			root,
+			join(root, "CONTINUE.md"),
+			join(root, "AGENTS.md"),
+			undefined,
+			latestEvent,
+		);
+		assert.match(rendered, /Last continuation: continuation needs attention/);
+		assert.match(rendered, /Resume outcome: not requested/);
+		assert.doesNotMatch(rendered, /resume needs attention/);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("renderStatus reports an aborted resume without generic internal failure copy", () => {
+	const root = mkdtempSync(join(tmpdir(), "pi-continuation-status-"));
+	try {
+		const ctx = {
+			model: {
+				provider: "openai",
+				id: "gpt-test",
+				contextWindow: 1000,
+			},
+		};
+		const latestEvent: ContinuationLatestEvent = {
+			id: "continue-3",
+			source: "command-steer",
+			status: "failed",
+			startedAt: 0,
+			completedAt: 1000,
+			artifactStatus: "modeled",
+			promptStatus: "sent",
+			resume: {
+				status: "aborted",
+				startedAt: 200,
+				completedAt: 900,
+				failureReason: "Continuation resume was aborted.",
+			},
+			documentSync: {
+				continuationDoc: "off",
+				agentGuide: "off",
+			},
+			failureReason: "Continuation resume was aborted.",
+		};
+		const rendered = renderStatus(
+			ctx,
+			DEFAULT_CONTINUE_CONFIG,
+			root,
+			join(root, "CONTINUE.md"),
+			join(root, "AGENTS.md"),
+			undefined,
+			latestEvent,
+		);
+		assert.match(rendered, /Last continuation: resume was aborted/);
+		assert.match(rendered, /Attention: Continuation resume was aborted/);
+		assert.doesNotMatch(rendered, /internal failure/);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 test("renderStatus does not call pending or failed sync no-op writes", () => {
 	const root = mkdtempSync(join(tmpdir(), "pi-continuation-status-"));
 	try {
@@ -107,6 +204,10 @@ test("renderStatus does not call pending or failed sync no-op writes", () => {
 			completedAt: 1000,
 			artifactStatus: "fallback",
 			promptStatus: "failed",
+			resume: {
+				status: "failed",
+				failureReason: "Continuation prompt dispatch failed.",
+			},
 			documentSync: {
 				continuationDoc: "failed",
 				agentGuide: "pending",

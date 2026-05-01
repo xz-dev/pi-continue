@@ -70,7 +70,7 @@ export async function runMidRunGuard(
 	messages: unknown[],
 	onContinuationFailed?: (eventId: string) => void,
 ): Promise<void> {
-	if (!shouldEvaluateMidRunContext(messages) || !ctx.model || runtime.compactionRunning) return;
+	if (!shouldEvaluateMidRunContext(messages) || !ctx.model) return;
 	const initialProjectContext = await resolveProjectContext(pi, ctx.cwd, DEFAULT_CONTINUE_CONFIG.continuationDocPath);
 	const config = loadContinuationConfig(initialProjectContext.projectRoot);
 	if (!config.enabled || !config.midRunGuardEnabled) return;

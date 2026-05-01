@@ -1,4 +1,10 @@
+import { sanitizeEventReason } from "./continuation-event.ts";
 import type { FileOpsSnapshot, HistoryPromptInput, ParsedHistoryArtifacts, SplitPromptInput } from "./types.ts";
+
+/** Build the only error allowed to escape when abort-mode synthesis fails. */
+export function buildSynthesisAbortError(reason: string): Error {
+	return new Error(sanitizeEventReason(reason));
+}
 
 function clip(value: string | undefined, limit: number): string {
 	const trimmed = value?.replace(/\s+/g, " ").trim() ?? "";
@@ -47,6 +53,7 @@ function renderAgentGuideCandidate(input: HistoryPromptInput): string {
 
 /** Deterministic fallback when model output is unavailable or malformed. */
 export function buildHistoryFallback(input: HistoryPromptInput, reason: string): ParsedHistoryArtifacts {
+	const safeReason = sanitizeEventReason(reason);
 	const continuation = [
 		`## Task`,
 		`Continue the active user task in the same Pi session after fallback continuation compaction.`,
@@ -67,7 +74,7 @@ export function buildHistoryFallback(input: HistoryPromptInput, reason: string):
 		`- Fallback compaction preserved a safe same-session checkpoint but did not classify historical milestones.`,
 		``,
 		`## Current State`,
-		`- Fallback summary reason: ${reason}.`,
+		`- Fallback summary reason: ${safeReason}.`,
 		`- Project root: ${input.projectRoot}.`,
 		``,
 		`## Decisions and Constraints`,
@@ -122,7 +129,7 @@ export function buildHistoryFallback(input: HistoryPromptInput, reason: string):
 		``,
 		`## Progress And Milestone Trail`,
 		`- Deterministic fallback replaced modeled continuation document synthesis during compaction.`,
-		`- Reason: ${reason}.`,
+		`- Reason: ${safeReason}.`,
 		``,
 		`## Current State`,
 		`- Project root: ${input.projectRoot}.`,
@@ -186,9 +193,10 @@ export function buildHistoryFallback(input: HistoryPromptInput, reason: string):
 
 /** Deterministic fallback for split-turn prefix context. */
 export function buildSplitFallback(input: SplitPromptInput, reason: string): string {
+	const safeReason = sanitizeEventReason(reason);
 	return [
 		`Original request and early prefix details require manual review of the kept suffix plus ${input.continuationDocPath}.`,
-		`Fallback split-prefix reason: ${reason}.`,
+		`Fallback split-prefix reason: ${safeReason}.`,
 		`Prefix excerpt: ${clip(input.splitPrefixTranscript, 500)}.`,
 	]
 		.join("\n")

@@ -1,7 +1,15 @@
 import type { ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { resolveTokenBudget, resolveSummarizerModel } from "./model-settings.ts";
 import { readEffectivePiCompactionSettings } from "./pi-settings.ts";
-import type { ContinuationConfig, ContinuationLatestEvent, ContinuationSyncStatus, PreviewPayload } from "./types.ts";
+import type {
+	ContinuationConfig,
+	ContinuationLatestEvent,
+	ContinuationResumeOutcome,
+	ContinuationSynthesisTelemetry,
+	ContinuationSyncStatus,
+	PreviewPayload,
+	PromptPassTelemetry,
+} from "./types.ts";
 
 function describeModel(config: ContinuationConfig, ctx: ExtensionCommandContext): string {
 	const resolved = resolveSummarizerModel(ctx, config);
@@ -28,12 +36,36 @@ function sourceLabel(event: ContinuationLatestEvent): string {
 	return "/continue steer";
 }
 
+function resumeOutcome(event: ContinuationLatestEvent): ContinuationResumeOutcome {
+	return event.resume ?? { status: "not-requested" };
+}
+
+function resumeLabel(event: ContinuationLatestEvent): string {
+	const resume = resumeOutcome(event);
+	if (resume.status === "not-requested") return "not requested";
+	if (resume.status === "pending") return "prompt sent; waiting for resumed assistant turn";
+	if (resume.status === "running") return "resumed assistant turn is running";
+	if (resume.status === "completed") return `completed${resume.stopReason ? ` (${resume.stopReason})` : ""}`;
+	if (resume.status === "aborted") return "aborted";
+	return "failed";
+}
+
 function statusLabel(event: ContinuationLatestEvent): string {
-	if (event.status === "running") return "continuation is running";
-	if (event.status === "failed") return "continuation needs attention";
+	const resume = resumeOutcome(event);
+	if (event.status === "running") {
+		if (resume.status === "pending") return "compaction completed; resume is pending";
+		if (resume.status === "running") return "resume turn is running";
+		return "continuation is running";
+	}
+	if (event.status === "failed") {
+		if (resume.status === "aborted") return "resume was aborted";
+		if (resume.status === "failed") return "resume needs attention";
+		return "continuation needs attention";
+	}
 	if (event.status === "blocked") return "guard blocked a repeated unsafe retry";
 	if (event.artifactStatus === "fallback") return "completed with fallback summary";
 	if (event.documentSync.continuationDoc === "failed" || event.documentSync.agentGuide === "failed") return "completed, but document sync needs attention";
+	if (event.promptStatus === "sent" && resume.status !== "completed") return "compaction completed; resume outcome unavailable";
 	return "completed successfully";
 }
 
@@ -75,13 +107,39 @@ function hasNoDocumentWrite(event: ContinuationLatestEvent): boolean {
 }
 
 function actionLine(event: ContinuationLatestEvent): string {
+	const resume = resumeOutcome(event);
+	if (event.status === "running" && resume.status === "pending") return "Wait for the resumed assistant turn to start.";
+	if (event.status === "running" && resume.status === "running") return "Wait for the resumed assistant turn to finish its first assistant response.";
 	if (event.status === "running") return "Wait; Pi is compacting now.";
 	if (event.status === "blocked") return "No new compaction was started; fix the failed compaction cause before retrying.";
+	if (resume.status === "failed" || resume.status === "aborted") return "Review the resume outcome, correct the cause if needed, then continue from live state.";
 	if (event.status === "failed") return "Review the failure, correct the cause, then retry only when the session is stable.";
 	if (event.documentSync.continuationDoc === "failed" || event.documentSync.agentGuide === "failed") return "Continuation completed; review document permissions or paths before relying on repo-document sync.";
 	if (event.artifactStatus === "fallback") return "Continue carefully from live state; fallback may miss nuanced decisions or validation freshness.";
 	if (event.documentSync.continuationDoc === "pending" || event.documentSync.agentGuide === "pending") return "Compaction completed; wait for document sync to settle.";
 	return "No action needed.";
+}
+
+function formatCost(value: number | undefined): string {
+	if (value === undefined) return "unavailable";
+	if (value === 0) return "$0";
+	return `$${value.toFixed(6)}`;
+}
+
+function renderPassTelemetry(label: string, telemetry: PromptPassTelemetry | undefined): string | undefined {
+	if (!telemetry) return undefined;
+	const routed = telemetry.responseModel ? `; routed ${telemetry.responseModel}` : "";
+	const http = telemetry.httpStatus !== undefined ? `; HTTP ${telemetry.httpStatus}` : "";
+	return `- ${label}: requested ${telemetry.requestedModel}${routed}; ${telemetry.usage.totalTokens.toLocaleString()} tokens; ${formatCost(telemetry.usage.costTotal)}${http}.`;
+}
+
+function renderSynthesisSummary(synthesis: ContinuationSynthesisTelemetry | undefined): string[] {
+	if (!synthesis) return [`- Synthesis: no modeled telemetry recorded.`];
+	return [
+		`- Synthesis total: ${synthesis.totalTokens?.toLocaleString() ?? "unavailable"} tokens; ${formatCost(synthesis.totalCost)}.`,
+		renderPassTelemetry("History pass", synthesis.history),
+		renderPassTelemetry("Split-prefix pass", synthesis.split),
+	].filter((line): line is string => line !== undefined);
 }
 
 function renderEventSummary(event: ContinuationLatestEvent | undefined): string[] {
@@ -93,15 +151,24 @@ function renderEventSummary(event: ContinuationLatestEvent | undefined): string[
 			`- Action: No action needed.`,
 		];
 	}
+	const resume = resumeOutcome(event);
+	const currentState = event.status === "running"
+		? resume.status === "pending" || resume.status === "running"
+			? "continuation resume is still settling"
+			: "continuation compaction is running"
+		: "no continuation is running";
 	const lines = [
 		`## Continuation Aftercare`,
-		`- Current state: ${event.status === "running" ? "continuation compaction is running" : "no continuation is running"}.`,
+		`- Current state: ${currentState}.`,
 		`- Last continuation: ${statusLabel(event)}.`,
 		`- Source: ${sourceLabel(event)}.`,
 		`- Checkpoint: ${renderSafeBoundary(event)}.`,
 		`- Trigger: ${renderTrigger(event)}.`,
 		`- Artifact: ${artifactLabel(event)}.`,
+		...renderSynthesisSummary(event.synthesis),
 		`- Continuation prompt: ${event.promptStatus === "sent" ? "sent" : event.promptStatus === "pending" ? "pending" : event.promptStatus === "failed" ? "not sent" : "not requested"}.`,
+		`- Resume outcome: ${resumeLabel(event)}.`,
+		resume.requestedModel ? `- Resume model: requested ${resume.requestedModel}${resume.responseModel ? `; routed ${resume.responseModel}` : ""}.` : undefined,
 		`- Document sync: continuation doc ${syncLabel(event.documentSync.continuationDoc)}; agent guide ${syncLabel(event.documentSync.agentGuide)}.`,
 		hasNoDocumentWrite(event) ? `- Document writes: none performed.` : undefined,
 		`- Action: ${actionLine(event)}`,
@@ -110,7 +177,10 @@ function renderEventSummary(event: ContinuationLatestEvent | undefined): string[
 		`- Event id: ${event.id}`,
 		`- Started: ${formatTimestamp(event.startedAt)}`,
 		`- Settled: ${formatTimestamp(event.completedAt)}`,
+		resume.startedAt ? `- Resume started: ${formatTimestamp(resume.startedAt)}` : undefined,
+		resume.completedAt ? `- Resume settled: ${formatTimestamp(resume.completedAt)}` : undefined,
 		event.failureReason ? `- Attention: ${event.failureReason}` : undefined,
+		resume.failureReason && resume.failureReason !== event.failureReason ? `- Resume attention: ${resume.failureReason}` : undefined,
 	];
 	return lines.filter((line): line is string => line !== undefined);
 }
@@ -150,6 +220,7 @@ export function renderStatus(
 		`- Append file tags: ${config.appendFileTags ? "yes" : "no"}`,
 		`- Prompt override policy: ${config.promptOverridePolicy}`,
 		`- Fallback mode: ${config.fallbackMode}`,
+		`- Ledger display: ${config.ledgerDisplayMode}`,
 		``,
 		`## Pi Core Compaction`,
 		`- Enabled: ${piCompactionSettings.enabled ? "yes" : "no"}`,
@@ -161,6 +232,7 @@ export function renderStatus(
 		`- Continuation sync writes modeled document artifacts when set to always.`,
 		`- Agent guide sync writes only full agentGuideMarkdown replacements; candidates do not modify AGENTS.md.`,
 		`- Durable promotions are normal-work proposals, not compaction write proof.`,
+		`- Ledger display is transient UI only; it does not append a session message.`,
 		``,
 		`## Project`,
 		`- Root: ${projectRoot}`,

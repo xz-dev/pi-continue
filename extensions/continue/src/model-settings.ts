@@ -1,4 +1,4 @@
-import type { Model } from "@mariozechner/pi-ai";
+import type { Api, Model } from "@mariozechner/pi-ai";
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { ContinuationConfig } from "./types.ts";
 
@@ -6,7 +6,7 @@ import type { ContinuationConfig } from "./types.ts";
 export function resolveSummarizerModel(
 	ctx: ExtensionContext,
 	config: ContinuationConfig,
-): Model<unknown> | undefined {
+): Model<Api> | undefined {
 	if (config.summarizerModel === "inherit") return ctx.model;
 	const slashIndex = config.summarizerModel.indexOf("/");
 	if (slashIndex <= 0 || slashIndex === config.summarizerModel.length - 1) return undefined;

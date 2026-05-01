@@ -9,8 +9,8 @@ async function withTempAgent(work) {
 	const root = mkdtempSync(join(tmpdir(), "pi-continue-settings-"));
 	const previousCodingAgentDir = process.env.PI_CODING_AGENT_DIR;
 	const previousAgentDir = process.env.PI_AGENT_DIR;
-	delete process.env.PI_CODING_AGENT_DIR;
-	process.env.PI_AGENT_DIR = join(root, "agent");
+	process.env.PI_CODING_AGENT_DIR = join(root, "agent");
+	delete process.env.PI_AGENT_DIR;
 	try {
 		return await work(root);
 	} finally {

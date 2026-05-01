@@ -85,6 +85,19 @@ function createFileOps(): FileOperations {
 	};
 }
 
+export function snapshotFileOperations(fileOps: FileOperations): {
+	readFiles: string[];
+	modifiedFiles: string[];
+} {
+	const modified = new Set<string>([...fileOps.written, ...fileOps.edited]);
+	const reads = new Set<string>(fileOps.read);
+	for (const file of modified) reads.delete(file);
+	return {
+		readFiles: [...reads].sort((left, right) => left.localeCompare(right)),
+		modifiedFiles: [...modified].sort((left, right) => left.localeCompare(right)),
+	};
+}
+
 function messageFromEntryForCompaction(entry: EntryRecord): unknown | undefined {
 	if (entry.type === "message") return entry.message;
 	if (entry.type === "custom_message") {
