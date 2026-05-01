@@ -149,7 +149,7 @@ Use this exact schema. Arrays may be empty when the Evidence Gate rejects every 
 
 ## Durable promotion policy
 
-- Use `durablePromotions` for durable changes that should be resolved outside the compaction summary in tracked docs or control-plane files such as AGENTS.md, README.md, PLAN.md, HANDOFF.md, or skill docs.
+- Use `durablePromotions` for durable changes that should be resolved outside the compaction summary in package docs or control-plane files such as README.md, the configured agent guide, PLAN.md, HANDOFF.md, or skill docs.
 - Do not claim compaction wrote those files. Compaction can only emit the continuation artifact and, when configured, a full `agentGuideMarkdown` replacement.
 - `apply` means the receiving agent should make the durable change before further mutation in the affected repo.
 - `reject` means do not apply; include evidence and rationale.

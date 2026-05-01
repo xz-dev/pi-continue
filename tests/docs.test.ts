@@ -33,7 +33,7 @@ test("README stays a front-facing product and operator guide", () => {
 	assert.match(readme, /pi install npm:pi-continue/);
 	assert.match(readme, /Only `\/continue` is registered/);
 	assert.match(readme, /There are no command aliases/);
-	assert.match(readme, /AGENTS\.md sync remain off|automatic AGENTS\.md writes remain off by default/);
+	assert.match(readme, /AGENTS\.md sync remain off|[Aa]utomatic AGENTS\.md writes remain off by default/);
 	assert.doesNotMatch(readme, /unsafe model call/i);
 });
 
@@ -43,13 +43,10 @@ test("documented default config matches runtime and public example", () => {
 	assert.deepEqual(readJson("examples/pi-continue.json"), DEFAULT_CONTINUE_CONFIG);
 });
 
-test("AGENTS Pi runtime documentation references exist locally", () => {
-	const agents = readText("AGENTS.md");
-	const pathMatches = [...agents.matchAll(/`(\/opt\/homebrew\/lib\/node_modules\/@mariozechner\/pi-coding-agent\/docs\/[^`]+\.md)`/g)];
-	assert.ok(pathMatches.length > 0);
-	for (const match of pathMatches) {
-		const path = match[1];
-		assert.equal(existsSync(path), true, path);
+test("ignored local Markdown guides stay out of the package corpus", () => {
+	const gitignore = readText(".gitignore");
+	for (const path of ["CONTINUE.md", "PLAN.md", "AGENTS.md", "ARCH.md", "VISION.md"]) {
+		assert.match(gitignore, new RegExp(`(^|\\n)${path.replace(".", "\\.")}(\\n|$)`));
 	}
 });
 
@@ -62,13 +59,12 @@ test("package metadata and package contents align with the public contract", () 
 	assert.match(packageJson.description, /Continuation Ledger/);
 	assert.deepEqual(packageJson.files, [
 		"README.md",
-		"AGENTS.md",
 		"LICENSE",
 		"assets/",
 		"examples/",
 		"extensions/",
 	]);
 	assert.deepEqual(packageJson.pi.extensions, ["./extensions/continue/index.ts"]);
-	assert.equal(packageJson.pi.image, "https://raw.githubusercontent.com/Tiziano-AI/pi-continue/v0.4.3/assets/gallery/pi-continue-gallery.webp");
+	assert.equal(packageJson.pi.image, "https://raw.githubusercontent.com/Tiziano-AI/pi-continue/v0.4.4/assets/gallery/pi-continue-gallery.webp");
 	assert.equal(existsSync("assets/gallery/pi-continue-gallery.webp"), true);
 });

@@ -39,7 +39,7 @@ Continue the approved prompt/command/continuation redesign after compaction.
 - AGENTS.md writes stay off by default and require a full `agentGuideMarkdown` replacement when enabled.
 
 ## Context Map
-- `/repo/AGENTS.md` — repo operating guide; use it to verify runtime boundaries and artifact ownership.
+- `/repo/README.md` — operator package guide; use it to verify runtime boundaries and artifact ownership.
 - `/repo/extensions/continue/src/blocks.ts` — structured artifact parser/renderer; use it before changing JSON fields.
 - `/repo/tests/blocks.test.ts` — executable artifact contract; use it to validate parser behavior.
 
@@ -66,7 +66,7 @@ Continue the approved prompt/command/continuation redesign after compaction.
 - Avoid preserving a weak old contract under new labels; replace it with the product shape the user approved.
 
 ## Durable Promotions
-- apply: AGENTS.md — record continuation ledger conservation semantics; evidence: parser and prompt assets require v3 fields; durability: agent guide owns runtime invariants; risk: future prompt edits may drift if docs omit it; next: update AGENTS.md before delivery.
+- apply: README.md — record continuation ledger conservation semantics for operators; evidence: parser and prompt assets require v3 fields; durability: README owns the package-facing contract; risk: future prompt edits may drift if package docs omit it; next: update README.md before delivery.
 
 ## Agent Guide Updates
 - Candidate: add durable prompt-contract rules to AGENTS.md if the next synthesis can emit a full replacement guide.

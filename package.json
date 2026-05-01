@@ -24,7 +24,6 @@
   "homepage": "https://github.com/Tiziano-AI/pi-continue#readme",
   "files": [
     "README.md",
-    "AGENTS.md",
     "LICENSE",
     "assets/",
     "examples/",
@@ -41,6 +40,6 @@
     "extensions": [
       "./extensions/continue/index.ts"
     ],
-    "image": "https://raw.githubusercontent.com/Tiziano-AI/pi-continue/v0.4.3/assets/gallery/pi-continue-gallery.webp"
+    "image": "https://raw.githubusercontent.com/Tiziano-AI/pi-continue/v0.4.4/assets/gallery/pi-continue-gallery.webp"
   }
 }

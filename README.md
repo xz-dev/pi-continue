@@ -193,7 +193,7 @@ See [`examples/continuation-output-shape.md`](examples/continuation-output-shape
 
 `pi-continue` can write repo-local continuation documents after compaction. These writes are explicit opt-ins.
 
-The more interesting option is AGENTS.md refinement. When `agentGuideSyncMode` is `"always"`, a continuation may replace AGENTS.md with a full modeled guide update. This can turn the guide into a living operating record for repeated corrections, stable preferences, repo rules, and durable lessons learned during long runs. Candidate notes alone never write the file.
+The more interesting option is agent-guide refinement. The default guide path is `AGENTS.md`; when `agentGuideSyncMode` is `"always"`, a continuation may replace that guide with a full modeled update. This can turn a repo-local guide into a living operating record for repeated corrections, stable preferences, repo rules, and durable lessons learned during long runs. Candidate notes alone never write the file.
 
 Default continuation document path:
 
@@ -218,7 +218,7 @@ Write semantics:
 - `agentGuideUpdates` and `durablePromotions` are guidance/proposal fields, not write claims.
 - Writes are normalized and skipped when content is unchanged.
 
-In this repository, `CONTINUE.md` is ignored local state. `AGENTS.md` is tracked package corpus, but automatic AGENTS.md writes remain off by default.
+In this repository, `CONTINUE.md`, `PLAN.md`, `AGENTS.md`, `ARCH.md`, and `VISION.md` are ignored local state. The npm package keeps README as its only Markdown guide. Automatic AGENTS.md writes remain off by default.
 
 ## Boundaries
 
@@ -257,4 +257,4 @@ Expected extension command surface:
 continue
 ```
 
-The npm package should include `AGENTS.md`, `README.md`, `LICENSE`, `assets/`, `examples/`, and `extensions/`. It should not include tests, `.pi/`, tarballs, local runtime files, retired local notes, or pnpm validation files.
+The npm package should include `README.md`, `LICENSE`, `assets/`, `examples/`, and `extensions/`. It should not include tests, `.pi/`, tarballs, local runtime files, ignored Markdown notes or guides, or pnpm validation files.
