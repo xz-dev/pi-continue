@@ -65,7 +65,7 @@ Use the structured fields as semantic slots, not as a transcript template:
 
 ## Durable promotion policy
 
-- Use `durablePromotions` for durable changes that belong outside the ledger in canonical docs such as AGENTS.md, ARCH.md, PLAN.md, HANDOFF.md, README.md, skill docs, or user-approved VISION.md.
+- Use `durablePromotions` for durable changes that belong outside the ledger in tracked docs or control-plane files such as AGENTS.md, README.md, PLAN.md, HANDOFF.md, or skill docs.
 - Treat the compaction artifact as a proposal surface, not proof of a file write.
 - Each durable promotion must use one status: `apply`, `reject`, `defer`, `already-covered`, or `none`.
 - For non-`none` promotions, include target surface, proposal, evidence, durability, risk, and next action.

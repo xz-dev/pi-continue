@@ -6,19 +6,21 @@ This file is the repo-local operating guide for agents working in `pi-continue`.
 
 ## Canonical corpus
 
-Read in this order when the task touches product, docs, or runtime behavior:
+The tracked documentation corpus is intentionally small:
 
-1. `VISION.md` — product promise, user problem, principles, success criteria, non-goals.
-2. `README.md` — user/operator-facing contract: install, command, config, prompt customization, boundaries.
-3. `ARCH.md` — architecture contract: Pi seams, guard semantics, artifacts, config ownership, non-goals.
-4. `extensions/continue/index.ts` — extension entry point and Pi hook registration.
-5. `extensions/continue/src/runtime.ts` and `extensions/continue/src/mid-run-guard.ts` — continuation lifecycle, prompt dispatch, retry blocking, guard trigger rules.
-6. `extensions/continue/src/config.ts`, `extensions/continue/src/project.ts`, and `extensions/continue/src/blocks.ts` — config defaults, repo document resolution/writes, and structured artifact parsing.
-7. `assets/` — customizable system/user prompt corpus.
-8. `examples/` — public config and output examples.
-9. `tests/` — executable contract.
+1. `README.md` — human operator guide: install, command, config, prompt customization, boundaries, and the compact product explanation.
+2. `AGENTS.md` — agent operating guide: product invariants, runtime boundaries, code ownership, prompt rules, validation, and release procedure.
 
-`CONTINUE.md` is optional runtime output from the extension. It is ignored local state, not tracked package corpus. Do not re-track it.
+Read supporting package surfaces when they unlock a decision, prevent rework, or reduce risk:
+
+3. `extensions/continue/index.ts` — extension entry point and Pi hook registration.
+4. `extensions/continue/src/runtime.ts` and `extensions/continue/src/mid-run-guard.ts` — continuation lifecycle, prompt dispatch, retry blocking, guard trigger rules.
+5. `extensions/continue/src/config.ts`, `extensions/continue/src/project.ts`, and `extensions/continue/src/blocks.ts` — config defaults, repo document resolution/writes, and structured artifact parsing.
+6. `assets/` — customizable system/user prompt corpus.
+7. `examples/` — public config and output examples.
+8. `tests/` — executable contract.
+
+`ARCH.md` and `VISION.md` are retired local notes in this repo. They are ignored and are not tracked or packaged. Do not re-track them unless the user explicitly restores the documentation corpus. `CONTINUE.md` is optional runtime output from the extension. It is ignored local state, not tracked package corpus. Do not re-track it.
 
 ## Product contract
 
@@ -58,7 +60,7 @@ Prefer:
 
 Avoid leading with jargon such as "unsafe model call" or burying the product value under hook names. Hook names belong in architecture/runtime sections, not the opening pitch.
 
-README should stay friendly, concise, and high-signal. Do not omit the core features: mid-run continuation, native compaction, same-session resume, `/continue`, customizable prompts, Continuation Ledger artifacts, durable promotions, and optional repo-document sync.
+README should stay calm, fluent, declarative, concise, and useful for humans. Do not turn it into a machine contract or a marketing pitch. Lead with the mid-run capability, the customizable compact prompt, what is continued and handed to the receiving agent, and optional AGENTS.md refinement as a living/self-refining repo guide. Do not omit the core features: mid-run continuation, native compaction, same-session resume, `/continue`, customizable prompts, Continuation Ledger artifacts, durable promotions, and optional repo-document sync.
 
 ## Runtime boundaries
 
@@ -130,11 +132,12 @@ Ignored local state:
 
 - `.pi/` — project-local Pi settings/extension config and prompt overrides.
 - `CONTINUE.md` — optional runtime continuation document.
+- `ARCH.md` and `VISION.md` — retired local notes, not package corpus.
 - package/build/cache artifacts already covered by `.gitignore`.
 
-`AGENTS.md` is tracked package corpus in this repo. Runtime AGENTS.md replacement is possible only when `agentGuideSyncMode` is explicitly set to `"always"` and the artifact includes a full `agentGuideMarkdown` replacement; default must remain `"off"`.
+`README.md` and `AGENTS.md` are the tracked package docs in this repo. Runtime AGENTS.md replacement is possible only when `agentGuideSyncMode` is explicitly set to `"always"` and the artifact includes a full `agentGuideMarkdown` replacement; default must remain `"off"`.
 
-Do not commit secrets, `.npmrc`, `.env*`, local Pi config, generated tarballs, or runtime continuation files.
+Do not commit secrets, `.npmrc`, `.env*`, local Pi config, generated tarballs, or runtime continuation files. `pnpm-lock.yaml` and `pnpm-workspace.yaml` are tracked validation support for pnpm dependency/build-approval stability, but they are not npm package contents.
 
 ## Validation gates
 
@@ -159,7 +162,7 @@ Expected command surface:
 continue
 ```
 
-`npm pack --dry-run --json` should include `AGENTS.md`, `README.md`, `VISION.md`, `ARCH.md`, `LICENSE`, `assets/`, `examples/`, and `extensions/`. It should not include tests, `.pi/`, tarballs, or `CONTINUE.md`.
+`npm pack --dry-run --json` should include `AGENTS.md`, `README.md`, `LICENSE`, `assets/`, `examples/`, and `extensions/`. It should not include tests, `.pi/`, tarballs, `CONTINUE.md`, `PLAN.md`, `ARCH.md`, `VISION.md`, `pnpm-lock.yaml`, or `pnpm-workspace.yaml`.
 
 ## Release discipline
 
@@ -197,13 +200,11 @@ If `CONTINUE.md` exists locally, leave it alone unless the task is specifically 
 
 When a behavior, config key, command, artifact, prompt path, package file list, or boundary changes, update all relevant surfaces in the same pass:
 
-- `VISION.md` for product intent changes.
-- `README.md` for user/operator behavior.
-- `ARCH.md` for runtime contracts and ownership.
-- `AGENTS.md` for repo-local agent procedure and invariants.
+- `README.md` for user/operator behavior and concise product explanation.
+- `AGENTS.md` for repo-local agent procedure, product invariants, runtime boundaries, ownership, and release procedure.
 - `examples/*.json` and example markdown for defaults and output shape.
 - `assets/` for prompt behavior.
 - `tests/` for executable expectations.
 - `package.json` for package metadata and npm file inclusion.
 
-Do not let docs claim a feature that runtime/tests do not implement, or let runtime expose behavior not explained in docs.
+Do not let docs claim a feature that runtime/tests do not implement, or let runtime expose behavior not explained in the tracked docs and tests.

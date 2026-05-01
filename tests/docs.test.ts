@@ -28,7 +28,7 @@ test("README stays a front-facing product and operator guide", () => {
 	assert.match(readme, /same-session continuation prompt/);
 	assert.match(readme, /native compaction/i);
 	assert.match(readme, /Continuation Ledger/);
-	assert.match(readme, /custom prompt assets/i);
+	assert.match(readme, /customizable compact prompt|prompt assets/i);
 	assert.match(readme, /Optional repo docs/);
 	assert.match(readme, /pi install npm:pi-continue/);
 	assert.match(readme, /Only `\/continue` is registered/);
@@ -63,8 +63,6 @@ test("package metadata and package contents align with the public contract", () 
 	assert.deepEqual(packageJson.files, [
 		"README.md",
 		"AGENTS.md",
-		"VISION.md",
-		"ARCH.md",
 		"LICENSE",
 		"assets/",
 		"examples/",
