@@ -63,7 +63,6 @@ function statusLabel(event: ContinuationLatestEvent): string {
 		return "continuation needs attention";
 	}
 	if (event.status === "blocked") return "guard blocked a repeated unsafe retry";
-	if (event.artifactStatus === "fallback") return "completed with fallback summary";
 	if (event.documentSync.continuationDoc === "failed" || event.documentSync.agentGuide === "failed") return "completed, but document sync needs attention";
 	if (event.promptStatus === "sent" && resume.status !== "completed") return "compaction completed; resume outcome unavailable";
 	return "completed successfully";
@@ -86,7 +85,6 @@ function renderSafeBoundary(event: ContinuationLatestEvent): string {
 
 function artifactLabel(event: ContinuationLatestEvent): string {
 	if (event.artifactStatus === "modeled") return "Continuation Ledger parsed successfully";
-	if (event.artifactStatus === "fallback") return "deterministic fallback summary was used";
 	if (event.artifactStatus === "aborted") return "modeled synthesis aborted before a usable artifact";
 	return "waiting for continuation artifact";
 }
@@ -115,7 +113,6 @@ function actionLine(event: ContinuationLatestEvent): string {
 	if (resume.status === "failed" || resume.status === "aborted") return "Review the resume outcome, correct the cause if needed, then continue from live state.";
 	if (event.status === "failed") return "Review the failure, correct the cause, then retry only when the session is stable.";
 	if (event.documentSync.continuationDoc === "failed" || event.documentSync.agentGuide === "failed") return "Continuation completed; review document permissions or paths before relying on repo-document sync.";
-	if (event.artifactStatus === "fallback") return "Continue carefully from live state; fallback may miss nuanced decisions or validation freshness.";
 	if (event.documentSync.continuationDoc === "pending" || event.documentSync.agentGuide === "pending") return "Compaction completed; wait for document sync to settle.";
 	return "No action needed.";
 }
@@ -219,7 +216,6 @@ export function renderStatus(
 		`- Append compaction metadata: ${config.appendCompactionMetadata ? "yes" : "no"}`,
 		`- Append file tags: ${config.appendFileTags ? "yes" : "no"}`,
 		`- Prompt override policy: ${config.promptOverridePolicy}`,
-		`- Fallback mode: ${config.fallbackMode}`,
 		`- Ledger display: ${config.ledgerDisplayMode}`,
 		``,
 		`## Pi Core Compaction`,

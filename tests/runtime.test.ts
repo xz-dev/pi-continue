@@ -321,7 +321,7 @@ test("resume start timeout settles prompt dispatch that never starts", async () 
 	assert.deepEqual(failedEvents, ["continue-1"]);
 	assert.equal(runtime.latestEvent?.status, "failed");
 	assert.equal(runtime.latestEvent?.resume.status, "failed");
-	assert.equal(runtime.latestEvent?.failureReason, "Continuation prompt dispatch failed.");
+	assert.equal(runtime.latestEvent?.failureReason, "Continuation prompt dispatch failed before the next run started.");
 	assert.equal(runtime.activeEventId, undefined);
 	assert.equal(runtime.awaitingResumeEventId, undefined);
 });
@@ -340,10 +340,10 @@ test("failed guard records a failure key and blocks identical retries", () => {
 		sendContinuation: (prompt) => continuations.push(prompt),
 	});
 	assert.equal(started, true);
-	owner.compactOptions.onError(new Error("Provider failed sk-secret-token"));
+	owner.compactOptions.onError(new Error("compact failed"));
 	assert.equal(runtime.compactionRunning, false);
 	assert.equal(runtime.latestEvent?.status, "failed");
-	assert.equal(runtime.latestEvent?.failureReason, "Summarizer provider failed; check model, authentication, or context settings.");
+	assert.equal(runtime.latestEvent?.failureReason, "Continuation compaction failed.");
 	assert.equal(continuations.length, 0);
 	const retry = startContinuationCompaction(ctx, runtime, {
 		source: "mid-run-guard",
@@ -370,7 +370,7 @@ test("prompt dispatch failure settles the latest event", () => {
 		abortActiveRun: false,
 		continueAfterComplete: true,
 		sendContinuation: () => {
-			throw new Error("OPENAI_API_KEY=secretvalue");
+			throw new Error("send failed");
 		},
 	});
 	assert.equal(started, true);
@@ -379,7 +379,7 @@ test("prompt dispatch failure settles the latest event", () => {
 	assert.equal(runtime.activeEventId, undefined);
 	assert.equal(runtime.latestEvent?.status, "failed");
 	assert.equal(runtime.latestEvent?.promptStatus, "failed");
-	assert.equal(runtime.latestEvent?.failureReason, "Summarizer provider failed; check model, authentication, or context settings.");
+	assert.equal(runtime.latestEvent?.failureReason, "Continuation prompt dispatch failed.");
 });
 
 test("duplicate terminal callbacks do not revive failed events", () => {

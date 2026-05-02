@@ -18,10 +18,9 @@ import {
 	planActiveDocumentSync,
 	recordActiveSynthesisTelemetry,
 	recordDocumentSyncResult,
-	sanitizeEventReason,
 } from "./src/continuation-event.ts";
 import { buildContinuationDetails, buildContinuationSynthesisTelemetry, parseContinuationDetails } from "./src/details.ts";
-import { buildHistoryFallback, buildSplitFallback, buildSynthesisAbortError } from "./src/fallback.ts";
+import { buildSynthesisAbortError, SYNTHESIS_ABORT_MESSAGE } from "./src/synthesis-error.ts";
 import { buildLedgerSnapshot, showContinuationLedgerOverlaySoon } from "./src/ledger-viewer.ts";
 import { runMidRunGuard } from "./src/mid-run-guard.ts";
 import { resolveTokenBudget, runPromptPass } from "./src/model.ts";
@@ -110,9 +109,8 @@ function isAssistantMessage(message: unknown): message is AssistantMessage {
 	return typeof message === "object" && message !== null && "role" in message && message.role === "assistant";
 }
 
-function safeFailureMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
-}
+const DOCUMENT_SYNC_FAILURE = "Document sync failed; check the configured path and permissions.";
+const PENDING_DOCUMENT_SYNC_FAILURE = "Document sync did not complete before continuation failed.";
 
 function setRuntimeStatus(ctx: ExtensionContext, value: string | undefined): void {
 	if (!ctx.hasUI) return;
@@ -131,7 +129,7 @@ export default function (pi: ExtensionAPI) {
 			removed = true;
 		}
 		if (removed) {
-			failPendingDocumentSyncForEvent(runtime, eventId, "Document sync did not complete before continuation failed.");
+			failPendingDocumentSyncForEvent(runtime, eventId, PENDING_DOCUMENT_SYNC_FAILURE);
 		}
 	}
 
@@ -268,26 +266,6 @@ export default function (pi: ExtensionAPI) {
 			config.splitPrefixMaxTokens,
 			"split",
 		);
-		const historyInputForFallback = {
-			scenario: preparation.previousSummary ? "update" as const : "initial" as const,
-			projectRoot: resolvedProjectContext.projectRoot,
-			continuationDocPath: resolvedProjectContext.continuationDocPath,
-			existingContinuationDoc: resolvedProjectContext.existingContinuationDoc,
-			agentGuidePath: resolvedProjectContext.agentGuidePath,
-			existingAgentGuide: resolvedProjectContext.existingAgentGuide,
-			previousSummary: preparation.previousSummary,
-			historyTranscript: internals.serializeConversation(internals.convertToLlm(preparation.messagesToSummarize)),
-			customInstructions: event.customInstructions,
-			fileOps: fileOpsSnapshot,
-		};
-		const splitInputForFallback = splitPrompt
-			? {
-				projectRoot: resolvedProjectContext.projectRoot,
-				continuationDocPath: resolvedProjectContext.continuationDocPath,
-				splitPrefixTranscript: internals.serializeConversation(internals.convertToLlm(preparation.turnPrefixMessages)),
-				customInstructions: event.customInstructions,
-			}
-			: undefined;
 		let historyArtifacts: ParsedHistoryArtifacts;
 		let splitPrefix: string | undefined;
 		let synthesis: ContinuationSynthesisTelemetry | undefined;
@@ -315,15 +293,9 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 			markActiveContinuationArtifact(runtime, "modeled", undefined);
-		} catch (error) {
-			const message = safeFailureMessage(error);
-			if (config.fallbackMode === "abort") {
-				markActiveContinuationArtifact(runtime, "aborted", message);
-				throw buildSynthesisAbortError(message);
-			}
-			markActiveContinuationArtifact(runtime, "fallback", message);
-			historyArtifacts = buildHistoryFallback(historyInputForFallback, message);
-			splitPrefix = splitInputForFallback ? buildSplitFallback(splitInputForFallback, message) : undefined;
+		} catch {
+			markActiveContinuationArtifact(runtime, "aborted", SYNTHESIS_ABORT_MESSAGE);
+			throw buildSynthesisAbortError();
 		}
 		const activeEventId = getActiveContinuationEventId(runtime);
 		const documentSyncId = config.continuationDocSyncMode === "always" ? randomUUID() : undefined;
@@ -396,7 +368,7 @@ export default function (pi: ExtensionAPI) {
 			const config = loadContinuationConfig(projectContext.projectRoot);
 			if (config.enabled && config.ledgerDisplayMode === "overlay") {
 				showContinuationLedgerOverlaySoon(ctx, ledger, (reason) => {
-					if (ctx.hasUI) ctx.ui.notify(`Continuation Ledger overlay failed: ${sanitizeEventReason(reason)}`, "error");
+					if (ctx.hasUI) ctx.ui.notify(`Continuation Ledger overlay failed: ${reason}`, "error");
 				});
 			}
 		}
@@ -417,10 +389,9 @@ export default function (pi: ExtensionAPI) {
 						"info",
 					);
 				}
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				recordDocumentSyncResult(runtime, pending.eventId, pending.target, "failed", message);
-				if (ctx.hasUI) ctx.ui.notify(`${pending.label} sync failed: ${sanitizeEventReason(message)}`, "error");
+			} catch {
+				recordDocumentSyncResult(runtime, pending.eventId, pending.target, "failed", DOCUMENT_SYNC_FAILURE);
+				if (ctx.hasUI) ctx.ui.notify(`${pending.label} sync failed: ${DOCUMENT_SYNC_FAILURE}`, "error");
 			}
 		}
 		if (ctx.hasUI && details.agentGuideWriteStatus === "no-replacement" && details.agentGuideChangeReason) {

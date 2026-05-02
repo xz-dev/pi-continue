@@ -3,7 +3,6 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type {
 	ConfigScope,
-	FallbackMode,
 	ContinuationConfig,
 	DocumentSyncMode,
 	ContinuationReasoning,
@@ -27,7 +26,6 @@ const PROMPT_OVERRIDE_POLICIES = new Set<PromptOverridePolicy>([
 	"project-override",
 ]);
 const DOCUMENT_SYNC_MODES = new Set<DocumentSyncMode>(["always", "off"]);
-const FALLBACK_MODES = new Set<FallbackMode>(["deterministic-summary", "abort"]);
 const LEDGER_DISPLAY_MODES = new Set<LedgerDisplayMode>(["overlay", "off"]);
 const mutationQueues = new Map<string, Promise<void>>();
 
@@ -56,7 +54,6 @@ export const DEFAULT_CONTINUE_CONFIG: ContinuationConfig = {
 	appendCompactionMetadata: false,
 	appendFileTags: false,
 	promptOverridePolicy: "project-override",
-	fallbackMode: "deterministic-summary",
 	ledgerDisplayMode: "overlay",
 };
 
@@ -74,7 +71,6 @@ interface PartialContinuationConfig {
 	appendCompactionMetadata?: boolean;
 	appendFileTags?: boolean;
 	promptOverridePolicy?: string;
-	fallbackMode?: string;
 	ledgerDisplayMode?: string;
 }
 
@@ -115,7 +111,6 @@ function parsePartialConfig(value: unknown): PartialContinuationConfig {
 		appendCompactionMetadata: asBoolean(value.appendCompactionMetadata),
 		appendFileTags: asBoolean(value.appendFileTags),
 		promptOverridePolicy: asString(value.promptOverridePolicy),
-		fallbackMode: asString(value.fallbackMode),
 		ledgerDisplayMode: asString(value.ledgerDisplayMode),
 	};
 }
@@ -149,12 +144,6 @@ function normalizeSyncMode(value: string | undefined, fallback: DocumentSyncMode
 	return value !== undefined && DOCUMENT_SYNC_MODES.has(value as DocumentSyncMode)
 		? (value as DocumentSyncMode)
 		: fallback;
-}
-
-function normalizeFallbackMode(value: string | undefined): FallbackMode {
-	return value !== undefined && FALLBACK_MODES.has(value as FallbackMode)
-		? (value as FallbackMode)
-		: DEFAULT_CONTINUE_CONFIG.fallbackMode;
 }
 
 function normalizeLedgerDisplayMode(value: string | undefined): LedgerDisplayMode {
@@ -194,7 +183,6 @@ function normalizeConfig(partial: PartialContinuationConfig): ContinuationConfig
 		appendCompactionMetadata: partial.appendCompactionMetadata ?? DEFAULT_CONTINUE_CONFIG.appendCompactionMetadata,
 		appendFileTags: partial.appendFileTags ?? DEFAULT_CONTINUE_CONFIG.appendFileTags,
 		promptOverridePolicy: normalizePromptOverridePolicy(partial.promptOverridePolicy),
-		fallbackMode: normalizeFallbackMode(partial.fallbackMode),
 		ledgerDisplayMode: normalizeLedgerDisplayMode(partial.ledgerDisplayMode),
 	};
 }

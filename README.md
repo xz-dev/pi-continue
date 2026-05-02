@@ -87,7 +87,9 @@ Configure the threshold in Pi settings:
 
 `reserveTokens` and `keepRecentTokens` are absolute token counts. For a 272K context model, `reserveTokens: 68000` triggers near 75 percent usage. See [`examples/pi-settings-compaction-75pct-272k.json`](examples/pi-settings-compaction-75pct-272k.json).
 
-Use `/continue status` after a continuation to see what happened. Status reports the latest local event: source, checkpoint, artifact or fallback state, summarizer provenance, prompt dispatch, resume outcome, optional document sync, and the next safe action. UI sessions can also show the latest Continuation Ledger as a transient overlay; this never appends another transcript entry. Status and overlay copy do not show transcript text, prompt payloads, document contents, provider errors, or raw model output.
+Use `/continue status` after a continuation to see what happened. Status reports the latest local event: source, checkpoint, artifact synthesis, summarizer provenance, prompt dispatch, resume outcome, optional document sync, and the next safe action. UI sessions can also show the latest Continuation Ledger as a transient overlay; this never appends another transcript entry. Failure states use explicit package messages rather than parsing provider error text.
+
+If modeled Continuation Ledger synthesis fails, `pi-continue` fails the compaction instead of writing any guessed continuation artifact. Fix the model, authentication, prompt, or context issue, then retry when the session is stable.
 
 ## Configuration
 
@@ -120,7 +122,6 @@ Default package config:
   "appendCompactionMetadata": false,
   "appendFileTags": false,
   "promptOverridePolicy": "project-override",
-  "fallbackMode": "deterministic-summary",
   "ledgerDisplayMode": "overlay"
 }
 ```
@@ -134,10 +135,13 @@ Common settings:
 | `summarizerModel` | Uses the active Pi model with `"inherit"`, or a pinned `"provider/model"`. |
 | `reasoning` | Uses Pi's setting with `"inherit"`, or a model-supported thinking level. Unsupported levels are hidden in settings and clamped through Pi's `thinkingLevelMap`. |
 | `historyMaxTokens` / `splitPrefixMaxTokens` | Optional summary-token budgets; `null` uses Pi-derived defaults. |
+| `continuationDocPath` | Repo-relative path for optional continuation document sync; default `"CONTINUE.md"`. |
 | `continuationDocSyncMode` | `"off"` by default; `"always"` writes `CONTINUE.md` after successful extension-owned compaction. |
+| `agentGuidePath` | Repo-relative path for optional full guide replacement; default `"AGENTS.md"`. |
 | `agentGuideSyncMode` | `"off"` by default; `"always"` allows AGENTS.md replacement only when the artifact includes full guide content. |
+| `appendCompactionMetadata` | `false` by default; when true, appends compact non-path metadata to the compaction summary. |
+| `appendFileTags` | `false` by default; when true, appends current compaction read/modified file tags. |
 | `promptOverridePolicy` | Chooses project overrides, global overrides, or package defaults. |
-| `fallbackMode` | Uses deterministic fallback summaries, or aborts when modeled synthesis fails. |
 | `ledgerDisplayMode` | `"overlay"` shows the latest Continuation Ledger as transient TUI aftercare; `"off"` disables automatic display. |
 
 Malformed JSON config fails loudly. Unknown config keys and command aliases are not read.
@@ -246,7 +250,7 @@ Run the normal local gate before changing package behavior or public docs:
 ```bash
 pnpm test
 jq empty examples/*.json package.json
-npm pack --dry-run --json
+npm pack --dry-run --json --ignore-scripts
 git diff --check
 ```
 

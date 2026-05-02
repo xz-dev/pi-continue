@@ -1,6 +1,5 @@
 import type { ExtensionCommandContext, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { extractTaggedBlock } from "./blocks.ts";
-import { sanitizeEventReason } from "./continuation-event.ts";
 import { ScrollableTextOverlay, sanitizeOverlayText, showScrollableTextOverlay } from "./text-viewer.ts";
 import type { ContinuationLedgerSnapshot } from "./types.ts";
 
@@ -89,9 +88,8 @@ export function showContinuationLedgerOverlaySoon(
 		.then((shown) => {
 			if (!shown) onError("Continuation Ledger overlay is unavailable in this Pi mode.");
 		})
-		.catch((error: unknown) => {
-			const message = error instanceof Error ? error.message : String(error);
-			onError(sanitizeEventReason(message));
+		.catch(() => {
+			onError("Continuation Ledger overlay failed.");
 		});
 }
 

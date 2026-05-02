@@ -171,6 +171,60 @@ test("parseHistoryArtifacts requires an agent guide decision reason", () => {
 	})), undefined);
 });
 
+test("parseHistoryArtifacts rejects extra or retired contract keys", () => {
+	assert.equal(parseHistoryArtifacts(JSON.stringify({
+		version: "pi-continue-artifacts/v3",
+		brief: structuredArtifact(),
+		document: structuredArtifact(),
+		agentGuideMarkdown: null,
+		agentGuideChangeReason: "extra top-level key rejected",
+		fallbackMode: "deterministic-summary",
+	})), undefined);
+	assert.equal(parseHistoryArtifacts(JSON.stringify({
+		version: "pi-continue-artifacts/v3",
+		brief: structuredArtifact({ fallbackMode: "deterministic-summary" }),
+		document: structuredArtifact(),
+		agentGuideMarkdown: null,
+		agentGuideChangeReason: "extra structured key rejected",
+	})), undefined);
+	assert.equal(parseHistoryArtifacts(JSON.stringify({
+		version: "pi-continue-artifacts/v3",
+		brief: structuredArtifact({ contextMap: [{ source: "/repo/README.md", relevance: "operator guide", use: "verify docs", priority: "now" }] }),
+		document: structuredArtifact(),
+		agentGuideMarkdown: null,
+		agentGuideChangeReason: "extra context map key rejected",
+	})), undefined);
+	assert.equal(parseHistoryArtifacts(JSON.stringify({
+		version: "pi-continue-artifacts/v3",
+		brief: structuredArtifact({ durablePromotions: [{
+			status: "apply",
+			targetSurface: "README.md",
+			proposal: "bad extra key",
+			evidence: "test",
+			durability: "test",
+			risk: "test",
+			nextAction: "test",
+			compatAlias: "fallbackMode",
+		}] }),
+		document: structuredArtifact(),
+		agentGuideMarkdown: null,
+		agentGuideChangeReason: "extra durable promotion key rejected",
+	})), undefined);
+	assert.equal(parseHistoryArtifacts(JSON.stringify({
+		version: "pi-continue-artifacts/v3",
+		brief: structuredArtifact({ recencyLedger: [{
+			status: "active",
+			subject: "new request",
+			evidence: "test",
+			resolution: "test",
+			order: "latest",
+		}] }),
+		document: structuredArtifact(),
+		agentGuideMarkdown: null,
+		agentGuideChangeReason: "extra recency key rejected",
+	})), undefined);
+});
+
 test("parseSplitPrefix extracts tagged payload", () => {
 	assert.equal(parseSplitPrefix("<split-prefix>prefix</split-prefix>"), "prefix");
 });

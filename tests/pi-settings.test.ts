@@ -28,7 +28,7 @@ async function withTempAgent(work) {
 	}
 }
 
-test("readEffectivePiCompactionSettings defaults to Pi fallback compaction settings", async () => {
+test("readEffectivePiCompactionSettings defaults to Pi core compaction settings", async () => {
 	await withTempAgent(async (root) => {
 		assert.deepEqual(readEffectivePiCompactionSettings(root), {
 			enabled: true,
@@ -38,7 +38,7 @@ test("readEffectivePiCompactionSettings defaults to Pi fallback compaction setti
 	});
 });
 
-test("readEffectivePiCompactionSettings lets project settings override the package fallback", async () => {
+test("readEffectivePiCompactionSettings lets project settings override Pi core defaults", async () => {
 	await withTempAgent(async (root) => {
 		const settingsDir = join(root, ".pi");
 		mkdirSync(settingsDir, { recursive: true });

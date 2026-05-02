@@ -19,6 +19,31 @@ const RECENCY_LEDGER_STATUSES = new Set<string>([
 	"unknown",
 ]);
 
+const HISTORY_ARTIFACT_KEYS = ["version", "brief", "document", "agentGuideMarkdown", "agentGuideChangeReason"] as const;
+const STRUCTURED_CONTINUATION_KEYS = [
+	"task",
+	"initiativeCharter",
+	"definitionOfDone",
+	"recencyLedger",
+	"currentPlan",
+	"progress",
+	"state",
+	"decisions",
+	"contextMap",
+	"workingEdge",
+	"validation",
+	"risks",
+	"dormantContext",
+	"retiredContext",
+	"antiRework",
+	"durableLearnings",
+	"durablePromotions",
+	"agentGuideUpdates",
+] as const;
+const CONTEXT_MAP_KEYS = ["source", "relevance", "use"] as const;
+const DURABLE_PROMOTION_KEYS = ["status", "targetSurface", "proposal", "evidence", "durability", "risk", "nextAction"] as const;
+const RECENCY_LEDGER_KEYS = ["status", "subject", "evidence", "resolution"] as const;
+
 interface ContextMapEntry {
 	source: string;
 	relevance: string;
@@ -71,6 +96,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function hasExactKeys(value: Record<string, unknown>, expectedKeys: readonly string[]): boolean {
+	const keys = Object.keys(value);
+	if (keys.length !== expectedKeys.length) return false;
+	const expected = new Set<string>(expectedKeys);
+	return keys.every((key) => expected.has(key));
+}
+
 function nonEmptyString(value: unknown): string | undefined {
 	if (typeof value !== "string") return undefined;
 	const trimmed = value.trim();
@@ -96,7 +128,7 @@ function parseContextMap(value: unknown): ContextMapEntry[] | undefined {
 	if (!Array.isArray(value)) return undefined;
 	const result: ContextMapEntry[] = [];
 	for (const entry of value) {
-		if (!isRecord(entry)) return undefined;
+		if (!isRecord(entry) || !hasExactKeys(entry, CONTEXT_MAP_KEYS)) return undefined;
 		const source = nonEmptyString(entry.source);
 		const relevance = nonEmptyString(entry.relevance);
 		const use = nonEmptyString(entry.use);
@@ -110,7 +142,7 @@ function parseDurablePromotions(value: unknown): DurablePromotion[] | undefined 
 	if (!Array.isArray(value)) return undefined;
 	const result: DurablePromotion[] = [];
 	for (const entry of value) {
-		if (!isRecord(entry)) return undefined;
+		if (!isRecord(entry) || !hasExactKeys(entry, DURABLE_PROMOTION_KEYS)) return undefined;
 		const status = nonEmptyString(entry.status);
 		const targetSurface = nonEmptyString(entry.targetSurface);
 		const proposal = nonEmptyString(entry.proposal);
@@ -130,7 +162,7 @@ function parseRecencyLedger(value: unknown): RecencyLedgerEntry[] | undefined {
 	if (!Array.isArray(value)) return undefined;
 	const result: RecencyLedgerEntry[] = [];
 	for (const entry of value) {
-		if (!isRecord(entry)) return undefined;
+		if (!isRecord(entry) || !hasExactKeys(entry, RECENCY_LEDGER_KEYS)) return undefined;
 		const status = nonEmptyString(entry.status);
 		const subject = nonEmptyString(entry.subject);
 		const evidence = nonEmptyString(entry.evidence);
@@ -144,7 +176,7 @@ function parseRecencyLedger(value: unknown): RecencyLedgerEntry[] | undefined {
 }
 
 function parseStructuredContinuation(value: unknown): StructuredContinuation | undefined {
-	if (!isRecord(value)) return undefined;
+	if (!isRecord(value) || !hasExactKeys(value, STRUCTURED_CONTINUATION_KEYS)) return undefined;
 	const task = nonEmptyString(value.task);
 	const initiativeCharter = stringList(value.initiativeCharter);
 	const definitionOfDone = stringList(value.definitionOfDone);
@@ -259,7 +291,7 @@ export function parseHistoryArtifacts(text: string): ParsedHistoryArtifacts | un
 		if (error instanceof SyntaxError) return undefined;
 		throw error;
 	}
-	if (!isRecord(parsed)) return undefined;
+	if (!isRecord(parsed) || !hasExactKeys(parsed, HISTORY_ARTIFACT_KEYS)) return undefined;
 	if (parsed.version !== HISTORY_ARTIFACT_VERSION) return undefined;
 	const brief = parseStructuredContinuation(parsed.brief);
 	const document = parseStructuredContinuation(parsed.document);

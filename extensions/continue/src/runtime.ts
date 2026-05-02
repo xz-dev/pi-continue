@@ -8,7 +8,6 @@ import {
 	markContinuationPromptSent,
 	markContinuationResumeStarted,
 	recordBlockedContinuationEvent,
-	sanitizeEventReason,
 	settleContinuationResume,
 } from "./continuation-event.ts";
 import type {
@@ -62,6 +61,12 @@ export interface ContinuationResumeSettlement {
 
 const MODE_TOKENS = new Set<string>(["steer", "queue"]);
 const RESUME_START_TIMEOUT_MS = 30_000;
+const BLOCKED_RETRY_FAILURE = "Repeated over-threshold retry was blocked after a failed compaction.";
+const COMPACTION_FAILURE = "Continuation compaction failed.";
+const PROMPT_DISPATCH_FAILURE = "Continuation prompt dispatch failed.";
+const RESUME_ABORTED_FAILURE = "Continuation resume was aborted.";
+const RESUME_LIMIT_FAILURE = "Continuation resume stopped before completing because a model limit was reached.";
+const RESUME_NO_ASSISTANT_FAILURE = "Continuation resume did not produce an assistant response.";
 
 function isContinuationRequestMode(value: string): value is ContinuationRequestMode {
 	return MODE_TOKENS.has(value);
@@ -246,7 +251,7 @@ export function startContinuationCompaction(
 			runtime,
 			options.source,
 			options.trigger,
-			"Mid-run continuation guard blocked a repeated over-threshold retry after the previous compaction failed.",
+			BLOCKED_RETRY_FAILURE,
 		);
 		notify(ctx, "Mid-run continuation guard is still blocking an over-threshold request after a failed compaction.", "error");
 		setStatus(ctx, "continuation guard blocked retry after failure");
@@ -297,15 +302,13 @@ export function startContinuationCompaction(
 							options.onContinuationFailed,
 						);
 						notify(ctx, `${label}: continuation prompt sent.`, "info");
-					} catch (error) {
-						const message = error instanceof Error ? error.message : String(error);
-						const safeMessage = sanitizeEventReason(message);
+					} catch {
 						options.onContinuationFailed?.(event.id);
-						finishContinuationEvent(runtime, event.id, "failed", safeMessage);
+						finishContinuationEvent(runtime, event.id, "failed", PROMPT_DISPATCH_FAILURE);
 						clearResumeStartTimeout(runtime);
 						runtime.awaitingResumeEventId = undefined;
 						settleContinuationFailureVisuals(ctx, runtime, event.id, label);
-						notify(ctx, `${label}: continuation prompt failed: ${safeMessage}`, "error");
+						notify(ctx, `${label}: continuation prompt failed: ${PROMPT_DISPATCH_FAILURE}`, "error");
 						return;
 					}
 					return;
@@ -315,30 +318,27 @@ export function startContinuationCompaction(
 				setStatus(ctx, undefined);
 				notify(ctx, `${label}: continuation compaction completed.`, "info");
 			},
-			onError: (error) => {
+			onError: () => {
 				if (!claimCompactionCallback()) return;
 				runtime.compactionRunning = false;
 				if (guardKey) runtime.guardFailureKey = guardKey;
-				const safeMessage = sanitizeEventReason(error.message);
 				options.onContinuationFailed?.(event.id);
-				finishContinuationEvent(runtime, event.id, "failed", safeMessage);
+				finishContinuationEvent(runtime, event.id, "failed", COMPACTION_FAILURE);
 				clearResumeStartTimeout(runtime);
 				runtime.awaitingResumeEventId = undefined;
 				settleContinuationFailureVisuals(ctx, runtime, event.id, label);
-				notify(ctx, `${label}: continuation compaction failed: ${safeMessage}`, "error");
+				notify(ctx, `${label}: continuation compaction failed: ${COMPACTION_FAILURE}`, "error");
 			},
 		});
-	} catch (error) {
+	} catch {
 		runtime.compactionRunning = false;
 		if (guardKey) runtime.guardFailureKey = guardKey;
-		const message = error instanceof Error ? error.message : String(error);
-		const safeMessage = sanitizeEventReason(message);
 		options.onContinuationFailed?.(event.id);
-		finishContinuationEvent(runtime, event.id, "failed", safeMessage);
+		finishContinuationEvent(runtime, event.id, "failed", COMPACTION_FAILURE);
 		clearResumeStartTimeout(runtime);
 		runtime.awaitingResumeEventId = undefined;
 		settleContinuationFailureVisuals(ctx, runtime, event.id, label);
-		notify(ctx, `${label}: continuation compaction failed: ${safeMessage}`, "error");
+		notify(ctx, `${label}: continuation compaction failed: ${COMPACTION_FAILURE}`, "error");
 		return false;
 	}
 	return true;
@@ -381,7 +381,7 @@ export function settleAwaitingContinuationResumeFromAssistant(
 			stopReason: message.stopReason,
 			requestedModel: requestedAssistantModel(message),
 			responseModel: message.responseModel,
-			failureReason: "Continuation resume was aborted.",
+			failureReason: RESUME_ABORTED_FAILURE,
 		})) {
 			clearResumeStartTimeout(runtime);
 			runtime.awaitingResumeEventId = undefined;
@@ -390,8 +390,8 @@ export function settleAwaitingContinuationResumeFromAssistant(
 		return undefined;
 	}
 	const reason = message.stopReason === "length"
-		? "Continuation resume length limit reached."
-		: message.errorMessage ?? "Continuation resume assistant response failed.";
+		? RESUME_LIMIT_FAILURE
+		: RESUME_NO_ASSISTANT_FAILURE;
 	if (settleContinuationResume(runtime, eventId, "failed", {
 		stopReason: message.stopReason,
 		requestedModel: requestedAssistantModel(message),

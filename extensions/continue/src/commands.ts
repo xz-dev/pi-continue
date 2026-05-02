@@ -165,7 +165,6 @@ export async function runSettingsDialog(pi: ExtensionAPI, ctx: ExtensionCommandC
 			`append compaction metadata: ${config.appendCompactionMetadata ? "yes" : "no"}`,
 			`append file tags: ${config.appendFileTags ? "yes" : "no"}`,
 			`prompt override policy: ${config.promptOverridePolicy}`,
-			`fallback mode: ${config.fallbackMode}`,
 			`ledger display: ${config.ledgerDisplayMode}`,
 			`reset ${scope} config`,
 			"done",
@@ -265,13 +264,6 @@ export async function runSettingsDialog(pi: ExtensionAPI, ctx: ExtensionCommandC
 			config = await updateSetting(scope, projectContext.projectRoot, config, async (current) => {
 				const next = await ctx.ui.select("Prompt override policy", ["package-default", "global-override", "project-override"]);
 				return next ? { ...current, promptOverridePolicy: next as ContinuationConfig["promptOverridePolicy"] } : undefined;
-			});
-			continue;
-		}
-		if (selected.startsWith("fallback mode:")) {
-			config = await updateSetting(scope, projectContext.projectRoot, config, async (current) => {
-				const next = await ctx.ui.select("Fallback mode", ["deterministic-summary", "abort"]);
-				return next ? { ...current, fallbackMode: next as ContinuationConfig["fallbackMode"] } : undefined;
 			});
 			continue;
 		}

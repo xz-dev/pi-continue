@@ -11,7 +11,6 @@ import {
 	markContinuationResumeStarted,
 	recordActiveSynthesisTelemetry,
 	recordDocumentSyncResult,
-	sanitizeEventReason,
 	settleContinuationResume,
 } from "../extensions/continue/src/continuation-event.ts";
 import type { ContinuationEventStore } from "../extensions/continue/src/types.ts";
@@ -24,16 +23,11 @@ function createStore(): ContinuationEventStore {
 	};
 }
 
-test("sanitizeEventReason returns allowlisted copy instead of raw sensitive text", () => {
-	const provider = sanitizeEventReason(
-		"Provider 400 echoed prompt <history-to-summarize>secret work</history-to-summarize> OPENAI_API_KEY=secretvalue",
-	);
-	assert.equal(provider, "Summarizer provider failed; check model, authentication, or context settings.");
-	assert.doesNotMatch(provider, /secret|OPENAI|history-to-summarize/);
-	const document = sanitizeEventReason("EACCES: permission denied, open '/Users/alice/private/repo/CONTINUE.md'");
-	assert.equal(document, "Document sync failed; check the configured path and permissions.");
-	assert.doesNotMatch(document, /Users|alice|CONTINUE/);
-	assert.equal(sanitizeEventReason("Continuation resume was aborted."), "Continuation resume was aborted.");
+test("event failure reasons are owned messages supplied by the caller", () => {
+	const store = createStore();
+	const event = beginContinuationEvent(store, "command-steer", undefined, "pending");
+	assert.equal(finishContinuationEvent(store, event.id, "failed", "Continuation compaction failed."), true);
+	assert.equal(store.latestEvent?.failureReason, "Continuation compaction failed.");
 });
 
 test("resume outcome completes a running continuation after prompt dispatch", () => {
@@ -95,7 +89,7 @@ test("abandonActiveContinuationEvent settles pending sync on shutdown", () => {
 		continuationDoc: "pending",
 		agentGuide: "pending",
 	});
-	abandonActiveContinuationEvent(store, "shutdown token=secretvalue");
+	abandonActiveContinuationEvent(store, "Pi session shut down before continuation aftercare settled.");
 	assert.equal(store.activeEventId, undefined);
 	assert.equal(store.latestEvent?.status, "failed");
 	assert.equal(store.latestEvent?.documentSync.continuationDoc, "failed");
@@ -111,7 +105,7 @@ test("abandonActiveContinuationEvent fails pending sync after compaction complet
 		agentGuide: "off",
 	});
 	finishContinuationEvent(store, event.id, "completed", undefined);
-	abandonActiveContinuationEvent(store, "shutdown token=secretvalue");
+	abandonActiveContinuationEvent(store, "Pi session shut down before continuation aftercare settled.");
 	assert.equal(store.activeEventId, undefined);
 	assert.equal(store.latestEvent?.status, "completed");
 	assert.equal(store.latestEvent?.documentSync.continuationDoc, "failed");
@@ -122,30 +116,30 @@ test("abandonActiveContinuationEvent fails pending sync after compaction complet
 test("finishContinuationEvent does not report compaction failure as failed resume", () => {
 	const store = createStore();
 	const event = beginContinuationEvent(store, "command-steer", undefined, "pending");
-	assert.equal(finishContinuationEvent(store, event.id, "failed", "provider 500"), true);
+	assert.equal(finishContinuationEvent(store, event.id, "failed", "Continuation compaction failed."), true);
 	assert.equal(store.latestEvent?.status, "failed");
 	assert.equal(store.latestEvent?.promptStatus, "failed");
 	assert.equal(store.latestEvent?.resume.status, "not-requested");
-	assert.equal(store.latestEvent?.failureReason, "Summarizer provider failed; check model, authentication, or context settings.");
+	assert.equal(store.latestEvent?.failureReason, "Continuation compaction failed.");
 });
 
 test("finishContinuationEvent is terminal-idempotent", () => {
 	const store = createStore();
 	const event = beginContinuationEvent(store, "mid-run-guard", undefined, "pending");
-	assert.equal(finishContinuationEvent(store, event.id, "failed", "provider 500"), true);
+	assert.equal(finishContinuationEvent(store, event.id, "failed", "Continuation compaction failed."), true);
 	assert.equal(finishContinuationEvent(store, event.id, "completed", undefined), false);
 	assert.equal(store.latestEvent?.status, "failed");
-	assert.equal(store.latestEvent?.failureReason, "Summarizer provider failed; check model, authentication, or context settings.");
+	assert.equal(store.latestEvent?.failureReason, "Continuation compaction failed.");
 });
 
-test("failPendingDocumentSyncForEvent clears pending sync without raw details", () => {
+test("failPendingDocumentSyncForEvent clears pending sync with caller-owned failure copy", () => {
 	const store = createStore();
 	const event = beginContinuationEvent(store, "command-steer", undefined, "pending");
 	planActiveDocumentSync(store, {
 		continuationDoc: "pending",
 		agentGuide: "no-replacement",
 	});
-	failPendingDocumentSyncForEvent(store, event.id, "EACCES: /Users/alice/repo/CONTINUE.md");
+	failPendingDocumentSyncForEvent(store, event.id, "Document sync failed; check the configured path and permissions.");
 	assert.equal(store.latestEvent?.documentSync.continuationDoc, "failed");
 	assert.equal(store.latestEvent?.documentSync.agentGuide, "no-replacement");
 	assert.equal(store.latestEvent?.failureReason, "Document sync failed; check the configured path and permissions.");

@@ -46,7 +46,7 @@ test("buildContinuationSynthesisTelemetry stores only allowlisted telemetry", ()
 		responseId: "resp-1",
 		usage: { input: 10, output: 20, cacheRead: 1, cacheWrite: 2, totalTokens: 33, costTotal: 0.001 },
 		httpStatus: 200,
-		text: "SECRET RAW MODEL ARTIFACT",
+		text: "RAW MODEL ARTIFACT",
 	};
 	const synthesis = buildContinuationSynthesisTelemetry(history, undefined);
 	assert.ok(synthesis?.history);
@@ -55,9 +55,9 @@ test("buildContinuationSynthesisTelemetry stores only allowlisted telemetry", ()
 	assert.equal(synthesis.totalTokens, 33);
 });
 
-test("parseContinuationDetails reads the full session details payload", () => {
+test("parseContinuationDetails reads the full v3 session details payload", () => {
 	const parsed = parseContinuationDetails({
-		kind: "pi-continue/v2",
+		kind: "pi-continue/v3",
 		readFiles: ["/repo/read.ts"],
 		modifiedFiles: ["/repo/write.ts"],
 		documentSyncId: "sync-2",
@@ -67,7 +67,7 @@ test("parseContinuationDetails reads the full session details payload", () => {
 		continuationEventId: "continue-2",
 	});
 	assert.deepEqual(parsed, {
-		kind: "pi-continue/v2",
+		kind: "pi-continue/v3",
 		readFiles: ["/repo/read.ts"],
 		modifiedFiles: ["/repo/write.ts"],
 		documentSyncId: "sync-2",
@@ -76,6 +76,65 @@ test("parseContinuationDetails reads the full session details payload", () => {
 		agentGuideChangeReason: "No durable guide change is warranted.",
 		continuationEventId: "continue-2",
 	});
+});
+
+test("parseContinuationDetails rejects retired v2 and count-only details", () => {
+	assert.equal(parseContinuationDetails({
+		kind: "pi-continue/v2",
+		readFiles: ["/repo/read.ts"],
+		modifiedFiles: ["/repo/write.ts"],
+	}), undefined);
+	assert.equal(parseContinuationDetails({
+		kind: "pi-continue/v3",
+		readFileCount: 1,
+		modifiedFileCount: 1,
+	}), undefined);
+});
+
+test("parseContinuationDetails rejects nested extras and invalid optional values", () => {
+	assert.equal(parseContinuationDetails({
+		kind: "pi-continue/v3",
+		readFiles: ["/repo/read.ts"],
+		modifiedFiles: ["/repo/write.ts"],
+		documentSyncId: 12,
+	}), undefined);
+	assert.equal(parseContinuationDetails({
+		kind: "pi-continue/v3",
+		readFiles: ["/repo/read.ts"],
+		modifiedFiles: ["/repo/write.ts"],
+		agentGuideWriteStatus: "fallback",
+	}), undefined);
+	assert.equal(parseContinuationDetails({
+		kind: "pi-continue/v3",
+		readFiles: ["/repo/read.ts"],
+		modifiedFiles: ["/repo/write.ts"],
+		synthesis: {
+			history: {
+				requestedModel: "openai/gpt-test",
+				usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, costTotal: 0 },
+				extra: "retired-field",
+			},
+		},
+	}), undefined);
+	assert.equal(parseContinuationDetails({
+		kind: "pi-continue/v3",
+		readFiles: ["/repo/read.ts"],
+		modifiedFiles: ["/repo/write.ts"],
+		synthesis: {
+			history: {
+				requestedModel: "openai/gpt-test",
+				usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, costTotal: 0, extra: 3 },
+			},
+		},
+	}), undefined);
+	assert.equal(parseContinuationDetails({
+		kind: "pi-continue/v3",
+		readFiles: ["/repo/read.ts"],
+		modifiedFiles: ["/repo/write.ts"],
+		synthesis: {
+			totalTokens: "2",
+		},
+	}), undefined);
 });
 
 test("renderContinuationDetails writes compact metadata without file paths", () => {

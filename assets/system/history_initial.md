@@ -107,6 +107,31 @@ Use this exact schema. Arrays may be empty when the Evidence Gate rejects every 
 - `durablePromotions`: durable changes that should be resolved outside compaction in normal repo work. Status is one of `apply`, `reject`, `defer`, `already-covered`, or `none`.
 - `agentGuideUpdates`: candidate durable guide changes or reasons no guide change is warranted. Candidate notes are not writes.
 
+## State ownership model
+
+Every retained item must have exactly one primary owner. Do not duplicate the same meaning across fields.
+
+- `task` owns the active goal and success condition.
+- `initiativeCharter` owns durable purpose, user intent, strategy, non-goals, and must-not-forget context.
+- `definitionOfDone` owns completion criteria.
+- `recencyLedger` owns request, plan, approval, and validation recency resolution.
+- `currentPlan` owns plan lanes only when they affect future decisions.
+- `progress` owns milestone rationale that prevents rework; it is not transcript chronology.
+- `state` owns proven current state.
+- `decisions` owns approvals, rejections, absolutes, architecture boundaries, and stop rules.
+- `contextMap` owns justified source routing.
+- `workingEdge` owns the single current execution edge; do not name stale plans there.
+- `validation` owns proof freshness, missing gates, and failure buckets.
+- `risks` owns unresolved uncertainty with consequences.
+- `dormantContext` owns inactive but important context with a return trigger.
+- `retiredContext` owns obsolete or superseded facts that could otherwise mislead.
+- `antiRework` owns duplication traps and false paths.
+- `durableLearnings` owns reusable lessons.
+- `durablePromotions` owns durable external-surface proposals.
+- `agentGuideUpdates` owns candidate guide notes.
+
+Use semantic dominance: if one broader correct statement has the same operational consequence as several narrower statements and the narrower statements add no exception, keep the broader statement and drop the rest. Bloat is failure; the ledger should become denser after compaction, not larger by default.
+
 ## Reducer rules
 
 - If a previous continuation-style summary appears in the supplied history, reconcile it with newer transcript evidence. Do not append another stacked ledger layer.

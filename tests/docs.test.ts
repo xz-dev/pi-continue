@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { DEFAULT_CONTINUE_CONFIG } from "../extensions/continue/src/config.ts";
 
@@ -43,6 +44,16 @@ test("documented default config matches runtime and public example", () => {
 	assert.deepEqual(readJson("examples/pi-continue.json"), DEFAULT_CONTINUE_CONFIG);
 });
 
+test("CHANGELOG documents the release contract", () => {
+	const changelog = readText("CHANGELOG.md");
+	assert.match(changelog, /## 0\.6\.0 - 2026-05-02/);
+	assert.match(changelog, /Breaking changes/);
+	assert.match(changelog, /fails closed/);
+	assert.match(changelog, /fallbackMode/);
+	assert.match(changelog, /pi-continue\/v2/);
+	assert.match(changelog, /provider error text/);
+});
+
 test("ignored local Markdown guides stay out of the package corpus", () => {
 	const gitignore = readText(".gitignore");
 	for (const path of ["CONTINUE.md", "PLAN.md", "AGENTS.md", "ARCH.md", "VISION.md"]) {
@@ -50,15 +61,49 @@ test("ignored local Markdown guides stay out of the package corpus", () => {
 	}
 });
 
+test("npm dry-run package contents align with the public contract", () => {
+	const output = execFileSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], { encoding: "utf8" });
+	const [candidate] = JSON.parse(output);
+	assert.equal(candidate.name, "pi-continue");
+	const paths = new Set(candidate.files.map((entry) => entry.path));
+	for (const path of [
+		"README.md",
+		"CHANGELOG.md",
+		"LICENSE",
+		"assets/system/history_initial.md",
+		"assets/user/continuation_base.md",
+		"examples/pi-continue.json",
+		"extensions/continue/index.ts",
+		"extensions/continue/src/synthesis-error.ts",
+		"package.json",
+	]) {
+		assert.equal(paths.has(path), true, `missing package path ${path}`);
+	}
+	for (const path of [
+		"AGENTS.md",
+		"CONTINUE.md",
+		"PLAN.md",
+		"ARCH.md",
+		"VISION.md",
+		"tests/blocks.test.ts",
+		"pnpm-lock.yaml",
+		"pnpm-workspace.yaml",
+	]) {
+		assert.equal(paths.has(path), false, `unexpected package path ${path}`);
+	}
+});
+
 test("package metadata and package contents align with the public contract", () => {
 	const packageJson = JSON.parse(readText("package.json"));
 	assert.equal(packageJson.name, "pi-continue");
+	assert.equal(packageJson.version, "0.6.0");
 	assert.match(packageJson.description, /Pi extension/);
 	assert.match(packageJson.description, /same-session continuation/);
 	assert.match(packageJson.description, /native compaction/);
 	assert.match(packageJson.description, /Continuation Ledger/);
 	assert.deepEqual(packageJson.files, [
 		"README.md",
+		"CHANGELOG.md",
 		"LICENSE",
 		"assets/",
 		"examples/",
@@ -67,6 +112,6 @@ test("package metadata and package contents align with the public contract", () 
 	assert.equal(packageJson.peerDependencies["@mariozechner/pi-ai"], ">=0.72.0");
 	assert.equal(packageJson.peerDependencies["@mariozechner/pi-coding-agent"], ">=0.72.0");
 	assert.deepEqual(packageJson.pi.extensions, ["./extensions/continue/index.ts"]);
-	assert.equal(packageJson.pi.image, "https://raw.githubusercontent.com/Tiziano-AI/pi-continue/v0.5.0/assets/gallery/pi-continue-gallery.webp");
+	assert.equal(packageJson.pi.image, "https://raw.githubusercontent.com/Tiziano-AI/pi-continue/v0.6.0/assets/gallery/pi-continue-gallery.webp");
 	assert.equal(existsSync("assets/gallery/pi-continue-gallery.webp"), true);
 });

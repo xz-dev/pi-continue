@@ -62,6 +62,9 @@ Use the structured fields as semantic slots, not as a transcript template:
 - Mark stale validation as stale; do not promote it to current proof.
 - Preserve unresolved conflicts and uncertainty instead of smoothing them over.
 - Use `recencyLedger` for request/order conflicts; do not leave old and new plans co-active.
+- Apply the state ownership model: every retained item has one primary field owner, and `workingEdge` contains only the current execution edge.
+- Apply semantic dominance: merge equivalent narrow claims into the broader correct operational rule unless a narrower claim adds an exception.
+- Bloat is failure. Remove duplicate semantics, stale active-state claims, old validation superseded by newer validation, risks with no trigger, and provenance that does not change future behavior.
 
 ## Durable promotion policy
 

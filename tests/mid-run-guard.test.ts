@@ -17,7 +17,7 @@ function config(overrides = {}) {
 		appendCompactionMetadata: true,
 		appendFileTags: true,
 		promptOverridePolicy: "project-override",
-		fallbackMode: "deterministic-summary",
+		ledgerDisplayMode: "overlay",
 		...overrides,
 	};
 }

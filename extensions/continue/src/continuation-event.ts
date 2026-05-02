@@ -34,47 +34,6 @@ function defaultResume(): ContinuationResumeOutcome {
 	return { status: "not-requested" };
 }
 
-function lowerFailure(value: string): string {
-	return value.replace(/\s+/g, " ").trim().toLowerCase();
-}
-
-/** Convert untrusted failures into allowlisted aftercare copy. Never returns raw provider, prompt, path, or document text. */
-export function sanitizeEventReason(value: string): string {
-	const compact = lowerFailure(value);
-	if (compact.length === 0) return "Continuation failure detail was unavailable.";
-	if (compact.includes("blocked") && compact.includes("retry")) {
-		return "Repeated over-threshold retry was blocked after a failed compaction.";
-	}
-	if (compact.includes("shutdown") || compact.includes("shut down")) {
-		return "Pi session shut down before continuation aftercare settled.";
-	}
-	if (compact.includes("resume") && (compact.includes("abort") || compact.includes("cancel"))) {
-		return "Continuation resume was aborted.";
-	}
-	if (compact.includes("resume") && (compact.includes("length") || compact.includes("limit") || compact.includes("context"))) {
-		return "Continuation resume stopped before completing because a model limit was reached.";
-	}
-	if (compact.includes("resume") && compact.includes("assistant")) {
-		return "Continuation resume did not produce an assistant response.";
-	}
-	if (compact.includes("prompt") && (compact.includes("send") || compact.includes("dispatch") || compact.includes("handled"))) {
-		return "Continuation prompt dispatch failed.";
-	}
-	if (compact.includes("ledger") && compact.includes("overlay") && compact.includes("unavailable")) {
-		return "Continuation Ledger overlay is unavailable in this Pi mode.";
-	}
-	if (compact.includes("document") || compact.includes("eacces") || compact.includes("eperm") || compact.includes("enoent") || compact.includes("permission")) {
-		return "Document sync failed; check the configured path and permissions.";
-	}
-	if (compact.includes("history pass") || compact.includes("split-prefix") || compact.includes("artifact") || compact.includes("json") || compact.includes("parse")) {
-		return "Continuation artifact synthesis failed; fallback handled the compaction if enabled.";
-	}
-	if (compact.includes("provider") || compact.includes("model") || compact.includes("api") || compact.includes("auth") || compact.includes("unauthorized") || compact.includes("rate") || compact.includes("quota") || compact.includes("token")) {
-		return "Summarizer provider failed; check model, authentication, or context settings.";
-	}
-	return "Continuation aftercare encountered an internal failure.";
-}
-
 function latestMatching(store: ContinuationEventStore, eventId: string | undefined): ContinuationLatestEvent | undefined {
 	if (!eventId || !store.latestEvent || store.latestEvent.id !== eventId) return undefined;
 	return store.latestEvent;
@@ -142,7 +101,7 @@ export function recordBlockedContinuationEvent(
 		promptStatus: "not-requested",
 		documentSync: defaultDocumentSync(),
 		resume: defaultResume(),
-		failureReason: sanitizeEventReason(reason),
+		failureReason: reason,
 	};
 	store.latestEvent = event;
 	return event;
@@ -153,7 +112,7 @@ export function getActiveContinuationEventId(store: ContinuationEventStore): str
 	return store.activeEventId;
 }
 
-/** Record whether the active continuation produced a modeled ledger, fallback, or abort. */
+/** Record whether the active continuation produced a modeled ledger or aborted before a usable artifact. */
 export function markActiveContinuationArtifact(
 	store: ContinuationEventStore,
 	status: ContinuationArtifactStatus,
@@ -164,7 +123,7 @@ export function markActiveContinuationArtifact(
 	replaceLatest(store, {
 		...event,
 		artifactStatus: status,
-		failureReason: reason ? sanitizeEventReason(reason) : event.failureReason,
+		failureReason: reason ?? event.failureReason,
 	});
 }
 
@@ -217,7 +176,7 @@ export function recordDocumentSyncResult(
 	replaceLatest(store, {
 		...event,
 		documentSync: updateDocumentTarget(event.documentSync, target, status),
-		failureReason: status === "failed" && reason ? sanitizeEventReason(reason) : event.failureReason,
+		failureReason: status === "failed" && reason ? reason : event.failureReason,
 	});
 }
 
@@ -264,7 +223,7 @@ function terminalResumeOutcome(
 		...event.resume,
 		status: "failed",
 		completedAt: nowMs(),
-		failureReason: reason ? sanitizeEventReason(reason) : event.resume.failureReason,
+		failureReason: reason ?? event.resume.failureReason,
 	};
 }
 
@@ -283,7 +242,7 @@ export function finishContinuationEvent(
 		completedAt: nowMs(),
 		promptStatus: terminalPromptStatus(event, status),
 		resume: terminalResumeOutcome(event, status, reason),
-		failureReason: reason ? sanitizeEventReason(reason) : event.failureReason,
+		failureReason: reason ?? event.failureReason,
 	});
 	store.activeEventId = undefined;
 	return true;
@@ -304,7 +263,7 @@ export function settleContinuationResume(
 	const event = latestMatching(store, eventId);
 	if (!event || store.activeEventId !== eventId || event.status !== "running") return false;
 	if (event.resume.status !== "pending" && event.resume.status !== "running") return false;
-	const safeReason = options.failureReason ? sanitizeEventReason(options.failureReason) : undefined;
+	const failureReason = options.failureReason;
 	const terminalEventStatus: Extract<ContinuationEventStatus, "completed" | "failed"> = status === "completed" ? "completed" : "failed";
 	replaceLatest(store, {
 		...event,
@@ -317,9 +276,9 @@ export function settleContinuationResume(
 			stopReason: options.stopReason,
 			requestedModel: options.requestedModel,
 			responseModel: options.responseModel,
-			failureReason: safeReason,
+			failureReason,
 		},
-		failureReason: safeReason ?? event.failureReason,
+		failureReason: failureReason ?? event.failureReason,
 	});
 	store.activeEventId = undefined;
 	return true;
@@ -339,7 +298,7 @@ export function failPendingDocumentSyncForEvent(store: ContinuationEventStore, e
 	replaceLatest(store, {
 		...event,
 		documentSync: failPendingDocumentSync(event.documentSync),
-		failureReason: sanitizeEventReason(reason),
+		failureReason: reason,
 	});
 }
 
@@ -349,7 +308,7 @@ function abandonedResume(event: ContinuationLatestEvent, reason: string): Contin
 		...event.resume,
 		status: "failed",
 		completedAt: event.resume.completedAt ?? nowMs(),
-		failureReason: sanitizeEventReason(reason),
+		failureReason: reason,
 	};
 }
 
@@ -367,7 +326,7 @@ export function abandonActiveContinuationEvent(store: ContinuationEventStore, re
 		promptStatus: activeOrRunning && event.promptStatus === "pending" ? "failed" : event.promptStatus,
 		documentSync: failPendingDocumentSync(event.documentSync),
 		resume: abandonedResume(event, reason),
-		failureReason: sanitizeEventReason(reason),
+		failureReason: reason,
 	});
 	if (store.activeEventId === event.id) store.activeEventId = undefined;
 }

@@ -64,6 +64,16 @@ test("loadContinuationConfig preserves explicit mid-run guard false", async () =
 	});
 });
 
+test("loadContinuationConfig ignores retired fallback mode config", async () => {
+	await withTempAgent(async (root) => {
+		const configDir = join(root, ".pi", "extensions");
+		mkdirSync(configDir, { recursive: true });
+		writeFileSync(join(configDir, "pi-continue.json"), JSON.stringify({ fallbackMode: "deterministic-summary" }), "utf8");
+		const config = loadContinuationConfig(root);
+		assert.equal(Object.hasOwn(config, "fallbackMode"), false);
+	});
+});
+
 test("loadContinuationConfig preserves explicit repo document sync settings", async () => {
 	await withTempAgent(async (root) => {
 		const configDir = join(root, ".pi", "extensions");

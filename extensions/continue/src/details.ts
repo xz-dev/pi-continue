@@ -32,8 +32,21 @@ interface ContinuationSummaryMetadata {
 	};
 }
 
-const CONTINUATION_DETAILS_KIND_V2 = "pi-continue/v2";
 const CONTINUATION_DETAILS_KIND_V3 = "pi-continue/v3";
+const CONTINUATION_DETAILS_KEYS = new Set<string>([
+	"kind",
+	"readFiles",
+	"modifiedFiles",
+	"documentSyncId",
+	"agentGuideSyncId",
+	"agentGuideWriteStatus",
+	"agentGuideChangeReason",
+	"continuationEventId",
+	"synthesis",
+]);
+const SYNTHESIS_KEYS = new Set<string>(["history", "split", "totalCost", "totalTokens"]);
+const PROMPT_PASS_KEYS = new Set<string>(["requestedModel", "responseModel", "responseId", "usage", "httpStatus"]);
+const USAGE_KEYS = new Set<string>(["input", "output", "cacheRead", "cacheWrite", "totalTokens", "costTotal"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -48,14 +61,26 @@ function asAgentGuideWriteStatus(value: unknown): AgentGuideWriteStatus | undefi
 	return undefined;
 }
 
+function hasOnlyKeys(value: Record<string, unknown>, keys: Set<string>): boolean {
+	return Object.keys(value).every((key) => keys.has(key));
+}
+
 function optionalTrimmedString(value: unknown): string | undefined {
 	if (typeof value !== "string") return undefined;
 	const trimmed = value.trim();
 	return trimmed.length > 0 ? trimmed : undefined;
 }
 
+function invalidOptionalString(value: unknown): boolean {
+	return value !== undefined && optionalTrimmedString(value) === undefined;
+}
+
 function optionalNonNegativeNumber(value: unknown): number | undefined {
 	return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function invalidOptionalNumber(value: unknown): boolean {
+	return value !== undefined && optionalNonNegativeNumber(value) === undefined;
 }
 
 function requiredNonNegativeNumber(value: unknown): number | undefined {
@@ -63,7 +88,7 @@ function requiredNonNegativeNumber(value: unknown): number | undefined {
 }
 
 function parseUsageTelemetry(value: unknown): PromptPassUsageTelemetry | undefined {
-	if (!isRecord(value)) return undefined;
+	if (!isRecord(value) || !hasOnlyKeys(value, USAGE_KEYS)) return undefined;
 	const input = requiredNonNegativeNumber(value.input);
 	const output = requiredNonNegativeNumber(value.output);
 	const cacheRead = requiredNonNegativeNumber(value.cacheRead);
@@ -77,10 +102,11 @@ function parseUsageTelemetry(value: unknown): PromptPassUsageTelemetry | undefin
 }
 
 function parsePromptPassTelemetry(value: unknown): PromptPassTelemetry | undefined {
-	if (!isRecord(value)) return undefined;
+	if (!isRecord(value) || !hasOnlyKeys(value, PROMPT_PASS_KEYS)) return undefined;
 	const requestedModel = optionalTrimmedString(value.requestedModel);
 	const usage = parseUsageTelemetry(value.usage);
 	if (!requestedModel || !usage) return undefined;
+	if (invalidOptionalString(value.responseModel) || invalidOptionalString(value.responseId) || invalidOptionalNumber(value.httpStatus)) return undefined;
 	const responseModel = optionalTrimmedString(value.responseModel);
 	const responseId = optionalTrimmedString(value.responseId);
 	const httpStatus = optionalNonNegativeNumber(value.httpStatus);
@@ -94,9 +120,11 @@ function parsePromptPassTelemetry(value: unknown): PromptPassTelemetry | undefin
 }
 
 function parseSynthesisTelemetry(value: unknown): ContinuationSynthesisTelemetry | undefined {
-	if (!isRecord(value)) return undefined;
-	const history = parsePromptPassTelemetry(value.history);
-	const split = parsePromptPassTelemetry(value.split);
+	if (!isRecord(value) || !hasOnlyKeys(value, SYNTHESIS_KEYS)) return undefined;
+	if (invalidOptionalNumber(value.totalCost) || invalidOptionalNumber(value.totalTokens)) return undefined;
+	const history = value.history === undefined ? undefined : parsePromptPassTelemetry(value.history);
+	const split = value.split === undefined ? undefined : parsePromptPassTelemetry(value.split);
+	if ((value.history !== undefined && !history) || (value.split !== undefined && !split)) return undefined;
 	const totalCost = optionalNonNegativeNumber(value.totalCost);
 	const totalTokens = optionalNonNegativeNumber(value.totalTokens);
 	if (!history && !split && totalCost === undefined && totalTokens === undefined) return undefined;
@@ -151,17 +179,20 @@ export function buildContinuationSynthesisTelemetry(
 
 /** Parse the package-owned compaction-entry details payload used by session_compact. */
 export function parseContinuationDetails(value: unknown): ContinuationCompactionDetails | undefined {
-	if (!isRecord(value)) return undefined;
-	if (value.kind !== CONTINUATION_DETAILS_KIND_V2 && value.kind !== CONTINUATION_DETAILS_KIND_V3) return undefined;
+	if (!isRecord(value) || !hasOnlyKeys(value, CONTINUATION_DETAILS_KEYS)) return undefined;
+	if (value.kind !== CONTINUATION_DETAILS_KIND_V3) return undefined;
 	if (!isStringArray(value.readFiles) || !isStringArray(value.modifiedFiles)) return undefined;
+	if (invalidOptionalString(value.documentSyncId) || invalidOptionalString(value.agentGuideSyncId) || invalidOptionalString(value.agentGuideChangeReason) || invalidOptionalString(value.continuationEventId)) return undefined;
+	if (value.agentGuideWriteStatus !== undefined && !asAgentGuideWriteStatus(value.agentGuideWriteStatus)) return undefined;
 	const documentSyncId = optionalTrimmedString(value.documentSyncId);
 	const agentGuideSyncId = optionalTrimmedString(value.agentGuideSyncId);
 	const agentGuideWriteStatus = asAgentGuideWriteStatus(value.agentGuideWriteStatus);
 	const agentGuideChangeReason = optionalTrimmedString(value.agentGuideChangeReason);
 	const continuationEventId = optionalTrimmedString(value.continuationEventId);
-	const synthesis = value.kind === CONTINUATION_DETAILS_KIND_V3 ? parseSynthesisTelemetry(value.synthesis) : undefined;
+	const synthesis = value.synthesis === undefined ? undefined : parseSynthesisTelemetry(value.synthesis);
+	if (value.synthesis !== undefined && !synthesis) return undefined;
 	const details: ContinuationCompactionDetails = {
-		kind: value.kind,
+		kind: CONTINUATION_DETAILS_KIND_V3,
 		readFiles: value.readFiles,
 		modifiedFiles: value.modifiedFiles,
 	};

@@ -120,7 +120,7 @@ test("renderStatus reports compaction failure without failed-resume copy", () =>
 				continuationDoc: "off",
 				agentGuide: "off",
 			},
-			failureReason: "Summarizer provider failed; check model, authentication, or context settings.",
+			failureReason: "Continuation compaction failed.",
 		};
 		const rendered = renderStatus(
 			ctx,
@@ -202,7 +202,7 @@ test("renderStatus does not call pending or failed sync no-op writes", () => {
 			status: "failed",
 			startedAt: 0,
 			completedAt: 1000,
-			artifactStatus: "fallback",
+			artifactStatus: "aborted",
 			promptStatus: "failed",
 			resume: {
 				status: "failed",

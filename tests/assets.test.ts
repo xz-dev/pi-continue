@@ -14,6 +14,7 @@ const promptAssetPaths = [
 	"assets/user/history_update.md",
 	"assets/user/split_prefix.md",
 ];
+const numericReadQuotaPattern = /(?:(?:read|source|file|context|contextMap|bullet|item|entry)s?.{0,24}(?:at most|up to|no more than|maximum|max).{0,16}(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten))|(?:(?:at most|up to|no more than|maximum|max).{0,16}(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten).{0,24}(?:read|source|file|context|contextMap|bullet|item|entry)s?)/i;
 
 test("package history prompts require evidence-gated continuation ledger artifacts without numeric caps", () => {
 	for (const path of [
@@ -37,7 +38,7 @@ test("package history prompts require evidence-gated continuation ledger artifac
 		assert.match(content, /Evidence Gate/);
 		assert.doesNotMatch(content, /Read Before Acting/);
 		assert.doesNotMatch(content, /Resume Now/);
-		assert.doesNotMatch(content, /at most five/i);
+		assert.doesNotMatch(content, numericReadQuotaPattern);
 	}
 	for (const path of ["assets/system/history_initial.md", "assets/system/history_update.md", "assets/user/continuation_base.md"]) {
 		const content = readFileSync(path, "utf8");
@@ -48,7 +49,10 @@ test("package history prompts require evidence-gated continuation ledger artifac
 		assert.match(content, /dormantContext/);
 		assert.match(content, /retiredContext/);
 		assert.match(content, /inactive is not obsolete/i);
-		assert.match(content, /Under token pressure/);
+		assert.match(content, /Under token pressure|Bloat is failure/);
+		assert.match(content, /state ownership model/i);
+		assert.match(content, /semantic dominance/i);
+		assert.match(content, /one primary/);
 	}
 	for (const path of ["assets/system/history_initial.md", "assets/system/history_update.md"]) {
 		const content = readFileSync(path, "utf8");

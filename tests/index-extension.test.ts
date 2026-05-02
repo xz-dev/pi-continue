@@ -1,5 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { fauxAssistantMessage, registerFauxProvider } from "@mariozechner/pi-ai";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import registerContinueExtension from "../extensions/continue/index.ts";
 import { CONTINUATION_PROMPT } from "../extensions/continue/src/runtime.ts";
 
@@ -41,6 +45,44 @@ function createFakePi(cwd) {
 			return { stdout: options?.cwd ?? cwd, code: 0 };
 		},
 	};
+}
+
+function continuationArtifactJson() {
+	const structured = {
+		task: "Continue the task.",
+		initiativeCharter: ["Preserve same-session continuation."],
+		definitionOfDone: ["A valid continuation ledger is available."],
+		recencyLedger: [{ status: "active", subject: "current request", evidence: "test", resolution: "continue" }],
+		currentPlan: ["Run the next validation step."],
+		progress: ["Compaction synthesis succeeded."],
+		state: ["Test fixture state."],
+		decisions: ["Use strict v3 JSON artifacts."],
+		contextMap: [{ source: "tests/index-extension.test.ts", relevance: "fixture", use: "prove split failure" }],
+		workingEdge: ["Fail before document sync when split-prefix parsing fails."],
+		validation: ["Test fixture."],
+		risks: ["None."],
+		dormantContext: ["None."],
+		retiredContext: ["None."],
+		antiRework: ["Do not use fallback artifacts."],
+		durableLearnings: ["Hard-fail synthesis."],
+		durablePromotions: [{
+			status: "none",
+			targetSurface: "none",
+			proposal: "No durable surface update from this fixture.",
+			evidence: "test",
+			durability: "not applicable",
+			risk: "not applicable",
+			nextAction: "No action.",
+		}],
+		agentGuideUpdates: ["No guide write."],
+	};
+	return JSON.stringify({
+		version: "pi-continue-artifacts/v3",
+		brief: structured,
+		document: structured,
+		agentGuideMarkdown: null,
+		agentGuideChangeReason: "No guide write.",
+	});
 }
 
 function createCommandContext(cwd, custom) {
@@ -94,6 +136,39 @@ function createCommandContext(cwd, custom) {
 		statusCalls,
 	};
 	return ctx;
+}
+
+function writeAlwaysSyncConfig(cwd) {
+	mkdirSync(join(cwd, ".pi", "extensions"), { recursive: true });
+	writeFileSync(join(cwd, ".pi", "extensions", "pi-continue.json"), JSON.stringify({
+		continuationDocSyncMode: "always",
+		agentGuideSyncMode: "always",
+	}), "utf8");
+}
+
+function compactionEvent(preparation = {}) {
+	return {
+		preparation: {
+			firstKeptEntryId: "kept-entry",
+			messagesToSummarize: [{ role: "user", content: [{ type: "text", text: "continue the task" }], timestamp: 0 }],
+			turnPrefixMessages: [],
+			isSplitTurn: false,
+			tokensBefore: 1200,
+			previousSummary: undefined,
+			fileOps: { read: new Set(), written: new Set(), edited: new Set() },
+			settings: { enabled: true, reserveTokens: 1000, keepRecentTokens: 200 },
+			...preparation,
+		},
+		branchEntries: [],
+		customInstructions: undefined,
+		signal: new AbortController().signal,
+	};
+}
+
+function assertNoFailedSynthesisSideEffects(cwd, pi) {
+	assert.deepEqual(pi.sent, []);
+	assert.equal(existsSync(join(cwd, "CONTINUE.md")), false);
+	assert.equal(existsSync(join(cwd, "AGENTS.md")), false);
 }
 
 test("extension registers only /continue and exact RPC-style /continue falls through to direct continuation", async () => {
@@ -231,4 +306,72 @@ test("session_compact ledger display is transient UI and does not send a continu
 	await new Promise((resolve) => setTimeout(resolve, 0));
 	assert.equal(customCalls, 1);
 	assert.deepEqual(pi.sent, []);
+});
+
+test("session_before_compact fails closed when ledger synthesis cannot authenticate", async () => {
+	const cwd = mkdtempSync(join(tmpdir(), "pi-continue-hard-fail-"));
+	try {
+		writeAlwaysSyncConfig(cwd);
+		const pi = createFakePi(cwd);
+		const ctx = createCommandContext(cwd, async () => undefined);
+		ctx.modelRegistry.getApiKeyAndHeaders = async () => ({
+			ok: false,
+			error: "provider auth failed",
+		});
+		registerContinueExtension(pi);
+		await assert.rejects(
+			pi.events.get("session_before_compact")(compactionEvent(), ctx),
+			/Continuation artifact synthesis failed; compaction was aborted before a usable ledger was saved\./,
+		);
+		assertNoFailedSynthesisSideEffects(cwd, pi);
+	} finally {
+		rmSync(cwd, { recursive: true, force: true });
+	}
+});
+
+test("session_before_compact fails closed when history artifacts are malformed", async () => {
+	const cwd = mkdtempSync(join(tmpdir(), "pi-continue-hard-fail-"));
+	const faux = registerFauxProvider();
+	try {
+		writeAlwaysSyncConfig(cwd);
+		faux.setResponses([fauxAssistantMessage("not json")]);
+		const pi = createFakePi(cwd);
+		const ctx = createCommandContext(cwd, async () => undefined);
+		ctx.model = faux.models[0];
+		ctx.modelRegistry.getApiKeyAndHeaders = async () => ({ ok: true, apiKey: "test", headers: {} });
+		registerContinueExtension(pi);
+		await assert.rejects(
+			pi.events.get("session_before_compact")(compactionEvent(), ctx),
+			/Continuation artifact synthesis failed; compaction was aborted before a usable ledger was saved\./,
+		);
+		assertNoFailedSynthesisSideEffects(cwd, pi);
+	} finally {
+		faux.unregister();
+		rmSync(cwd, { recursive: true, force: true });
+	}
+});
+
+test("session_before_compact fails closed when split-prefix artifacts are missing", async () => {
+	const cwd = mkdtempSync(join(tmpdir(), "pi-continue-hard-fail-"));
+	const faux = registerFauxProvider();
+	try {
+		writeAlwaysSyncConfig(cwd);
+		faux.setResponses([fauxAssistantMessage(continuationArtifactJson()), fauxAssistantMessage("missing split prefix")]);
+		const pi = createFakePi(cwd);
+		const ctx = createCommandContext(cwd, async () => undefined);
+		ctx.model = faux.models[0];
+		ctx.modelRegistry.getApiKeyAndHeaders = async () => ({ ok: true, apiKey: "test", headers: {} });
+		registerContinueExtension(pi);
+		await assert.rejects(
+			pi.events.get("session_before_compact")(compactionEvent({
+				isSplitTurn: true,
+				turnPrefixMessages: [{ role: "user", content: [{ type: "text", text: "split turn prefix" }], timestamp: 0 }],
+			}), ctx),
+			/Continuation artifact synthesis failed; compaction was aborted before a usable ledger was saved\./,
+		);
+		assertNoFailedSynthesisSideEffects(cwd, pi);
+	} finally {
+		faux.unregister();
+		rmSync(cwd, { recursive: true, force: true });
+	}
 });

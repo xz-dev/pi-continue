@@ -4,7 +4,7 @@ import { composeCompactionSummary } from "../extensions/continue/src/compose.ts"
 import type { ContinuationCompactionDetails } from "../extensions/continue/src/types.ts";
 
 const details: ContinuationCompactionDetails = {
-	kind: "pi-continue/v2",
+	kind: "pi-continue/v3",
 	readFiles: ["/repo/read.ts"],
 	modifiedFiles: ["/repo/write.ts"],
 	documentSyncId: "sync-1",
