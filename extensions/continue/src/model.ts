@@ -1,8 +1,8 @@
-import type { Api, Model } from "@mariozechner/pi-ai";
-import { completeSimple } from "@mariozechner/pi-ai";
+import type { Api, Model, ModelThinkingLevel, ThinkingLevel } from "@mariozechner/pi-ai";
+import { clampThinkingLevel, completeSimple } from "@mariozechner/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { resolveSummarizerModel } from "./model-settings.ts";
-import type { ContinuationConfig, ContinuationReasoning, PromptPassTelemetry } from "./types.ts";
+import type { ContinuationConfig, PromptPassTelemetry } from "./types.ts";
 
 export { resolveSummarizerModel, resolveTokenBudget } from "./model-settings.ts";
 
@@ -10,18 +10,15 @@ export interface PromptPassResult extends PromptPassTelemetry {
 	text: string;
 }
 
-function isSupportedReasoning(level: ContinuationReasoning): level is Exclude<ContinuationReasoning, "inherit"> {
-	return level !== "inherit";
+function requestedThinkingLevel(pi: Pick<ExtensionAPI, "getThinkingLevel">, config: ContinuationConfig): ModelThinkingLevel {
+	return config.reasoning === "inherit" ? pi.getThinkingLevel() : config.reasoning;
 }
 
-/** Resolve the requested reasoning level with model capability checks. */
-export function resolveReasoningLevel(pi: ExtensionAPI, model: Model<Api>, config: ContinuationConfig): string | undefined {
+/** Resolve the requested reasoning level through Pi's model-specific thinking capability map. */
+export function resolveReasoningLevel(pi: Pick<ExtensionAPI, "getThinkingLevel">, model: Model<Api>, config: ContinuationConfig): ThinkingLevel | undefined {
 	if (!model.reasoning) return undefined;
-	if (config.reasoning === "inherit") {
-		const inherited = pi.getThinkingLevel();
-		return inherited !== "off" ? inherited : undefined;
-	}
-	return isSupportedReasoning(config.reasoning) && config.reasoning !== "off" ? config.reasoning : undefined;
+	const level = clampThinkingLevel(model, requestedThinkingLevel(pi, config));
+	return level === "off" ? undefined : level;
 }
 
 /** Execute a summarization pass against the resolved model and auth. */

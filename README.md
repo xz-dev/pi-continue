@@ -32,6 +32,8 @@ pi -e /absolute/path/to/pi-continue
 
 Pi packages run with your local user permissions. Review package source before installing third-party packages.
 
+Requires Pi `0.72.0` or newer, where model-specific thinking support is described by `thinkingLevelMap`.
+
 ## Use `/continue`
 
 Automatic continuation is enabled by default. You can also use `/continue` directly.
@@ -130,7 +132,7 @@ Common settings:
 | `enabled` | Turns package behavior on or off. |
 | `midRunGuardEnabled` | Enables automatic mid-run continuation. |
 | `summarizerModel` | Uses the active Pi model with `"inherit"`, or a pinned `"provider/model"`. |
-| `reasoning` | Uses Pi's setting with `"inherit"`, or a specific reasoning level. |
+| `reasoning` | Uses Pi's setting with `"inherit"`, or a model-supported thinking level. Unsupported levels are hidden in settings and clamped through Pi's `thinkingLevelMap`. |
 | `historyMaxTokens` / `splitPrefixMaxTokens` | Optional summary-token budgets; `null` uses Pi-derived defaults. |
 | `continuationDocSyncMode` | `"off"` by default; `"always"` writes `CONTINUE.md` after successful extension-owned compaction. |
 | `agentGuideSyncMode` | `"off"` by default; `"always"` allows AGENTS.md replacement only when the artifact includes full guide content. |

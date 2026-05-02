@@ -1,3 +1,5 @@
+import type { Api, Model } from "@mariozechner/pi-ai";
+import { getSupportedThinkingLevels } from "@mariozechner/pi-ai";
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { loadHistoryPromptAssets, loadSplitPromptAssets } from "./assets.ts";
 import { snapshotFileOperations } from "./compaction-preparation.ts";
@@ -8,6 +10,7 @@ import { readEffectivePiCompactionSettings } from "./pi-settings.ts";
 import { loadPiInternals } from "./pi-internals.ts";
 import { compileHistoryPrompt, compileSplitPrompt, renderPromptPreview } from "./prompt.ts";
 import { resolveProjectContext } from "./project.ts";
+import { resolveSummarizerModel } from "./model-settings.ts";
 import { getLatestContinuationEvent, getLatestContinuationLedger, type ContinuationRuntimeState } from "./runtime.ts";
 import { renderStatus } from "./status.ts";
 import { commandHasUi } from "./ui.ts";
@@ -95,8 +98,16 @@ async function chooseModel(ctx: ExtensionCommandContext): Promise<string | undef
 	return selected;
 }
 
-async function chooseReasoning(ctx: ExtensionCommandContext): Promise<ContinuationConfig["reasoning"] | undefined> {
-	const selected = await ctx.ui.select("Reasoning level", ["inherit", "off", "minimal", "low", "medium", "high", "xhigh"]);
+const ALL_REASONING_OPTIONS: readonly ContinuationConfig["reasoning"][] = ["inherit", "off", "minimal", "low", "medium", "high", "xhigh"];
+
+/** Return operator-selectable reasoning levels, hiding levels unsupported by the resolved summarizer model. */
+export function getReasoningOptionsForModel(model: Model<Api> | undefined): ContinuationConfig["reasoning"][] {
+	if (!model) return [...ALL_REASONING_OPTIONS];
+	return ["inherit", ...getSupportedThinkingLevels(model)];
+}
+
+async function chooseReasoning(ctx: ExtensionCommandContext, config: ContinuationConfig): Promise<ContinuationConfig["reasoning"] | undefined> {
+	const selected = await ctx.ui.select("Reasoning level", getReasoningOptionsForModel(resolveSummarizerModel(ctx, config)));
 	return selected as ContinuationConfig["reasoning"] | undefined;
 }
 
@@ -182,7 +193,7 @@ export async function runSettingsDialog(pi: ExtensionAPI, ctx: ExtensionCommandC
 		}
 		if (selected.startsWith("reasoning:")) {
 			config = await updateSetting(scope, projectContext.projectRoot, config, async (current) => {
-				const next = await chooseReasoning(ctx);
+				const next = await chooseReasoning(ctx, current);
 				return next ? { ...current, reasoning: next } : undefined;
 			});
 			continue;

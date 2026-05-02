@@ -64,6 +64,8 @@ test("package metadata and package contents align with the public contract", () 
 		"examples/",
 		"extensions/",
 	]);
+	assert.equal(packageJson.peerDependencies["@mariozechner/pi-ai"], ">=0.72.0");
+	assert.equal(packageJson.peerDependencies["@mariozechner/pi-coding-agent"], ">=0.72.0");
 	assert.deepEqual(packageJson.pi.extensions, ["./extensions/continue/index.ts"]);
 	assert.equal(packageJson.pi.image, "https://raw.githubusercontent.com/Tiziano-AI/pi-continue/v0.4.5/assets/gallery/pi-continue-gallery.webp");
 	assert.equal(existsSync("assets/gallery/pi-continue-gallery.webp"), true);

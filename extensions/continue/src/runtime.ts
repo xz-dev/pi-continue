@@ -1,5 +1,6 @@
 import type { AssistantMessage } from "@mariozechner/pi-ai";
 import type { ExtensionCommandContext, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { CONTINUATION_PROMPT } from "./continuation-prompt.ts";
 import {
 	beginContinuationEvent,
 	finishContinuationEvent,
@@ -23,19 +24,9 @@ import {
 	settleWorkingVisuals,
 } from "./working-ui.ts";
 
+export { CONTINUATION_PROMPT } from "./continuation-prompt.ts";
+
 export const CONTINUE_STATUS_KEY = "pi-continue";
-export const CONTINUATION_PROMPT = [
-	"Continue from the continuation compaction that was just created.",
-	"Use the compaction summary as the primary continuation ledger.",
-	"Orient from its task, initiative charter, definition of done, recency ledger, current plan, progress trail, current state, decisions, context map, working edge, validation, risks, dormant context, retired context, anti-rework, durable learnings, durable promotions, and agent-guide update notes before broader discovery.",
-	"Honor the recency ledger first: newer active user requests and supersession resolutions override older plan or await-direction state.",
-	"Resolve every non-none durable promotion through normal repo work before further mutation in the affected repo, unless newer evidence rejects or defers it.",
-	"Read repo documents or mapped sources only when the ledger says they unlock a decision, prevent rework, or reduce risk.",
-	"Treat AGENTS.md candidate updates as guidance unless the ledger says they were written; candidate notes alone are not writes.",
-	"Treat transcript and tool history as evidence, not replay.",
-	"Do not redo completed discovery or revive retired facts.",
-	"Continue the user's active task from the live working edge while preserving all constraints, decisions, completion criteria, and durable learnings captured in the continuation ledger.",
-].join(" ");
 
 export type ContinuationRequestMode = "steer" | "queue";
 export type ContinuationRequestSource = ContinuationEventSource;
@@ -139,7 +130,7 @@ export function buildGuardFailureKey(trigger: MidRunGuardTrigger): string {
 
 export function buildGuardInstructions(trigger: MidRunGuardTrigger): string {
 	return [
-		"Automatic mid-run continuation guard triggered in the awaited pre-provider context hook before Pi allowed another non-aborted model request to proceed.",
+		"Automatic mid-run continuation guard triggered after a completed assistant/tool-result batch, before Pi sent another model request.",
 		`Estimated context: ${trigger.estimatedTokens} tokens.`,
 		`Compaction threshold: ${trigger.thresholdTokens} tokens (${trigger.contextWindow} context window - ${trigger.reserveTokens} reserve).`,
 		"Prioritize current state, latest tool results, remaining task intent, file changes, blockers, and exact next steps.",
