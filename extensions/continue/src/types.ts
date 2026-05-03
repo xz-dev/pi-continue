@@ -101,6 +101,8 @@ export type ContinuationEventStatus = "running" | "completed" | "failed" | "bloc
 export type ContinuationArtifactStatus = "pending" | "modeled" | "aborted";
 export type ContinuationPromptStatus = "pending" | "sent" | "not-requested" | "failed";
 export type ContinuationResumeStatus = "not-requested" | "pending" | "running" | "completed" | "failed" | "aborted";
+export type ContinuationCompactionProofStatus = "pending" | "verified" | "failed";
+export type ContinuationSynthesisFailureStage = "history-model" | "history-artifact" | "split-model" | "split-prefix" | "unknown";
 export type ContinuationSyncStatus = "off" | "pending" | "updated" | "unchanged" | "failed" | "no-replacement";
 export type ContinuationDocumentSyncTarget = "continuation-doc" | "agent-guide";
 
@@ -128,6 +130,18 @@ export interface ContinuationSynthesisTelemetry {
 	totalTokens?: number;
 }
 
+export interface ContinuationSynthesisFailure {
+	stage: ContinuationSynthesisFailureStage;
+	reason: string;
+}
+
+export interface ContinuationCompactionProof {
+	status: ContinuationCompactionProofStatus;
+	compactionEntryId?: string;
+	verifiedAt?: number;
+	failureReason?: string;
+}
+
 export interface ContinuationResumeOutcome {
 	status: ContinuationResumeStatus;
 	startedAt?: number;
@@ -152,10 +166,12 @@ export interface ContinuationLatestEvent {
 	completedAt?: number;
 	trigger?: MidRunGuardTrigger;
 	artifactStatus: ContinuationArtifactStatus;
+	compactionProof: ContinuationCompactionProof;
 	promptStatus: ContinuationPromptStatus;
 	documentSync: ContinuationDocumentSyncStatus;
 	resume: ContinuationResumeOutcome;
 	synthesis?: ContinuationSynthesisTelemetry;
+	synthesisFailure?: ContinuationSynthesisFailure;
 	failureReason?: string;
 }
 

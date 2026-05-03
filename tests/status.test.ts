@@ -64,6 +64,7 @@ test("renderStatus summarizes a completed latest continuation calmly", () => {
 				lastUsageIndex: 3,
 			},
 			artifactStatus: "modeled",
+			compactionProof: { status: "verified", compactionEntryId: "compact-1", verifiedAt: 250 },
 			promptStatus: "sent",
 			resume: {
 				status: "completed",
@@ -90,6 +91,7 @@ test("renderStatus summarizes a completed latest continuation calmly", () => {
 		assert.match(rendered, /Last handoff: completed successfully/);
 		assert.match(rendered, /Safe boundary: completed assistant\/tool-result batch before the next model request/);
 		assert.match(rendered, /Ledger: Continuation Ledger ready/);
+		assert.match(rendered, /Saved handoff proof: verified package-owned pi-continue\/v3 compaction/);
 		assert.match(rendered, /Document writes: none performed/);
 		assert.match(rendered, /Action: No action needed/);
 	} finally {
@@ -114,12 +116,14 @@ test("renderStatus reports handoff failure without failed-resume copy", () => {
 			startedAt: 0,
 			completedAt: 1000,
 			artifactStatus: "pending",
+			compactionProof: { status: "failed", failureReason: "Continuation handoff failed." },
 			promptStatus: "failed",
 			resume: { status: "not-requested" },
 			documentSync: {
 				continuationDoc: "off",
 				agentGuide: "off",
 			},
+			synthesisFailure: { stage: "split-prefix", reason: "Split-prefix pass omitted raw summary text." },
 			failureReason: "Continuation handoff failed.",
 		};
 		const rendered = renderStatus(
@@ -132,6 +136,7 @@ test("renderStatus reports handoff failure without failed-resume copy", () => {
 			latestEvent,
 		);
 		assert.match(rendered, /Last handoff: continuation needs attention/);
+		assert.match(rendered, /Synthesis failure: split-prefix; Split-prefix pass omitted raw summary text\./);
 		assert.match(rendered, /Resume outcome: not requested/);
 		assert.doesNotMatch(rendered, /resume needs attention/);
 	} finally {
@@ -156,6 +161,7 @@ test("renderStatus reports an aborted resume without generic internal failure co
 			startedAt: 0,
 			completedAt: 1000,
 			artifactStatus: "modeled",
+			compactionProof: { status: "verified", compactionEntryId: "compact-3", verifiedAt: 100 },
 			promptStatus: "sent",
 			resume: {
 				status: "aborted",
@@ -203,6 +209,7 @@ test("renderStatus does not call pending or failed sync no-op writes", () => {
 			startedAt: 0,
 			completedAt: 1000,
 			artifactStatus: "aborted",
+			compactionProof: { status: "failed", failureReason: "Continuation handoff failed." },
 			promptStatus: "failed",
 			resume: {
 				status: "failed",

@@ -2,6 +2,18 @@
 
 All notable changes to `pi-continue` are documented here.
 
+## 0.6.2 - 2026-05-03
+
+### Fixed
+
+- Failed Continuation Ledger synthesis now returns Pi's compaction cancellation result instead of relying on thrown hook errors, preventing native fallback compactions from resuming as if a package handoff succeeded.
+- Same-session resume dispatch now waits for both Pi compaction completion and matching package-owned `pi-continue/v3` `session_compact` proof for the active continuation run.
+- Active native, invalid, or stale compaction proof now fails closed with bounded status diagnostics and no resume prompt.
+
+### Added
+
+- Status now reports saved handoff proof and bounded synthesis failure classifiers without storing transcript or raw provider output.
+
 ## 0.6.1 - 2026-05-03
 
 ### Fixed

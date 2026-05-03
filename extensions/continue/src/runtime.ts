@@ -5,37 +5,38 @@ import {
 	beginContinuationEvent,
 	finishContinuationEvent,
 	isActiveRunningContinuationEvent,
-	markContinuationPromptSent,
-	markContinuationResumePending,
 	markContinuationResumeStarted,
 	recordBlockedContinuationEvent,
 	settleContinuationResume,
 } from "./continuation-event.ts";
 import type {
 	ContinuationEventSource,
-	ContinuationEventStore,
 	ContinuationLatestEvent,
 	ContinuationLedgerSnapshot,
 	ContinuationResumeStatus,
 	MidRunGuardTrigger,
 } from "./types.ts";
 import {
+	clearPendingResumeDispatch,
+	clearResumeStartTimeout,
+	markContinuationCompactionComplete,
+	notify,
+	preparePendingResumeDispatch,
+	setStatus,
+	type ResumeProofRuntimeState,
+} from "./resume-proof.ts";
+import {
 	beginWorkingVisuals,
 	settleWorkingVisuals,
 } from "./working-ui.ts";
 
 export { CONTINUATION_PROMPT } from "./continuation-prompt.ts";
-
-export const CONTINUE_STATUS_KEY = "pi-continue";
+export { CONTINUE_STATUS_KEY, acceptContinuationCompactionProof, clearResumeStartTimeout, failContinuationCompactionProof } from "./resume-proof.ts";
 
 export type ContinuationRequestMode = "steer" | "queue";
 export type ContinuationRequestSource = ContinuationEventSource;
 
-export interface ContinuationRuntimeState extends ContinuationEventStore {
-	compactionRunning: boolean;
-	guardFailureKey: string | undefined;
-	awaitingResumeEventId: string | undefined;
-	resumeStartTimeout: ReturnType<typeof setTimeout> | undefined;
+export interface ContinuationRuntimeState extends ResumeProofRuntimeState {
 	latestLedger: ContinuationLedgerSnapshot | undefined;
 }
 
@@ -53,6 +54,7 @@ export interface StartContinuationCompactionOptions {
 	sendContinuation: (prompt: string) => void;
 	onContinuationFailed?: (eventId: string) => void;
 	resumeStartTimeoutMs?: number;
+	compactionProofTimeoutMs?: number;
 }
 
 export interface ContinuationResumeSettlement {
@@ -64,7 +66,6 @@ const MODE_TOKENS = new Set<string>(["steer", "queue"]);
 const RESUME_START_TIMEOUT_MS = 30_000;
 const BLOCKED_RETRY_FAILURE = "Repeated over-limit retry was blocked after a failed continuation.";
 const COMPACTION_FAILURE = "Continuation handoff failed.";
-const PROMPT_DISPATCH_FAILURE = "Continuation resume request failed.";
 const RESUME_ABORTED_FAILURE = "Continuation resume was aborted.";
 const RESUME_LIMIT_FAILURE = "Continuation resume stopped before completing because a model limit was reached.";
 const RESUME_NO_ASSISTANT_FAILURE = "Continuation resume did not produce an assistant response.";
@@ -102,6 +103,8 @@ export function createContinuationRuntimeState(): ContinuationRuntimeState {
 		guardFailureKey: undefined,
 		awaitingResumeEventId: undefined,
 		resumeStartTimeout: undefined,
+		compactionProofTimeout: undefined,
+		pendingResumeDispatch: undefined,
 		latestLedger: undefined,
 		latestEvent: undefined,
 		activeEventId: undefined,
@@ -149,30 +152,6 @@ function sourceLabel(source: ContinuationRequestSource): string {
 	return "automatic continuation";
 }
 
-function notify(ctx: ExtensionContext, message: string, type: "info" | "warning" | "error"): void {
-	if (!ctx.hasUI) return;
-	ctx.ui.notify(message, type);
-}
-
-function setStatus(ctx: ExtensionContext, value: string | undefined): void {
-	if (!ctx.hasUI) return;
-	ctx.ui.setStatus(CONTINUE_STATUS_KEY, value);
-}
-
-function sendContinuationPrompt(sendContinuation: (prompt: string) => void): void {
-	sendContinuation(CONTINUATION_PROMPT);
-}
-
-function unrefTimer(timer: ReturnType<typeof setTimeout>): void {
-	if (typeof timer === "object" && timer !== null) timer.unref?.();
-}
-
-export function clearResumeStartTimeout(runtime: ContinuationRuntimeState): void {
-	if (!runtime.resumeStartTimeout) return;
-	clearTimeout(runtime.resumeStartTimeout);
-	runtime.resumeStartTimeout = undefined;
-}
-
 function isAwaitingResumeEventCurrent(runtime: ContinuationRuntimeState): boolean {
 	const eventId = runtime.awaitingResumeEventId;
 	return eventId !== undefined
@@ -186,6 +165,9 @@ export function clearStaleAwaitingContinuationResume(runtime: ContinuationRuntim
 		runtime.awaitingResumeEventId = undefined;
 		clearResumeStartTimeout(runtime);
 	}
+	if (runtime.pendingResumeDispatch && runtime.pendingResumeDispatch.eventId !== runtime.activeEventId) {
+		clearPendingResumeDispatch(runtime);
+	}
 }
 
 function hasActiveContinuationSettlement(runtime: ContinuationRuntimeState): boolean {
@@ -193,44 +175,10 @@ function hasActiveContinuationSettlement(runtime: ContinuationRuntimeState): boo
 	return runtime.activeEventId !== undefined || runtime.awaitingResumeEventId !== undefined;
 }
 
-function settleContinuationFailureVisuals(
-	ctx: ExtensionContext,
-	runtime: ContinuationRuntimeState,
-	eventId: string,
-	label: string,
-): void {
-	settleWorkingVisuals(ctx, runtime, eventId);
-	setStatus(ctx, `${label}: failed`);
-}
-
 function compactionFailureReason(runtime: ContinuationRuntimeState, eventId: string): string {
 	const event = runtime.latestEvent;
 	if (event?.id === eventId && event.artifactStatus === "aborted" && event.failureReason) return event.failureReason;
 	return COMPACTION_FAILURE;
-}
-
-function scheduleResumeStartTimeout(
-	ctx: ExtensionContext,
-	runtime: ContinuationRuntimeState,
-	eventId: string,
-	label: string,
-	timeoutMs: number,
-	onContinuationFailed: ((eventId: string) => void) | undefined,
-): void {
-	clearResumeStartTimeout(runtime);
-	const timeout = setTimeout(() => {
-		if (runtime.awaitingResumeEventId !== eventId) return;
-		const failedEventId = failAwaitingContinuationResume(
-			runtime,
-			"Continuation resume request failed before the next run started.",
-		);
-		if (!failedEventId) return;
-		onContinuationFailed?.(failedEventId);
-		settleContinuationFailureVisuals(ctx, runtime, failedEventId, label);
-		notify(ctx, `${label}: resume request failed.`, "error");
-	}, Math.max(0, timeoutMs));
-	runtime.resumeStartTimeout = timeout;
-	unrefTimer(timeout);
 }
 
 /** Start the package-owned compaction pipeline once, with visible lifecycle settlement. */
@@ -287,6 +235,29 @@ export function startContinuationCompaction(
 		compactionCallbackSettled = true;
 		return isActiveRunningContinuationEvent(runtime, event.id);
 	}
+	if (options.continueAfterComplete) {
+		preparePendingResumeDispatch(runtime, {
+			eventId: event.id,
+			label,
+			sendContinuation: options.sendContinuation,
+			onContinuationFailed: options.onContinuationFailed,
+			resumeStartTimeoutMs: options.resumeStartTimeoutMs ?? RESUME_START_TIMEOUT_MS,
+			compactionProofTimeoutMs: options.compactionProofTimeoutMs ?? RESUME_START_TIMEOUT_MS,
+			failureGuardKey: guardKey,
+		});
+	}
+	function failCompaction(reason: string): void {
+		runtime.compactionRunning = false;
+		if (guardKey) runtime.guardFailureKey = guardKey;
+		options.onContinuationFailed?.(event.id);
+		finishContinuationEvent(runtime, event.id, "failed", reason);
+		clearPendingResumeDispatch(runtime);
+		clearResumeStartTimeout(runtime);
+		runtime.awaitingResumeEventId = undefined;
+		settleWorkingVisuals(ctx, runtime, event.id);
+		setStatus(ctx, `${label}: failed`);
+		notify(ctx, `${label}: handoff failed: ${reason}`, "error");
+	}
 	try {
 		ctx.compact({
 			customInstructions,
@@ -295,30 +266,7 @@ export function startContinuationCompaction(
 				runtime.compactionRunning = false;
 				runtime.guardFailureKey = undefined;
 				if (options.continueAfterComplete) {
-					setStatus(ctx, `${label}: resuming this session`);
-					markContinuationResumePending(runtime, event.id);
-					runtime.awaitingResumeEventId = event.id;
-					scheduleResumeStartTimeout(
-						ctx,
-						runtime,
-						event.id,
-						label,
-						options.resumeStartTimeoutMs ?? RESUME_START_TIMEOUT_MS,
-						options.onContinuationFailed,
-					);
-					try {
-						sendContinuationPrompt(options.sendContinuation);
-						markContinuationPromptSent(runtime, event.id);
-						notify(ctx, `${label}: resume request sent.`, "info");
-					} catch {
-						options.onContinuationFailed?.(event.id);
-						finishContinuationEvent(runtime, event.id, "failed", PROMPT_DISPATCH_FAILURE);
-						clearResumeStartTimeout(runtime);
-						runtime.awaitingResumeEventId = undefined;
-						settleContinuationFailureVisuals(ctx, runtime, event.id, label);
-						notify(ctx, `${label}: resume request failed: ${PROMPT_DISPATCH_FAILURE}`, "error");
-						return;
-					}
+					markContinuationCompactionComplete(ctx, runtime, event.id);
 					return;
 				}
 				finishContinuationEvent(runtime, event.id, "completed", undefined);
@@ -328,27 +276,11 @@ export function startContinuationCompaction(
 			},
 			onError: () => {
 				if (!claimCompactionCallback()) return;
-				runtime.compactionRunning = false;
-				if (guardKey) runtime.guardFailureKey = guardKey;
-				options.onContinuationFailed?.(event.id);
-				const reason = compactionFailureReason(runtime, event.id);
-				finishContinuationEvent(runtime, event.id, "failed", reason);
-				clearResumeStartTimeout(runtime);
-				runtime.awaitingResumeEventId = undefined;
-				settleContinuationFailureVisuals(ctx, runtime, event.id, label);
-				notify(ctx, `${label}: handoff failed: ${reason}`, "error");
+				failCompaction(compactionFailureReason(runtime, event.id));
 			},
 		});
 	} catch {
-		runtime.compactionRunning = false;
-		if (guardKey) runtime.guardFailureKey = guardKey;
-		options.onContinuationFailed?.(event.id);
-		const reason = compactionFailureReason(runtime, event.id);
-		finishContinuationEvent(runtime, event.id, "failed", reason);
-		clearResumeStartTimeout(runtime);
-		runtime.awaitingResumeEventId = undefined;
-		settleContinuationFailureVisuals(ctx, runtime, event.id, label);
-		notify(ctx, `${label}: handoff failed: ${reason}`, "error");
+		failCompaction(compactionFailureReason(runtime, event.id));
 		return false;
 	}
 	return true;

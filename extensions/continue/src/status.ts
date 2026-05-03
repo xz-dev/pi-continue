@@ -5,7 +5,6 @@ import type {
 	ContinuationConfig,
 	ContinuationLatestEvent,
 	ContinuationResumeOutcome,
-	ContinuationSynthesisTelemetry,
 	ContinuationSyncStatus,
 	PreviewPayload,
 	PromptPassTelemetry,
@@ -89,6 +88,12 @@ function ledgerLabel(event: ContinuationLatestEvent): string {
 	return "waiting for Continuation Ledger";
 }
 
+function compactionProofLabel(event: ContinuationLatestEvent): string {
+	if (event.compactionProof.status === "verified") return `verified package-owned pi-continue/v3 compaction${event.compactionProof.compactionEntryId ? ` (${event.compactionProof.compactionEntryId})` : ""}`;
+	if (event.compactionProof.status === "failed") return "missing or invalid package-owned compaction proof";
+	return "waiting for package-owned pi-continue/v3 compaction proof";
+}
+
 function syncLabel(status: ContinuationSyncStatus): string {
 	if (status === "off") return "off";
 	if (status === "pending") return "pending";
@@ -108,6 +113,7 @@ function actionLine(event: ContinuationLatestEvent): string {
 	const resume = resumeOutcome(event);
 	if (event.status === "running" && resume.status === "pending") return "Wait for the resumed assistant turn to start.";
 	if (event.status === "running" && resume.status === "running") return "Wait for the resumed assistant turn to finish its first assistant response.";
+	if (event.status === "running" && event.compactionProof.status === "pending" && event.artifactStatus === "modeled") return "Wait for Pi to report the saved package-owned handoff proof.";
 	if (event.status === "running") return "Wait; pi-continue is saving the handoff now.";
 	if (event.status === "blocked") return "No new handoff was started; fix the last failure before retrying.";
 	if (resume.status === "failed" || resume.status === "aborted") return "Review the resume outcome, correct the cause if needed, then continue from live state.";
@@ -130,13 +136,19 @@ function renderPassTelemetry(label: string, telemetry: PromptPassTelemetry | und
 	return `- ${label}: requested ${telemetry.requestedModel}${routed}; ${telemetry.usage.totalTokens.toLocaleString()} tokens; ${formatCost(telemetry.usage.costTotal)}${http}.`;
 }
 
-function renderSynthesisSummary(synthesis: ContinuationSynthesisTelemetry | undefined): string[] {
-	if (!synthesis) return [`- Synthesis: no model-run details recorded for this continuation.`];
-	return [
-		`- Synthesis total: ${synthesis.totalTokens?.toLocaleString() ?? "unavailable"} tokens; ${formatCost(synthesis.totalCost)}.`,
-		renderPassTelemetry("History pass", synthesis.history),
-		renderPassTelemetry("Split-prefix pass", synthesis.split),
-	].filter((line): line is string => line !== undefined);
+function renderSynthesisSummary(event: ContinuationLatestEvent): string[] {
+	const synthesis = event.synthesis;
+	const lines = synthesis
+		? [
+			`- Synthesis total: ${synthesis.totalTokens?.toLocaleString() ?? "unavailable"} tokens; ${formatCost(synthesis.totalCost)}.`,
+			renderPassTelemetry("History pass", synthesis.history),
+			renderPassTelemetry("Split-prefix pass", synthesis.split),
+		]
+		: [`- Synthesis: no model-run details recorded for this continuation.`];
+	if (event.synthesisFailure) {
+		lines.push(`- Synthesis failure: ${event.synthesisFailure.stage}; ${event.synthesisFailure.reason}`);
+	}
+	return lines.filter((line): line is string => line !== undefined);
 }
 
 function renderEventSummary(event: ContinuationLatestEvent | undefined): string[] {
@@ -162,7 +174,8 @@ function renderEventSummary(event: ContinuationLatestEvent | undefined): string[
 		`- Safe boundary: ${renderSafeBoundary(event)}.`,
 		`- Trigger: ${renderTrigger(event)}.`,
 		`- Ledger: ${ledgerLabel(event)}.`,
-		...renderSynthesisSummary(event.synthesis),
+		`- Saved handoff proof: ${compactionProofLabel(event)}.`,
+		...renderSynthesisSummary(event),
 		`- Resume request: ${event.promptStatus === "sent" ? "sent" : event.promptStatus === "pending" ? "pending" : event.promptStatus === "failed" ? "not sent" : "not requested"}.`,
 		`- Resume outcome: ${resumeLabel(event)}.`,
 		resume.requestedModel ? `- Resume model: requested ${resume.requestedModel}${resume.responseModel ? `; routed ${resume.responseModel}` : ""}.` : undefined,

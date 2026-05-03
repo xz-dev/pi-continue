@@ -1,6 +1,6 @@
 {
   "name": "pi-continue",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "type": "module",
   "description": "Same-session continuation for long Pi runs that hit the context limit, built on native Pi compaction and a structured handoff ledger.",
   "keywords": [
@@ -41,6 +41,6 @@
     "extensions": [
       "./extensions/continue/index.ts"
     ],
-    "image": "https://raw.githubusercontent.com/Tiziano-AI/pi-continue/v0.6.1/assets/gallery/pi-continue-gallery.webp"
+    "image": "https://raw.githubusercontent.com/Tiziano-AI/pi-continue/v0.6.2/assets/gallery/pi-continue-gallery.webp"
   }
 }

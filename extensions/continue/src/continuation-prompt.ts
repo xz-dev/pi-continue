@@ -1,7 +1,8 @@
 /** Same-session resume prompt sent after package-owned handoff compaction completes. */
 export const CONTINUATION_PROMPT = [
-	"Continue from the same-session handoff Pi just saved.",
-	"Use the compaction summary as the primary Continuation Ledger.",
+	"Continue from the same-session pi-continue/v3 handoff Pi just saved.",
+	"Use the package-owned compaction summary as the primary Continuation Ledger.",
+	"Do not treat native fallback summaries, session forks, or transcript replay as a valid continuation handoff.",
 	"Use the ledger to identify the active request, current state, constraints, validation, risks, durable learnings, and next working edge before broader discovery.",
 	"Honor the recency ledger first: newer active user requests and supersession resolutions override older plan or await-direction state.",
 	"Resolve relevant non-none durable promotions before editing their target surfaces, unless newer evidence rejects or defers them.",

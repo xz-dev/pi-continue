@@ -1,6 +1,6 @@
 # pi-continue
 
-`pi-continue` is a Pi extension package for long runs. When context fills while Pi is still working, it saves a safe handoff with native Pi compaction and resumes the same task in the same Pi session.
+`pi-continue` is a Pi extension package for long runs. When context fills while Pi is still working, it saves a safe package-owned handoff with native Pi compaction and resumes the same task in the same Pi session only after Pi reports a valid `pi-continue/v3` compaction entry.
 
 The handoff is a structured Continuation Ledger, not a transcript replay. It tells the receiving agent what is still true, what changed recently, what to do next, which evidence is fresh, and what should not be repeated. The prompt assets are overrideable, while the ledger must still match the strict continuation artifact contract.
 
@@ -41,8 +41,8 @@ Running only `/continue` opens a small action palette when UI is available. In n
 | Command | What it does |
 | --- | --- |
 | `/continue` | Open the palette when UI is available; otherwise continue now. |
-| `/continue steer [note]` | Save a handoff now, stopping the current assistant turn if needed, then resume in this session. |
-| `/continue queue [note]` | Wait for Pi to be idle, then save a handoff and resume in this session. |
+| `/continue steer [note]` | Save a handoff now, stopping the current assistant turn if needed, then resume in this session after package-owned handoff proof. |
+| `/continue queue [note]` | Wait for Pi to be idle, then save a handoff and resume in this session after package-owned handoff proof. |
 | `/continue preview [note]` | Show the handoff prompts that would be used; no compaction or resume. |
 | `/continue status` | Show the latest continuation, current settings, prompt sources, trigger threshold, and document-write state. |
 | `/continue ledger` | Show the latest Continuation Ledger in a temporary TUI panel; no transcript entry is appended. |
@@ -63,7 +63,8 @@ It:
 - runs native Pi compaction
 - runs the customizable handoff prompt
 - writes the Continuation Ledger into the compaction summary
-- sends the same-session resume prompt
+- verifies Pi saved a package-owned `pi-continue/v3` compaction entry
+- sends the same-session resume prompt only after that proof
 
 The threshold belongs to Pi, not this package:
 
@@ -85,9 +86,9 @@ Configure the threshold in Pi settings:
 
 `reserveTokens` and `keepRecentTokens` are absolute token counts. For a 272K context model, `reserveTokens: 68000` triggers near 75 percent usage. See [`examples/pi-settings-compaction-75pct-272k.json`](examples/pi-settings-compaction-75pct-272k.json).
 
-Use `/continue status` after a continuation to see what happened. Status reports the latest local run: how the handoff started, whether the Continuation Ledger was created, which summarizer model ran, whether the resume request was sent, whether the resumed assistant turn completed, whether optional document sync updated anything, and what to do next. UI sessions can also show the latest Continuation Ledger as a temporary panel; this never appends another transcript entry. Failure states use explicit package messages rather than parsing provider error text.
+Use `/continue status` after a continuation to see what happened. Status reports the latest local run: how the handoff started, whether the Continuation Ledger was created, whether Pi reported package-owned `pi-continue/v3` handoff proof, which summarizer model ran, whether the resume request was sent, whether the resumed assistant turn completed, whether optional document sync updated anything, and what to do next. UI sessions can also show the latest Continuation Ledger as a temporary panel; this never appends another transcript entry. Failure states use explicit package messages rather than parsing provider error text.
 
-If modeled Continuation Ledger creation fails, `pi-continue` stops before resuming and writes no guessed continuation artifact or repo document. Run `/continue status`, inspect the failure, use `/continue preview` after prompt or config changes, fix the model/auth/context issue, then retry when Pi is idle.
+If modeled Continuation Ledger creation fails, or if Pi reports native/invalid/mismatched compaction proof for an active continuation, `pi-continue` stops before resuming and writes no guessed continuation artifact or repo document. Run `/continue status`, inspect the failure, use `/continue preview` after prompt or config changes, fix the model/auth/context issue, then retry when Pi is idle.
 
 ## Configuration
 
@@ -173,7 +174,7 @@ assets/user/split_prefix.md
 
 ## What gets continued
 
-The receiving agent gets Pi's compacted summary plus the same-session resume prompt. The history pass must emit one strict JSON artifact with version `pi-continue-artifacts/v3`; `pi-continue` parses that artifact and renders it into Pi's persisted Markdown compaction summary.
+The receiving agent gets Pi's compacted summary plus the same-session resume prompt. The history pass must emit one strict JSON artifact with version `pi-continue-artifacts/v3`; `pi-continue` parses that artifact, renders it into Pi's persisted Markdown compaction summary, and resumes only after the saved compaction details parse as package-owned `pi-continue/v3` for the active continuation.
 
 The artifact includes:
 

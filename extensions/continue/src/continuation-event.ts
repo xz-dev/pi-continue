@@ -9,6 +9,7 @@ import type {
 	ContinuationPromptStatus,
 	ContinuationResumeOutcome,
 	ContinuationResumeStatus,
+	ContinuationSynthesisFailure,
 	ContinuationSynthesisTelemetry,
 	ContinuationSyncStatus,
 	MidRunGuardTrigger,
@@ -32,6 +33,10 @@ function defaultDocumentSync(): ContinuationDocumentSyncStatus {
 
 function defaultResume(): ContinuationResumeOutcome {
 	return { status: "not-requested" };
+}
+
+function defaultCompactionProof() {
+	return { status: "pending" as const };
 }
 
 function latestMatching(store: ContinuationEventStore, eventId: string | undefined): ContinuationLatestEvent | undefined {
@@ -72,6 +77,7 @@ export function beginContinuationEvent(
 		startedAt: nowMs(),
 		trigger,
 		artifactStatus: "pending",
+		compactionProof: defaultCompactionProof(),
 		promptStatus,
 		documentSync: defaultDocumentSync(),
 		resume: defaultResume(),
@@ -98,6 +104,7 @@ export function recordBlockedContinuationEvent(
 		completedAt: timestamp,
 		trigger,
 		artifactStatus: "pending",
+		compactionProof: { status: "failed", failureReason: reason },
 		promptStatus: "not-requested",
 		documentSync: defaultDocumentSync(),
 		resume: defaultResume(),
@@ -125,6 +132,46 @@ export function markActiveContinuationArtifact(
 		artifactStatus: status,
 		failureReason: reason ?? event.failureReason,
 	});
+}
+
+/** Record a bounded synthesis failure classifier without storing provider output. */
+export function recordActiveSynthesisFailure(store: ContinuationEventStore, failure: ContinuationSynthesisFailure): void {
+	const event = activeLatest(store);
+	if (!event) return;
+	replaceLatest(store, {
+		...event,
+		synthesisFailure: failure,
+	});
+}
+
+/** Mark that Pi saved and reported the matching package-owned compaction entry. */
+export function markContinuationCompactionProofVerified(store: ContinuationEventStore, eventId: string, compactionEntryId: string): boolean {
+	const event = latestMatching(store, eventId);
+	if (!event || store.activeEventId !== eventId || event.status !== "running") return false;
+	replaceLatest(store, {
+		...event,
+		compactionProof: {
+			status: "verified",
+			compactionEntryId,
+			verifiedAt: nowMs(),
+		},
+	});
+	return true;
+}
+
+/** Mark that Pi did not report a valid package-owned compaction entry for the active continuation. */
+export function markContinuationCompactionProofFailed(store: ContinuationEventStore, eventId: string, reason: string): boolean {
+	const event = latestMatching(store, eventId);
+	if (!event || store.activeEventId !== eventId || event.status !== "running") return false;
+	replaceLatest(store, {
+		...event,
+		compactionProof: {
+			status: "failed",
+			failureReason: reason,
+		},
+		failureReason: reason,
+	});
+	return true;
 }
 
 /** Record summarizer telemetry for the active continuation compaction. */
@@ -222,6 +269,17 @@ function terminalPromptStatus(event: ContinuationLatestEvent, status: Extract<Co
 	return event.promptStatus;
 }
 
+function terminalCompactionProof(
+	event: ContinuationLatestEvent,
+	status: Extract<ContinuationEventStatus, "completed" | "failed">,
+	reason: string | undefined,
+): ContinuationLatestEvent["compactionProof"] {
+	if (status === "failed" && event.compactionProof.status === "pending") {
+		return { status: "failed", failureReason: reason };
+	}
+	return event.compactionProof;
+}
+
 function terminalResumeOutcome(
 	event: ContinuationLatestEvent,
 	status: Extract<ContinuationEventStatus, "completed" | "failed">,
@@ -251,6 +309,7 @@ export function finishContinuationEvent(
 		...event,
 		status,
 		completedAt: nowMs(),
+		compactionProof: terminalCompactionProof(event, status, reason),
 		promptStatus: terminalPromptStatus(event, status),
 		resume: terminalResumeOutcome(event, status, reason),
 		failureReason: reason ?? event.failureReason,

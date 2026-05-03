@@ -46,6 +46,8 @@ test("documented default config matches runtime and public example", () => {
 
 test("CHANGELOG documents the release contract", () => {
 	const changelog = readText("CHANGELOG.md");
+	assert.match(changelog, /## 0\.6\.2 - 2026-05-03/);
+	assert.match(changelog, /matching package-owned `pi-continue\/v3` `session_compact` proof/);
 	assert.match(changelog, /## 0\.6\.1 - 2026-05-03/);
 	assert.match(changelog, /Split-prefix synthesis now returns raw summary text/);
 	assert.match(changelog, /## 0\.6\.0 - 2026-05-02/);
@@ -98,7 +100,7 @@ test("npm dry-run package contents align with the public contract", () => {
 test("package metadata and package contents align with the public contract", () => {
 	const packageJson = JSON.parse(readText("package.json"));
 	assert.equal(packageJson.name, "pi-continue");
-	assert.equal(packageJson.version, "0.6.1");
+	assert.equal(packageJson.version, "0.6.2");
 	assert.match(packageJson.description, /Same-session continuation/);
 	assert.match(packageJson.description, /context limit/);
 	assert.match(packageJson.description, /native Pi compaction/);
@@ -114,6 +116,6 @@ test("package metadata and package contents align with the public contract", () 
 	assert.equal(packageJson.peerDependencies["@mariozechner/pi-ai"], ">=0.72.0");
 	assert.equal(packageJson.peerDependencies["@mariozechner/pi-coding-agent"], ">=0.72.0");
 	assert.deepEqual(packageJson.pi.extensions, ["./extensions/continue/index.ts"]);
-	assert.equal(packageJson.pi.image, "https://raw.githubusercontent.com/Tiziano-AI/pi-continue/v0.6.1/assets/gallery/pi-continue-gallery.webp");
+	assert.equal(packageJson.pi.image, "https://raw.githubusercontent.com/Tiziano-AI/pi-continue/v0.6.2/assets/gallery/pi-continue-gallery.webp");
 	assert.equal(existsSync("assets/gallery/pi-continue-gallery.webp"), true);
 });

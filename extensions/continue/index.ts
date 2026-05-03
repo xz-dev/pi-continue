@@ -16,11 +16,12 @@ import {
 	isLatestContinuationEvent,
 	markActiveContinuationArtifact,
 	planActiveDocumentSync,
+	recordActiveSynthesisFailure,
 	recordActiveSynthesisTelemetry,
 	recordDocumentSyncResult,
 } from "./src/continuation-event.ts";
 import { buildContinuationDetails, buildContinuationSynthesisTelemetry, parseContinuationDetails } from "./src/details.ts";
-import { buildSynthesisAbortError, SYNTHESIS_ABORT_MESSAGE } from "./src/synthesis-error.ts";
+import { SYNTHESIS_ABORT_MESSAGE } from "./src/synthesis-error.ts";
 import { buildLedgerSnapshot, showContinuationLedgerOverlaySoon } from "./src/ledger-viewer.ts";
 import { runMidRunGuard } from "./src/mid-run-guard.ts";
 import { resolveTokenBudget, runPromptPass } from "./src/model.ts";
@@ -32,15 +33,23 @@ import type { ContinuePaletteResult } from "./src/palette-actions.ts";
 import {
 	CONTINUATION_PROMPT,
 	CONTINUE_STATUS_KEY,
+	acceptContinuationCompactionProof,
 	clearResumeStartTimeout,
 	createContinuationRuntimeState,
+	failContinuationCompactionProof,
 	failRunningAwaitingContinuationResume,
 	markAwaitingContinuationResumeStarted,
 	runContinuationCommand,
 	settleAwaitingContinuationResumeFromAssistant,
 	type ContinuationRuntimeState,
 } from "./src/runtime.ts";
-import type { AgentGuideWriteStatus, ContinuationSynthesisTelemetry, DocumentSyncMode, ParsedHistoryArtifacts, PendingDocumentWrite } from "./src/types.ts";
+import {
+	INVALID_COMPACTION_PROOF_FAILURE,
+	NATIVE_COMPACTION_FALLBACK_FAILURE,
+	STALE_COMPACTION_PROOF_FAILURE,
+	clearPendingResumeDispatch,
+} from "./src/resume-proof.ts";
+import type { AgentGuideWriteStatus, ContinuationSynthesisFailureStage, ContinuationSynthesisTelemetry, DocumentSyncMode, ParsedHistoryArtifacts, PendingDocumentWrite } from "./src/types.ts";
 import {
 	clearWorkingVisuals,
 	settleWorkingVisuals,
@@ -111,6 +120,20 @@ function isAssistantMessage(message: unknown): message is AssistantMessage {
 
 const DOCUMENT_SYNC_FAILURE = "Document sync failed; check the configured path and permissions.";
 const PENDING_DOCUMENT_SYNC_FAILURE = "Document sync did not complete before continuation failed.";
+
+class SynthesisStageError extends Error {
+	readonly stage: ContinuationSynthesisFailureStage;
+
+	constructor(stage: ContinuationSynthesisFailureStage, reason: string) {
+		super(reason);
+		this.stage = stage;
+	}
+}
+
+function normalizeSynthesisFailure(error: unknown): { stage: ContinuationSynthesisFailureStage; reason: string } {
+	if (error instanceof SynthesisStageError) return { stage: error.stage, reason: error.message };
+	return { stage: "unknown", reason: "Continuation synthesis failed before a usable artifact was created." };
+}
 
 function setRuntimeStatus(ctx: ExtensionContext, value: string | undefined): void {
 	if (!ctx.hasUI) return;
@@ -279,23 +302,24 @@ export default function (pi: ExtensionAPI) {
 			const splitOutput = splitResult.status === "fulfilled" ? splitResult.value : undefined;
 			synthesis = buildContinuationSynthesisTelemetry(historyOutput, splitOutput);
 			recordActiveSynthesisTelemetry(runtime, synthesis);
-			if (historyResult.status === "rejected") throw historyResult.reason;
-			if (splitResult.status === "rejected") throw splitResult.reason;
-			if (!historyOutput) throw new Error("History pass omitted a summarizer response");
+			if (historyResult.status === "rejected") throw new SynthesisStageError("history-model", "History summarizer pass failed.");
+			if (splitResult.status === "rejected") throw new SynthesisStageError("split-model", "Split-prefix summarizer pass failed.");
+			if (!historyOutput) throw new SynthesisStageError("history-model", "History summarizer pass omitted a response.");
 			historyArtifacts = parseHistoryArtifacts(historyOutput.text);
 			if (!historyArtifacts) {
-				throw new Error("History pass omitted required pi-continue JSON artifacts");
+				throw new SynthesisStageError("history-artifact", "History pass omitted required pi-continue JSON artifacts.");
 			}
 			if (splitPrompt) {
 				splitPrefix = splitOutput ? parseSplitPrefix(splitOutput.text) : undefined;
 				if (!splitPrefix) {
-					throw new Error("Split-prefix pass omitted raw summary text");
+					throw new SynthesisStageError("split-prefix", "Split-prefix pass omitted raw summary text.");
 				}
 			}
 			markActiveContinuationArtifact(runtime, "modeled", undefined);
-		} catch {
+		} catch (error) {
+			recordActiveSynthesisFailure(runtime, normalizeSynthesisFailure(error));
 			markActiveContinuationArtifact(runtime, "aborted", SYNTHESIS_ABORT_MESSAGE);
-			throw buildSynthesisAbortError();
+			return { cancel: true };
 		}
 		const activeEventId = getActiveContinuationEventId(runtime);
 		const documentSyncId = config.continuationDocSyncMode === "always" ? randomUUID() : undefined;
@@ -354,9 +378,22 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_compact", async (event, ctx) => {
+		const activeEventId = getActiveContinuationEventId(runtime);
+		if (activeEventId && !event.fromExtension) {
+			failContinuationCompactionProof(ctx, runtime, activeEventId, NATIVE_COMPACTION_FALLBACK_FAILURE);
+			return;
+		}
 		if (!event.fromExtension) return;
 		const details = parseContinuationDetails(event.compactionEntry.details);
+		if (activeEventId && !details) {
+			failContinuationCompactionProof(ctx, runtime, activeEventId, INVALID_COMPACTION_PROOF_FAILURE);
+			return;
+		}
 		if (!details) return;
+		if (activeEventId && details.continuationEventId !== activeEventId) {
+			failContinuationCompactionProof(ctx, runtime, activeEventId, STALE_COMPACTION_PROOF_FAILURE);
+			return;
+		}
 		const ledgerOwnerId = details.continuationEventId;
 		const canUpdateLedger = ledgerOwnerId ? isLatestContinuationEvent(runtime, ledgerOwnerId) : getActiveContinuationEventId(runtime) === undefined;
 		const ledger = canUpdateLedger
@@ -397,6 +434,7 @@ export default function (pi: ExtensionAPI) {
 		if (ctx.hasUI && details.agentGuideWriteStatus === "no-replacement" && details.agentGuideChangeReason) {
 			ctx.ui.notify("Agent guide unchanged; no full replacement was produced.", "info");
 		}
+		if (activeEventId) acceptContinuationCompactionProof(ctx, runtime, activeEventId, event.compactionEntry.id);
 	});
 
 	pi.on("session_shutdown", async (_event, ctx) => {
@@ -406,6 +444,7 @@ export default function (pi: ExtensionAPI) {
 		runtime.compactionRunning = false;
 		runtime.guardFailureKey = undefined;
 		clearResumeStartTimeout(runtime);
+		clearPendingResumeDispatch(runtime);
 		runtime.awaitingResumeEventId = undefined;
 	});
 }

@@ -165,6 +165,17 @@ function compactionEvent(preparation = {}) {
 	};
 }
 
+function ownedCompactionEvent(eventId = "continue-1", details = {}) {
+	return {
+		fromExtension: true,
+		compactionEntry: {
+			id: `compact-${eventId}`,
+			summary: "<continuation>\nledger body\n</continuation>",
+			details: { kind: "pi-continue/v3", readFiles: [], modifiedFiles: [], continuationEventId: eventId, ...details },
+		},
+	};
+}
+
 function assertNoFailedSynthesisSideEffects(cwd, pi) {
 	assert.deepEqual(pi.sent, []);
 	assert.equal(existsSync(join(cwd, "CONTINUE.md")), false);
@@ -180,6 +191,8 @@ test("extension registers only /continue and exact RPC-style /continue falls thr
 	await pi.commands.get("continue").handler(undefined, ctx);
 	assert.equal(ctx.compactCount, 1);
 	ctx.compactOptions.onComplete({});
+	assert.deepEqual(pi.sent, []);
+	await pi.events.get("session_compact")(ownedCompactionEvent(), ctx);
 	assert.deepEqual(pi.sent, [CONTINUATION_PROMPT]);
 	await pi.events.get("agent_end")({}, ctx);
 	assert.equal(ctx.statusCalls.at(-1), "/continue steer: resuming this session");
@@ -228,6 +241,7 @@ test("agent_end settles only a started continuation resume failure", async () =>
 	registerContinueExtension(pi);
 	await pi.commands.get("continue").handler("steer", ctx);
 	ctx.compactOptions.onComplete({});
+	await pi.events.get("session_compact")(ownedCompactionEvent(), ctx);
 	await pi.events.get("agent_end")({}, ctx);
 	assert.equal(ctx.statusCalls.at(-1), "/continue steer: resuming this session");
 	await pi.events.get("before_agent_start")({ prompt: "unrelated prompt" }, ctx);
@@ -245,6 +259,7 @@ test("message_end reports failed and aborted resume outcomes accurately", async 
 	registerContinueExtension(failedPi);
 	await failedPi.commands.get("continue").handler("steer", failedCtx);
 	failedCtx.compactOptions.onComplete({});
+	await failedPi.events.get("session_compact")(ownedCompactionEvent(), failedCtx);
 	await failedPi.events.get("before_agent_start")({ prompt: CONTINUATION_PROMPT }, failedCtx);
 	await failedPi.events.get("message_end")({ message: assistantMessage("length") }, failedCtx);
 	assert.equal(failedCtx.statusCalls.at(-1), "pi-continue resume failed");
@@ -254,9 +269,53 @@ test("message_end reports failed and aborted resume outcomes accurately", async 
 	registerContinueExtension(abortedPi);
 	await abortedPi.commands.get("continue").handler("steer", abortedCtx);
 	abortedCtx.compactOptions.onComplete({});
+	await abortedPi.events.get("session_compact")(ownedCompactionEvent(), abortedCtx);
 	await abortedPi.events.get("before_agent_start")({ prompt: CONTINUATION_PROMPT }, abortedCtx);
 	await abortedPi.events.get("message_end")({ message: assistantMessage("aborted") }, abortedCtx);
 	assert.equal(abortedCtx.statusCalls.at(-1), "pi-continue resume aborted");
+});
+
+test("session_compact native or invalid active handoff proof fails closed without resume", async () => {
+	const cwd = process.cwd();
+	const nativePi = createFakePi(cwd);
+	const nativeCtx = createCommandContext(cwd, async () => undefined);
+	registerContinueExtension(nativePi);
+	await nativePi.commands.get("continue").handler("steer", nativeCtx);
+	await nativePi.events.get("session_compact")({
+		fromExtension: false,
+		compactionEntry: { id: "native", summary: "native summary", details: { readFiles: [], modifiedFiles: [] } },
+	}, nativeCtx);
+	nativeCtx.compactOptions.onComplete({});
+	assert.deepEqual(nativePi.sent, []);
+	assert.equal(nativeCtx.statusCalls.at(-1), "pi-continue: failed");
+
+	const invalidPi = createFakePi(cwd);
+	const invalidCtx = createCommandContext(cwd, async () => undefined);
+	registerContinueExtension(invalidPi);
+	await invalidPi.commands.get("continue").handler("steer", invalidCtx);
+	invalidCtx.compactOptions.onComplete({});
+	await invalidPi.events.get("session_compact")({
+		fromExtension: true,
+		compactionEntry: { id: "invalid", summary: "invalid summary", details: { kind: "pi-continue/v3", readFiles: [] } },
+	}, invalidCtx);
+	assert.deepEqual(invalidPi.sent, []);
+	assert.equal(invalidCtx.statusCalls.at(-1), "pi-continue: failed");
+
+	const stalePi = createFakePi(cwd);
+	const staleCtx = createCommandContext(cwd, async () => undefined);
+	registerContinueExtension(stalePi);
+	await stalePi.commands.get("continue").handler("steer", staleCtx);
+	staleCtx.compactOptions.onComplete({});
+	await stalePi.events.get("session_compact")({
+		fromExtension: true,
+		compactionEntry: {
+			id: "stale",
+			summary: "<continuation>\nstale summary\n</continuation>",
+			details: { kind: "pi-continue/v3", readFiles: [], modifiedFiles: [], continuationEventId: "continue-stale" },
+		},
+	}, staleCtx);
+	assert.deepEqual(stalePi.sent, []);
+	assert.equal(staleCtx.statusCalls.at(-1), "pi-continue: failed");
 });
 
 test("session_compact unsupported automatic ledger overlay reports the degraded path", async () => {
@@ -386,10 +445,8 @@ test("session_before_compact fails closed when ledger synthesis cannot authentic
 			error: "provider auth failed",
 		});
 		registerContinueExtension(pi);
-		await assert.rejects(
-			pi.events.get("session_before_compact")(compactionEvent(), ctx),
-			/pi-continue could not create a usable handoff, so continuation stopped before resuming\./,
-		);
+		const result = await pi.events.get("session_before_compact")(compactionEvent(), ctx);
+		assert.deepEqual(result, { cancel: true });
 		assertNoFailedSynthesisSideEffects(cwd, pi);
 	} finally {
 		rmSync(cwd, { recursive: true, force: true });
@@ -407,10 +464,8 @@ test("session_before_compact fails closed when history artifacts are malformed",
 		ctx.model = faux.models[0];
 		ctx.modelRegistry.getApiKeyAndHeaders = async () => ({ ok: true, apiKey: "test", headers: {} });
 		registerContinueExtension(pi);
-		await assert.rejects(
-			pi.events.get("session_before_compact")(compactionEvent(), ctx),
-			/pi-continue could not create a usable handoff, so continuation stopped before resuming\./,
-		);
+		const result = await pi.events.get("session_before_compact")(compactionEvent(), ctx);
+		assert.deepEqual(result, { cancel: true });
 		assertNoFailedSynthesisSideEffects(cwd, pi);
 	} finally {
 		faux.unregister();
@@ -429,13 +484,11 @@ test("session_before_compact fails closed when split-prefix output is empty", as
 		ctx.model = faux.models[0];
 		ctx.modelRegistry.getApiKeyAndHeaders = async () => ({ ok: true, apiKey: "test", headers: {} });
 		registerContinueExtension(pi);
-		await assert.rejects(
-			pi.events.get("session_before_compact")(compactionEvent({
-				isSplitTurn: true,
-				turnPrefixMessages: [{ role: "user", content: [{ type: "text", text: "split turn prefix" }], timestamp: 0 }],
-			}), ctx),
-			/pi-continue could not create a usable handoff, so continuation stopped before resuming\./,
-		);
+		const result = await pi.events.get("session_before_compact")(compactionEvent({
+			isSplitTurn: true,
+			turnPrefixMessages: [{ role: "user", content: [{ type: "text", text: "split turn prefix" }], timestamp: 0 }],
+		}), ctx);
+		assert.deepEqual(result, { cancel: true });
 		assertNoFailedSynthesisSideEffects(cwd, pi);
 	} finally {
 		faux.unregister();
