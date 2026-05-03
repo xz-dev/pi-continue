@@ -6,6 +6,7 @@ import {
 	finishContinuationEvent,
 	isActiveRunningContinuationEvent,
 	markContinuationPromptSent,
+	markContinuationResumePending,
 	markContinuationResumeStarted,
 	recordBlockedContinuationEvent,
 	settleContinuationResume,
@@ -61,9 +62,9 @@ export interface ContinuationResumeSettlement {
 
 const MODE_TOKENS = new Set<string>(["steer", "queue"]);
 const RESUME_START_TIMEOUT_MS = 30_000;
-const BLOCKED_RETRY_FAILURE = "Repeated over-threshold retry was blocked after a failed compaction.";
-const COMPACTION_FAILURE = "Continuation compaction failed.";
-const PROMPT_DISPATCH_FAILURE = "Continuation prompt dispatch failed.";
+const BLOCKED_RETRY_FAILURE = "Repeated over-limit retry was blocked after a failed continuation.";
+const COMPACTION_FAILURE = "Continuation handoff failed.";
+const PROMPT_DISPATCH_FAILURE = "Continuation resume request failed.";
 const RESUME_ABORTED_FAILURE = "Continuation resume was aborted.";
 const RESUME_LIMIT_FAILURE = "Continuation resume stopped before completing because a model limit was reached.";
 const RESUME_NO_ASSISTANT_FAILURE = "Continuation resume did not produce an assistant response.";
@@ -135,7 +136,7 @@ export function buildGuardFailureKey(trigger: MidRunGuardTrigger): string {
 
 export function buildGuardInstructions(trigger: MidRunGuardTrigger): string {
 	return [
-		"Automatic mid-run continuation guard triggered after a completed assistant/tool-result batch, before Pi sent another model request.",
+		"Automatic mid-run continuation triggered after a completed assistant/tool-result batch, before Pi sent another model request.",
 		`Estimated context: ${trigger.estimatedTokens} tokens.`,
 		`Compaction threshold: ${trigger.thresholdTokens} tokens (${trigger.contextWindow} context window - ${trigger.reserveTokens} reserve).`,
 		"Prioritize current state, latest tool results, remaining task intent, file changes, blockers, and exact next steps.",
@@ -145,7 +146,7 @@ export function buildGuardInstructions(trigger: MidRunGuardTrigger): string {
 function sourceLabel(source: ContinuationRequestSource): string {
 	if (source === "command-queue") return "queued /continue";
 	if (source === "command-steer") return "/continue steer";
-	return "mid-run continuation guard";
+	return "automatic continuation";
 }
 
 function notify(ctx: ExtensionContext, message: string, type: "info" | "warning" | "error"): void {
@@ -187,7 +188,7 @@ export function clearStaleAwaitingContinuationResume(runtime: ContinuationRuntim
 	}
 }
 
-function hasActiveContinuationAftercare(runtime: ContinuationRuntimeState): boolean {
+function hasActiveContinuationSettlement(runtime: ContinuationRuntimeState): boolean {
 	clearStaleAwaitingContinuationResume(runtime);
 	return runtime.activeEventId !== undefined || runtime.awaitingResumeEventId !== undefined;
 }
@@ -200,6 +201,12 @@ function settleContinuationFailureVisuals(
 ): void {
 	settleWorkingVisuals(ctx, runtime, eventId);
 	setStatus(ctx, `${label}: failed`);
+}
+
+function compactionFailureReason(runtime: ContinuationRuntimeState, eventId: string): string {
+	const event = runtime.latestEvent;
+	if (event?.id === eventId && event.artifactStatus === "aborted" && event.failureReason) return event.failureReason;
+	return COMPACTION_FAILURE;
 }
 
 function scheduleResumeStartTimeout(
@@ -215,12 +222,12 @@ function scheduleResumeStartTimeout(
 		if (runtime.awaitingResumeEventId !== eventId) return;
 		const failedEventId = failAwaitingContinuationResume(
 			runtime,
-			"Continuation prompt dispatch failed before the next run started.",
+			"Continuation resume request failed before the next run started.",
 		);
 		if (!failedEventId) return;
 		onContinuationFailed?.(failedEventId);
 		settleContinuationFailureVisuals(ctx, runtime, failedEventId, label);
-		notify(ctx, `${label}: continuation prompt dispatch failed.`, "error");
+		notify(ctx, `${label}: resume request failed.`, "error");
 	}, Math.max(0, timeoutMs));
 	runtime.resumeStartTimeout = timeout;
 	unrefTimer(timeout);
@@ -235,13 +242,13 @@ export function startContinuationCompaction(
 	clearStaleAwaitingContinuationResume(runtime);
 	if (runtime.compactionRunning) {
 		if (options.abortActiveRun && options.source === "mid-run-guard") ctx.abort();
-		notify(ctx, "Continuation compaction is already running.", "warning");
+		notify(ctx, "A continuation handoff is already being saved.", "warning");
 		return false;
 	}
-	if (hasActiveContinuationAftercare(runtime)) {
+	if (hasActiveContinuationSettlement(runtime)) {
 		if (options.source === "mid-run-guard" && options.abortActiveRun) ctx.abort();
-		notify(ctx, "Continuation aftercare is still settling; no new compaction was started.", "warning");
-		setStatus(ctx, "continuation aftercare still settling");
+		notify(ctx, "The previous continuation is still resuming; no new handoff was started.", "warning");
+		setStatus(ctx, "continuation still resuming");
 		return false;
 	}
 	const guardKey = options.trigger ? buildGuardFailureKey(options.trigger) : undefined;
@@ -253,8 +260,8 @@ export function startContinuationCompaction(
 			options.trigger,
 			BLOCKED_RETRY_FAILURE,
 		);
-		notify(ctx, "Mid-run continuation guard is still blocking an over-threshold request after a failed compaction.", "error");
-		setStatus(ctx, "continuation guard blocked retry after failure");
+		notify(ctx, "pi-continue paused before another over-limit model request. Review /continue status before retrying.", "error");
+		setStatus(ctx, "pi-continue blocked retry after failed handoff");
 		return false;
 	}
 	runtime.compactionRunning = true;
@@ -264,12 +271,12 @@ export function startContinuationCompaction(
 		options.trigger,
 		options.continueAfterComplete ? "pending" : "not-requested",
 	);
-	beginWorkingVisuals(ctx, runtime, event.id, "pi-continue compacting");
+	beginWorkingVisuals(ctx, runtime, event.id, "pi-continue saving handoff");
 	if (options.abortActiveRun) ctx.abort();
 	const label = sourceLabel(options.source);
 	const triggerText = options.trigger ? ` (${describeGuardTrigger(options.trigger)})` : "";
-	setStatus(ctx, `${label}: compacting${triggerText}`);
-	notify(ctx, `${label}: starting continuation compaction${triggerText}.`, "info");
+	setStatus(ctx, `${label}: saving handoff${triggerText}`);
+	notify(ctx, `${label}: saving handoff${triggerText}.`, "info");
 	const customInstructions = mergeInstructions([
 		options.instructions,
 		options.trigger ? buildGuardInstructions(options.trigger) : undefined,
@@ -288,27 +295,28 @@ export function startContinuationCompaction(
 				runtime.compactionRunning = false;
 				runtime.guardFailureKey = undefined;
 				if (options.continueAfterComplete) {
-					setStatus(ctx, `${label}: sending continuation`);
+					setStatus(ctx, `${label}: resuming this session`);
+					markContinuationResumePending(runtime, event.id);
+					runtime.awaitingResumeEventId = event.id;
+					scheduleResumeStartTimeout(
+						ctx,
+						runtime,
+						event.id,
+						label,
+						options.resumeStartTimeoutMs ?? RESUME_START_TIMEOUT_MS,
+						options.onContinuationFailed,
+					);
 					try {
 						sendContinuationPrompt(options.sendContinuation);
 						markContinuationPromptSent(runtime, event.id);
-						runtime.awaitingResumeEventId = event.id;
-						scheduleResumeStartTimeout(
-							ctx,
-							runtime,
-							event.id,
-							label,
-							options.resumeStartTimeoutMs ?? RESUME_START_TIMEOUT_MS,
-							options.onContinuationFailed,
-						);
-						notify(ctx, `${label}: continuation prompt sent.`, "info");
+						notify(ctx, `${label}: resume request sent.`, "info");
 					} catch {
 						options.onContinuationFailed?.(event.id);
 						finishContinuationEvent(runtime, event.id, "failed", PROMPT_DISPATCH_FAILURE);
 						clearResumeStartTimeout(runtime);
 						runtime.awaitingResumeEventId = undefined;
 						settleContinuationFailureVisuals(ctx, runtime, event.id, label);
-						notify(ctx, `${label}: continuation prompt failed: ${PROMPT_DISPATCH_FAILURE}`, "error");
+						notify(ctx, `${label}: resume request failed: ${PROMPT_DISPATCH_FAILURE}`, "error");
 						return;
 					}
 					return;
@@ -316,29 +324,31 @@ export function startContinuationCompaction(
 				finishContinuationEvent(runtime, event.id, "completed", undefined);
 				settleWorkingVisuals(ctx, runtime, event.id);
 				setStatus(ctx, undefined);
-				notify(ctx, `${label}: continuation compaction completed.`, "info");
+				notify(ctx, `${label}: handoff saved.`, "info");
 			},
 			onError: () => {
 				if (!claimCompactionCallback()) return;
 				runtime.compactionRunning = false;
 				if (guardKey) runtime.guardFailureKey = guardKey;
 				options.onContinuationFailed?.(event.id);
-				finishContinuationEvent(runtime, event.id, "failed", COMPACTION_FAILURE);
+				const reason = compactionFailureReason(runtime, event.id);
+				finishContinuationEvent(runtime, event.id, "failed", reason);
 				clearResumeStartTimeout(runtime);
 				runtime.awaitingResumeEventId = undefined;
 				settleContinuationFailureVisuals(ctx, runtime, event.id, label);
-				notify(ctx, `${label}: continuation compaction failed: ${COMPACTION_FAILURE}`, "error");
+				notify(ctx, `${label}: handoff failed: ${reason}`, "error");
 			},
 		});
 	} catch {
 		runtime.compactionRunning = false;
 		if (guardKey) runtime.guardFailureKey = guardKey;
 		options.onContinuationFailed?.(event.id);
-		finishContinuationEvent(runtime, event.id, "failed", COMPACTION_FAILURE);
+		const reason = compactionFailureReason(runtime, event.id);
+		finishContinuationEvent(runtime, event.id, "failed", reason);
 		clearResumeStartTimeout(runtime);
 		runtime.awaitingResumeEventId = undefined;
 		settleContinuationFailureVisuals(ctx, runtime, event.id, label);
-		notify(ctx, `${label}: continuation compaction failed: ${COMPACTION_FAILURE}`, "error");
+		notify(ctx, `${label}: handoff failed: ${reason}`, "error");
 		return false;
 	}
 	return true;
@@ -438,7 +448,7 @@ export async function runContinuationCommand(
 ): Promise<void> {
 	const request = parseContinuationRequest(args);
 	if (request.mode === "queue") {
-		notify(ctx, "Queued continuation compaction for the next idle point.", "info");
+		notify(ctx, "Queued continuation for the next idle point.", "info");
 		await ctx.waitForIdle();
 		startContinuationCompaction(ctx, runtime, {
 			source: "command-queue",

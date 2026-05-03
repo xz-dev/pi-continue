@@ -26,8 +26,8 @@ function createStore(): ContinuationEventStore {
 test("event failure reasons are owned messages supplied by the caller", () => {
 	const store = createStore();
 	const event = beginContinuationEvent(store, "command-steer", undefined, "pending");
-	assert.equal(finishContinuationEvent(store, event.id, "failed", "Continuation compaction failed."), true);
-	assert.equal(store.latestEvent?.failureReason, "Continuation compaction failed.");
+	assert.equal(finishContinuationEvent(store, event.id, "failed", "Continuation handoff failed."), true);
+	assert.equal(store.latestEvent?.failureReason, "Continuation handoff failed.");
 });
 
 test("resume outcome completes a running continuation after prompt dispatch", () => {
@@ -89,15 +89,15 @@ test("abandonActiveContinuationEvent settles pending sync on shutdown", () => {
 		continuationDoc: "pending",
 		agentGuide: "pending",
 	});
-	abandonActiveContinuationEvent(store, "Pi session shut down before continuation aftercare settled.");
+	abandonActiveContinuationEvent(store, "Pi session shut down before continuation finished settling.");
 	assert.equal(store.activeEventId, undefined);
 	assert.equal(store.latestEvent?.status, "failed");
 	assert.equal(store.latestEvent?.documentSync.continuationDoc, "failed");
 	assert.equal(store.latestEvent?.documentSync.agentGuide, "failed");
-	assert.equal(store.latestEvent?.failureReason, "Pi session shut down before continuation aftercare settled.");
+	assert.equal(store.latestEvent?.failureReason, "Pi session shut down before continuation finished settling.");
 });
 
-test("abandonActiveContinuationEvent fails pending sync after compaction completion", () => {
+test("abandonActiveContinuationEvent fails pending sync after handoff completion", () => {
 	const store = createStore();
 	const event = beginContinuationEvent(store, "command-queue", undefined, "pending");
 	planActiveDocumentSync(store, {
@@ -105,31 +105,31 @@ test("abandonActiveContinuationEvent fails pending sync after compaction complet
 		agentGuide: "off",
 	});
 	finishContinuationEvent(store, event.id, "completed", undefined);
-	abandonActiveContinuationEvent(store, "Pi session shut down before continuation aftercare settled.");
+	abandonActiveContinuationEvent(store, "Pi session shut down before continuation finished settling.");
 	assert.equal(store.activeEventId, undefined);
 	assert.equal(store.latestEvent?.status, "completed");
 	assert.equal(store.latestEvent?.documentSync.continuationDoc, "failed");
 	assert.equal(store.latestEvent?.documentSync.agentGuide, "off");
-	assert.equal(store.latestEvent?.failureReason, "Pi session shut down before continuation aftercare settled.");
+	assert.equal(store.latestEvent?.failureReason, "Pi session shut down before continuation finished settling.");
 });
 
-test("finishContinuationEvent does not report compaction failure as failed resume", () => {
+test("finishContinuationEvent does not report handoff failure as failed resume", () => {
 	const store = createStore();
 	const event = beginContinuationEvent(store, "command-steer", undefined, "pending");
-	assert.equal(finishContinuationEvent(store, event.id, "failed", "Continuation compaction failed."), true);
+	assert.equal(finishContinuationEvent(store, event.id, "failed", "Continuation handoff failed."), true);
 	assert.equal(store.latestEvent?.status, "failed");
 	assert.equal(store.latestEvent?.promptStatus, "failed");
 	assert.equal(store.latestEvent?.resume.status, "not-requested");
-	assert.equal(store.latestEvent?.failureReason, "Continuation compaction failed.");
+	assert.equal(store.latestEvent?.failureReason, "Continuation handoff failed.");
 });
 
 test("finishContinuationEvent is terminal-idempotent", () => {
 	const store = createStore();
 	const event = beginContinuationEvent(store, "mid-run-guard", undefined, "pending");
-	assert.equal(finishContinuationEvent(store, event.id, "failed", "Continuation compaction failed."), true);
+	assert.equal(finishContinuationEvent(store, event.id, "failed", "Continuation handoff failed."), true);
 	assert.equal(finishContinuationEvent(store, event.id, "completed", undefined), false);
 	assert.equal(store.latestEvent?.status, "failed");
-	assert.equal(store.latestEvent?.failureReason, "Continuation compaction failed.");
+	assert.equal(store.latestEvent?.failureReason, "Continuation handoff failed.");
 });
 
 test("failPendingDocumentSyncForEvent clears pending sync with caller-owned failure copy", () => {

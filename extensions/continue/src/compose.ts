@@ -10,7 +10,7 @@ function renderFileListTag(tag: string, values: string[]): string | undefined {
 	return renderBlock(tag, values.join("\n"));
 }
 
-/** Render the compaction summary that Pi persists in session history. */
+/** Render the compaction summary that Pi persists in session history. The split prefix is raw summary text; this renderer owns the saved wrapper tag. */
 export function composeCompactionSummary(
 	continuation: string,
 	splitPrefix: string | undefined,

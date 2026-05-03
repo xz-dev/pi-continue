@@ -49,7 +49,7 @@ test("package history prompts require evidence-gated continuation ledger artifac
 		assert.match(content, /dormantContext/);
 		assert.match(content, /retiredContext/);
 		assert.match(content, /inactive is not obsolete/i);
-		assert.match(content, /Under token pressure|Bloat is failure/);
+		assert.match(content, /Under token pressure|Keep the ledger dense/);
 		assert.match(content, /state ownership model/i);
 		assert.match(content, /semantic dominance/i);
 		assert.match(content, /one primary/);
@@ -74,6 +74,14 @@ test("prompt assets avoid raw Markdown HTML tag block lines", () => {
 			assert.doesNotMatch(lines[index], /^\s*<\/?[a-z][a-z0-9-]*(?:\s+[^>]*)?>\s*$/i, `${path}:${index + 1}`);
 		}
 	}
+});
+
+test("split-prefix prompt keeps runtime-owned wrapper tags", () => {
+	const content = readFileSync("assets/system/split_prefix.md", "utf8");
+	assert.match(content, /raw summary text/);
+	assert.match(content, /runtime owns the saved `<split-prefix>` wrapper/);
+	assert.doesNotMatch(content, /Return only one literal tag block/);
+	assert.doesNotMatch(content, /<split-prefix>\.\.\.<\/split-prefix>/);
 });
 
 test("project override wins when policy is project-override", () => {

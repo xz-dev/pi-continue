@@ -225,6 +225,16 @@ test("parseHistoryArtifacts rejects extra or retired contract keys", () => {
 	})), undefined);
 });
 
-test("parseSplitPrefix extracts tagged payload", () => {
-	assert.equal(parseSplitPrefix("<split-prefix>prefix</split-prefix>"), "prefix");
+test("parseSplitPrefix accepts raw summary text", () => {
+	assert.equal(parseSplitPrefix("prefix"), "prefix");
+	assert.equal(parseSplitPrefix("\n\tprefix\n"), "prefix");
+});
+
+test("parseSplitPrefix rejects wrapper tags and Markdown fences", () => {
+	assert.equal(parseSplitPrefix("<split-prefix>prefix</split-prefix>"), undefined);
+	assert.equal(parseSplitPrefix("<split-prefix></split-prefix>"), undefined);
+	assert.equal(parseSplitPrefix("<split-prefix>prefix"), undefined);
+	assert.equal(parseSplitPrefix("prefix</split-prefix>"), undefined);
+	assert.equal(parseSplitPrefix("```md\nprefix\n```"), undefined);
+	assert.equal(parseSplitPrefix("~~~md\nprefix\n~~~"), undefined);
 });

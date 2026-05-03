@@ -39,7 +39,7 @@ function latestMatching(store: ContinuationEventStore, eventId: string | undefin
 	return store.latestEvent;
 }
 
-/** Return whether an event id still owns the latest continuation aftercare snapshot. */
+/** Return whether an event id still owns the latest continuation snapshot. */
 export function isLatestContinuationEvent(store: ContinuationEventStore, eventId: string | undefined): boolean {
 	return latestMatching(store, eventId) !== undefined;
 }
@@ -180,6 +180,17 @@ export function recordDocumentSyncResult(
 	});
 }
 
+/** Mark that a same-session resume request is about to be dispatched. */
+export function markContinuationResumePending(store: ContinuationEventStore, eventId: string): void {
+	const event = latestMatching(store, eventId);
+	if (!event || store.activeEventId !== eventId || event.status !== "running") return;
+	if (event.resume.status !== "not-requested") return;
+	replaceLatest(store, {
+		...event,
+		resume: { status: "pending" },
+	});
+}
+
 /** Mark same-session continuation prompt dispatch after the prompt sender succeeds. */
 export function markContinuationPromptSent(store: ContinuationEventStore, eventId: string): void {
 	const event = latestMatching(store, eventId);
@@ -187,7 +198,7 @@ export function markContinuationPromptSent(store: ContinuationEventStore, eventI
 	replaceLatest(store, {
 		...event,
 		promptStatus: "sent",
-		resume: { status: "pending" },
+		resume: event.resume.status === "not-requested" ? { status: "pending" } : event.resume,
 	});
 }
 

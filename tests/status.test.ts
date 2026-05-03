@@ -7,7 +7,7 @@ import { DEFAULT_CONTINUE_CONFIG } from "../extensions/continue/src/config.ts";
 import { renderStatus } from "../extensions/continue/src/status.ts";
 import type { ContinuationLatestEvent } from "../extensions/continue/src/types.ts";
 
-test("renderStatus reports local runtime wiring and write semantics", () => {
+test("renderStatus reports local runtime wiring and write behavior", () => {
 	const root = mkdtempSync(join(tmpdir(), "pi-continuation-status-"));
 	try {
 		const ctx = {
@@ -27,11 +27,11 @@ test("renderStatus reports local runtime wiring and write semantics", () => {
 			undefined,
 		);
 		assert.match(rendered, /# Continuation Status/);
-		assert.match(rendered, /## Continuation Aftercare/);
-		assert.match(rendered, /Last continuation: none recorded since this extension loaded/);
-		assert.match(rendered, /- Model: inherit -> openai\/gpt-test/);
+		assert.match(rendered, /## Continuation/);
+		assert.match(rendered, /Last handoff: none in this session/);
+		assert.match(rendered, /- Handoff model: inherit -> openai\/gpt-test/);
 		assert.match(rendered, /- Agent guide writes: off/);
-		assert.match(rendered, /Durable promotions are normal-work proposals, not compaction write proof/);
+		assert.match(rendered, /Durable promotions are normal-work proposals, not proof that a file was written/);
 		assert.match(rendered, /- Scenario: unavailable/);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
@@ -87,9 +87,9 @@ test("renderStatus summarizes a completed latest continuation calmly", () => {
 			undefined,
 			latestEvent,
 		);
-		assert.match(rendered, /Last continuation: completed successfully/);
-		assert.match(rendered, /Checkpoint: completed assistant\/tool-result batch before the next provider request/);
-		assert.match(rendered, /Artifact: Continuation Ledger parsed successfully/);
+		assert.match(rendered, /Last handoff: completed successfully/);
+		assert.match(rendered, /Safe boundary: completed assistant\/tool-result batch before the next model request/);
+		assert.match(rendered, /Ledger: Continuation Ledger ready/);
 		assert.match(rendered, /Document writes: none performed/);
 		assert.match(rendered, /Action: No action needed/);
 	} finally {
@@ -97,7 +97,7 @@ test("renderStatus summarizes a completed latest continuation calmly", () => {
 	}
 });
 
-test("renderStatus reports compaction failure without failed-resume copy", () => {
+test("renderStatus reports handoff failure without failed-resume copy", () => {
 	const root = mkdtempSync(join(tmpdir(), "pi-continuation-status-"));
 	try {
 		const ctx = {
@@ -120,7 +120,7 @@ test("renderStatus reports compaction failure without failed-resume copy", () =>
 				continuationDoc: "off",
 				agentGuide: "off",
 			},
-			failureReason: "Continuation compaction failed.",
+			failureReason: "Continuation handoff failed.",
 		};
 		const rendered = renderStatus(
 			ctx,
@@ -131,7 +131,7 @@ test("renderStatus reports compaction failure without failed-resume copy", () =>
 			undefined,
 			latestEvent,
 		);
-		assert.match(rendered, /Last continuation: continuation needs attention/);
+		assert.match(rendered, /Last handoff: continuation needs attention/);
 		assert.match(rendered, /Resume outcome: not requested/);
 		assert.doesNotMatch(rendered, /resume needs attention/);
 	} finally {
@@ -178,8 +178,8 @@ test("renderStatus reports an aborted resume without generic internal failure co
 			undefined,
 			latestEvent,
 		);
-		assert.match(rendered, /Last continuation: resume was aborted/);
-		assert.match(rendered, /Attention: Continuation resume was aborted/);
+		assert.match(rendered, /Last handoff: resume was aborted/);
+		assert.match(rendered, /Needs attention: Continuation resume was aborted/);
 		assert.doesNotMatch(rendered, /internal failure/);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
@@ -206,7 +206,7 @@ test("renderStatus does not call pending or failed sync no-op writes", () => {
 			promptStatus: "failed",
 			resume: {
 				status: "failed",
-				failureReason: "Continuation prompt dispatch failed.",
+				failureReason: "Continuation resume request failed.",
 			},
 			documentSync: {
 				continuationDoc: "failed",
@@ -224,8 +224,8 @@ test("renderStatus does not call pending or failed sync no-op writes", () => {
 			latestEvent,
 		);
 		assert.match(rendered, /Document sync: continuation doc failed; agent guide pending/);
-		assert.match(rendered, /Continuation prompt: not sent/);
-		assert.match(rendered, /Attention: Document sync failed; check the configured path and permissions/);
+		assert.match(rendered, /Resume request: not sent/);
+		assert.match(rendered, /Needs attention: Document sync failed; check the configured path and permissions/);
 		assert.doesNotMatch(rendered, /Document writes: none performed/);
 	} finally {
 		rmSync(root, { recursive: true, force: true });

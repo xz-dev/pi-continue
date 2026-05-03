@@ -68,7 +68,7 @@ function structuredArtifact(overrides = {}) {
 		dormantContext: [`${dormantSentinel} returns when continuation prompt behavior changes.`],
 		retiredContext: [`${staleSentinel} is retired from the active edge.`],
 		antiRework: ["Do not replay raw transcript chronology."],
-		durableLearnings: ["Bloat is failure; keep one owner for each retained fact."],
+		durableLearnings: ["Keep the ledger dense; keep one owner for each retained fact."],
 		durablePromotions: [{
 			status: "none",
 			targetSurface: "none",

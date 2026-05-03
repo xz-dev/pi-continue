@@ -1,4 +1,4 @@
-export const SYNTHESIS_ABORT_MESSAGE = "Continuation artifact synthesis failed; compaction was aborted before a usable ledger was saved.";
+export const SYNTHESIS_ABORT_MESSAGE = "pi-continue could not create a usable handoff, so continuation stopped before resuming.";
 
 /** Build the error used when modeled continuation ledger synthesis cannot produce a usable artifact. */
 export function buildSynthesisAbortError(): Error {

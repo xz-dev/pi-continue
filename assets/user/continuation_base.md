@@ -5,12 +5,12 @@ Write continuation artifacts for the next Pi turn after compaction.
 ## Objective
 
 - Preserve what still changes what the next agent should do, avoid, ask, validate, inspect, update durably, or remember as reusable operating guidance.
-- Before synthesizing conclusions, account for every tool output and every user and assistant message in the supplied context.
+- Before synthesizing conclusions, check the supplied context for user intent, tool-proven state, conflicts, and blockers.
 - Treat transcript and tool history as noisy evidence, not as content to replay.
 - Emit one current Pi Continuation Ledger in the strict JSON schema requested by the system prompt. This is a reducer, not a chronological summary or a stacked layer over a previous ledger.
 - Preserve the initiative spine across compactions: durable purpose, why the user cares, definition of done, active request recency, plan of record, sticky constraints, durable decisions, dormant-but-important context, active risks, and rejected-path rationale.
 - Apply the Evidence Gate: keep a detail only when it changes continuation behavior, prevents a wrong action, proves current state, records a blocker, encodes an explicit or repeated user requirement, or captures durable learning that should survive compaction.
-- Use only supplied context and explicit runtime sections; do not invent missing progress, validation, file contents, AGENTS.md changes, control-plane writes, or root cause.
+- Use only supplied context and explicit runtime sections; do not invent missing progress, validation, file contents, configured agent-guide changes, control-plane writes, or root cause.
 - Synthesize everything that still applies into the structured JSON fields requested by the system prompt.
 - Make the artifacts cohesive: the brief, document, durable promotions, and agent-guide candidate should use the same facts, vocabulary, constraints, and current truth.
 - Include enduring requirements: absolute constraints, evergreen preferences, stable context, reusable user feedback, and relevant lasting learning.
@@ -25,7 +25,7 @@ Write continuation artifacts for the next Pi turn after compaction.
 Use the structured fields as semantic slots, not as a transcript template:
 
 - `task`: active goal, success condition, and product/user intent.
-- `initiativeCharter`: durable story spine: problem, why it matters, intended outcome, canonical strategy, non-goals, and must-not-forget context.
+- `initiativeCharter`: initiative spine: problem, why it matters, intended outcome, canonical strategy, non-goals, and must-not-forget context.
 - `definitionOfDone`: completion criteria split by user-visible result, implementation, docs/control-plane, validation/proof, and explicit blockers.
 - `recencyLedger`: active, amended, superseded, stale, confirmed, or unknown request/plan/validation resolution. It must contain at least one entry and make the newest active request and any misleading older plan explicit.
 - `currentPlan`: active, pending, blocked, done, and rejected lanes when they affect future decisions.
@@ -64,7 +64,7 @@ Use the structured fields as semantic slots, not as a transcript template:
 - Use `recencyLedger` for request/order conflicts; do not leave old and new plans co-active.
 - Apply the state ownership model: every retained item has one primary field owner, and `workingEdge` contains only the current execution edge.
 - Apply semantic dominance: merge equivalent narrow claims into the broader correct operational rule unless a narrower claim adds an exception.
-- Bloat is failure. Remove duplicate semantics, stale active-state claims, old validation superseded by newer validation, risks with no trigger, and provenance that does not change future behavior.
+- Keep the ledger dense. Remove duplicate semantics, stale active-state claims, old validation superseded by newer validation, risks with no trigger, and provenance that does not change future behavior.
 
 ## Durable promotion policy
 
@@ -72,15 +72,15 @@ Use the structured fields as semantic slots, not as a transcript template:
 - Treat the compaction artifact as a proposal surface, not proof of a file write.
 - Each durable promotion must use one status: `apply`, `reject`, `defer`, `already-covered`, or `none`.
 - For non-`none` promotions, include target surface, proposal, evidence, durability, risk, and next action.
-- A receiving agent should resolve non-`none` promotions through normal repo work before further mutation in the affected repo unless newer evidence rejects or defers them.
+- Before editing a surface affected by a non-`none` promotion, the receiving agent should apply, reject, or defer that promotion through normal repo work unless newer evidence already resolves it.
 - If the repo uses HANDOFF.md, mention it only as a normal repo control-plane target; do not claim compaction wrote it.
 
-## AGENTS.md candidate policy
+## Configured agent-guide candidate policy
 
 - Use `agentGuideMarkdown` only for durable operating guidance: user preferences, corrected command truth, stable boundaries, reusable procedures, or repo rules that should govern future agents.
 - If a learning belongs only to the active task, keep it in the continuation artifacts and set `agentGuideMarkdown` to null.
 - If a guide update is warranted, emit the full replacement guide content and explain the reason in `agentGuideChangeReason`.
-- Candidate notes alone do not write AGENTS.md; only non-null `agentGuideMarkdown` can be synced.
+- Candidate notes alone do not write the configured agent guide; only non-null `agentGuideMarkdown` can be synced.
 - Do not claim the guide was written unless the supplied context proves it.
 
 ## Style
@@ -90,13 +90,13 @@ Use the structured fields as semantic slots, not as a transcript template:
 - Keep exact wording only when precision matters.
 - Do not present inference as fact.
 - Keep the brief tactical; keep the document durable.
-- Favor GPT-5-class outcome-first directness over process-heavy prompting.
+- Favor outcome-first, direct handoff language over process-heavy narration.
 
 ## Output
 
 - Return only the strict JSON artifact object requested by the system prompt.
 - Fill every required structured field with an array, using an empty array only when no item passes the Evidence Gate. Do not leave `recencyLedger` empty; use `unknown` when recency cannot be resolved from supplied evidence.
-- Put a full AGENTS.md replacement in `agentGuideMarkdown` only when warranted; otherwise use null.
+- Put a full configured-guide replacement in `agentGuideMarkdown` only when warranted; otherwise use null.
 
 ## Quality bar
 

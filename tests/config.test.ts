@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DEFAULT_CONTINUE_CONFIG, loadContinuationConfig, loadScopeConfig, resetContinuationConfig, saveContinuationConfig } from "../extensions/continue/src/config.ts";
+import { DEFAULT_CONTINUE_CONFIG, loadContinuationConfig, loadScopeConfig, patchContinuationConfig, resetContinuationConfig, saveContinuationConfig } from "../extensions/continue/src/config.ts";
 
 async function withTempAgent(work) {
 	const root = mkdtempSync(join(tmpdir(), "pi-continuation-config-"));
@@ -103,6 +103,19 @@ test("loadScopeConfig keeps global and project settings separate", async () => {
 		assert.equal(loadContinuationConfig(root).summarizerModel, "openai/project-model");
 		assert.equal(loadScopeConfig("global", root).summarizerModel, "openai/global-model");
 		assert.equal(loadScopeConfig("project", root).summarizerModel, "openai/project-model");
+	});
+});
+
+test("patchContinuationConfig preserves inherited global settings", async () => {
+	await withTempAgent(async (root) => {
+		await saveContinuationConfig("global", root, {
+			...DEFAULT_CONTINUE_CONFIG,
+			enabled: false,
+		});
+		await patchContinuationConfig("project", root, { ledgerDisplayMode: "off" });
+		const effective = loadContinuationConfig(root);
+		assert.equal(effective.enabled, false);
+		assert.equal(effective.ledgerDisplayMode, "off");
 	});
 });
 

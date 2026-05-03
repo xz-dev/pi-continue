@@ -8,13 +8,13 @@ Return one strict JSON artifact object. Return only valid JSON: no Markdown fenc
 
 Emit one current Pi Continuation Ledger encoded in JSON. This is a reducer, not a chronological summary: reconcile still-correct durable state from the previous summary, continuation document, and agent guide with newer transcript evidence, then output one clean replacement artifact.
 
-Preserve durable initiative state plus the current operational handoff across the first compaction and the thirtieth: why the user cares, what completion means, what newer evidence supersedes, the current plan, what has already been decided, what must remain dormant but available, what is retired, and what the next Pi turn must do now.
+Preserve durable initiative state plus the current operational handoff across repeated compactions: why the user cares, what completion means, what newer evidence supersedes, the current plan, what has already been decided, what must remain dormant but available, what is retired, and what the next Pi turn must do now.
 
 Prefer exact paths, commands, current failures, validation freshness, user-approved choices, explicit exclusions, rejected-path rationale, and evidence-backed next actions over narrative detail.
 
 ## Output schema
 
-Use this exact schema. Arrays may be empty when the Evidence Gate rejects every candidate for that field except `recencyLedger`, which must contain at least one entry. For `recencyLedger`, use `unknown` when the supplied context cannot resolve recency. For `durablePromotions`, prefer one status `none` item when no durable promotion exists.
+Use this exact key shape. Arrays may be empty when the Evidence Gate rejects every candidate for that field except `recencyLedger`, which must contain at least one entry. For `recencyLedger`, use `unknown` when the supplied context cannot resolve recency. For `durablePromotions`, prefer one status `none` item when no durable promotion exists. The schema example uses `null` for `agentGuideMarkdown`; replace it with a string only when emitting a full guide replacement.
 
 ```json
 {
@@ -93,7 +93,7 @@ Use this exact schema. Arrays may be empty when the Evidence Gate rejects every 
 ## Field semantics
 
 - `task`: the active user goal and success condition, not a transcript recap.
-- `initiativeCharter`: durable story spine: initiative subject, initiating problem, why the user cares, intended outcome, canonical strategy, non-goals, and must-not-forget context.
+- `initiativeCharter`: initiative spine: subject, initiating problem, why the user cares, intended outcome, canonical strategy, non-goals, and must-not-forget context.
 - `definitionOfDone`: user-visible, implementation, documentation/control-plane, validation/proof criteria, and blockers to declaring done.
 - `recencyLedger`: explicit resolution of active, amended, superseded, stale, confirmed, or unknown request/plan/validation conflicts. It must contain at least one entry and identify the newest active user request or evidence when older summaries could mislead.
 - `currentPlan`: plan of record with active, pending, blocked, done, and rejected lanes when they affect future decisions.
@@ -134,7 +134,7 @@ Every retained item must have exactly one primary owner. Do not duplicate the sa
 - `durablePromotions` owns durable external-surface proposals.
 - `agentGuideUpdates` owns candidate guide notes.
 
-Use semantic dominance: if one broader correct statement has the same operational consequence as several narrower statements and the narrower statements add no exception, keep the broader statement and drop the rest. Bloat is failure; the ledger should become denser after compaction, not larger by default.
+Use semantic dominance: if one broader correct statement has the same operational consequence as several narrower statements and the narrower statements add no exception, keep the broader statement and drop the rest. Keep the ledger dense; it should become sharper after compaction, not larger by default.
 
 ## Reducer rules
 
@@ -154,7 +154,7 @@ Use semantic dominance: if one broader correct statement has the same operationa
 - Replace contradicted guidance atomically; do not leave old and new rules side by side.
 - Remove stale or already-resolved guidance unless it belongs in `retiredContext`, `antiRework`, or `durableLearnings`.
 - Do not segregate durable learning away just because a subtask ended. If the lesson improves future design, research, implementation, validation, or agent behavior, keep it.
-- Do not claim a repo document, HANDOFF.md, continuation document, or AGENTS.md was written unless supplied context proves the write happened.
+- Do not claim a repo document, HANDOFF.md, continuation document, or configured agent guide was written unless supplied context proves the write happened.
 
 ## Evidence Gate
 
@@ -170,13 +170,13 @@ Use semantic dominance: if one broader correct statement has the same operationa
 - Preserve exact paths, commands, identifiers, errors, decisions, constraints, config keys, model/provider names, and user wording when precision changes behavior.
 - Generalize repeated friction into one durable rule using "Avoid X; instead Y" when useful.
 - Distinguish observed facts, inferences, assumptions, stale evidence, superseded plans, risks, and recommended next actions.
-- Do not invent progress, validation, root cause, file contents, user approvals, durable-doc writes, or AGENTS.md writes.
+- Do not invent progress, validation, root cause, file contents, user approvals, durable-doc writes, or configured agent-guide writes.
 
 ## Durable promotion policy
 
 - Use `durablePromotions` for durable changes that should be resolved outside the compaction summary in package docs or control-plane files such as README.md, the configured agent guide, PLAN.md, HANDOFF.md, or skill docs.
 - Do not claim compaction wrote those files. Compaction can only emit the continuation artifact and, when configured, a full `agentGuideMarkdown` replacement.
-- `apply` means the receiving agent should make the durable change before further mutation in the affected repo.
+- `apply` means the receiving agent should resolve the durable change before editing the affected surface.
 - `reject` means do not apply; include evidence and rationale.
 - `defer` means keep sticky; include owner/reason in `proposal` or `nextAction` and the next falsifiable action.
 - `already-covered` means cite the existing durable surface.

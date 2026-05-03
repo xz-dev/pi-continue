@@ -10,7 +10,7 @@ interface LedgerTheme {
 
 function ledgerHeaderLines(ledger: ContinuationLedgerSnapshot): string[] {
 	return [
-		`event ${ledger.eventId ?? "unknown"} | compaction ${ledger.compactionEntryId}`,
+		`run ${ledger.eventId ?? "unknown"} | compaction ${ledger.compactionEntryId}`,
 		new Date(ledger.capturedAt).toISOString(),
 	];
 }
@@ -86,10 +86,10 @@ export function showContinuationLedgerOverlaySoon(
 ): void {
 	void showContinuationLedgerOverlay(ctx, ledger)
 		.then((shown) => {
-			if (!shown) onError("Continuation Ledger overlay is unavailable in this Pi mode.");
+			if (!shown) onError("Continuation Ledger cannot open in this Pi mode.");
 		})
 		.catch(() => {
-			onError("Continuation Ledger overlay failed.");
+			onError("Continuation Ledger could not open.");
 		});
 }
 
@@ -98,7 +98,7 @@ export async function showLatestContinuationLedger(
 	ledger: ContinuationLedgerSnapshot | undefined,
 ): Promise<void> {
 	if (!ledger) {
-		if (ctx.hasUI) ctx.ui.notify("No Continuation Ledger is available in this runtime yet.", "warning");
+		if (ctx.hasUI) ctx.ui.notify("No Continuation Ledger has been created in this session yet.", "warning");
 		return;
 	}
 	const shown = await showScrollableTextOverlay(ctx, {
@@ -107,6 +107,6 @@ export async function showLatestContinuationLedger(
 		headerLines: ledgerHeaderLines(ledger),
 	});
 	if (!shown && ctx.hasUI) {
-		ctx.ui.notify("Continuation Ledger overlay is unavailable in this Pi mode.", "warning");
+		ctx.ui.notify("Continuation Ledger cannot open in this Pi mode.", "warning");
 	}
 }

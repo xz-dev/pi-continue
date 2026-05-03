@@ -134,7 +134,7 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	pi.registerCommand("continue", {
-		description: "Continuation actions: steer, queue, preview, status, ledger, settings, reset",
+		description: "Save a same-session handoff, resume this run, or inspect continuation settings.",
 		getArgumentCompletions: getContinueArgumentCompletions,
 		handler: async (args, ctx) => {
 			if (shouldOpenContinuePalette(args, ctx.hasUI)) {
@@ -180,14 +180,14 @@ export default function (pi: ExtensionAPI) {
 		if (event.prompt !== CONTINUATION_PROMPT) return;
 		const eventId = markAwaitingContinuationResumeStarted(runtime);
 		if (!eventId) return;
-		setRuntimeStatus(ctx, "continuation resume running");
+		setRuntimeStatus(ctx, "pi-continue resume running");
 	});
 
 	pi.on("message_start", async (event, ctx) => {
 		if (!isAssistantMessage(event.message)) return;
 		const eventId = runtime.awaitingResumeEventId;
 		if (!eventId || runtime.latestEvent?.id !== eventId || runtime.latestEvent.resume.status !== "running") return;
-		setRuntimeStatus(ctx, "continuation resume running");
+		setRuntimeStatus(ctx, "pi-continue resume running");
 	});
 
 	pi.on("agent_end", async (_event, ctx) => {
@@ -221,7 +221,7 @@ export default function (pi: ExtensionAPI) {
 		const resolvedProjectContext = await resolveProjectContext(pi, ctx.cwd, config.continuationDocPath, config.agentGuidePath);
 		const preparation = normalizeCompactionPreparation(event.preparation, event.branchEntries);
 		if (preparation.repairedNoOpCut && ctx.hasUI) {
-			ctx.ui.notify("Adjusted native compaction checkpoint for continuation.", "warning");
+			ctx.ui.notify("pi-continue moved the handoff to a safer checkpoint before resuming.", "warning");
 		}
 		const fileOpsSnapshot = snapshotFileOperations(preparation.fileOps);
 		const internals = await loadPiInternals();
@@ -289,7 +289,7 @@ export default function (pi: ExtensionAPI) {
 			if (splitPrompt) {
 				splitPrefix = splitOutput ? parseSplitPrefix(splitOutput.text) : undefined;
 				if (!splitPrefix) {
-					throw new Error("Split-prefix pass omitted <split-prefix>");
+					throw new Error("Split-prefix pass omitted raw summary text");
 				}
 			}
 			markActiveContinuationArtifact(runtime, "modeled", undefined);
@@ -368,7 +368,7 @@ export default function (pi: ExtensionAPI) {
 			const config = loadContinuationConfig(projectContext.projectRoot);
 			if (config.enabled && config.ledgerDisplayMode === "overlay") {
 				showContinuationLedgerOverlaySoon(ctx, ledger, (reason) => {
-					if (ctx.hasUI) ctx.ui.notify(`Continuation Ledger overlay failed: ${reason}`, "error");
+					if (ctx.hasUI) ctx.ui.notify(`Could not open Continuation Ledger: ${reason}`, "error");
 				});
 			}
 		}
@@ -385,13 +385,13 @@ export default function (pi: ExtensionAPI) {
 					ctx.ui.notify(
 						result === "updated"
 							? `Updated ${pending.label}.`
-							: `${pending.label} unchanged.`,
+							: `${pending.label} was already up to date.`,
 						"info",
 					);
 				}
 			} catch {
 				recordDocumentSyncResult(runtime, pending.eventId, pending.target, "failed", DOCUMENT_SYNC_FAILURE);
-				if (ctx.hasUI) ctx.ui.notify(`${pending.label} sync failed: ${DOCUMENT_SYNC_FAILURE}`, "error");
+				if (ctx.hasUI) ctx.ui.notify(`Could not update ${pending.label}: ${DOCUMENT_SYNC_FAILURE}`, "error");
 			}
 		}
 		if (ctx.hasUI && details.agentGuideWriteStatus === "no-replacement" && details.agentGuideChangeReason) {
@@ -400,7 +400,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_shutdown", async (_event, ctx) => {
-		abandonActiveContinuationEvent(runtime, "Pi session shut down before continuation aftercare settled.");
+		abandonActiveContinuationEvent(runtime, "Pi session shut down before continuation finished settling.");
 		pendingDocumentWrites.clear();
 		clearWorkingVisuals(ctx, runtime);
 		runtime.compactionRunning = false;

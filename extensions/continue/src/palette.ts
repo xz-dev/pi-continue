@@ -206,7 +206,7 @@ export class ContinuePaletteComponent {
 	}
 
 	render(width: number): string[] {
-		if (width < MIN_WIDTH) return [truncateAnsi("Need wider terminal; use shortcuts", width)];
+		if (width < MIN_WIDTH) return [truncateAnsi("Widen terminal or use /continue subcommands", width)];
 		const paletteWidth = Math.min(width, TARGET_WIDTH);
 		return this.focusDraft ? this.renderFocus(paletteWidth, this.focusDraft) : this.renderPalette(paletteWidth);
 	}
@@ -273,13 +273,13 @@ export class ContinuePaletteComponent {
 		const selected = this.selectedAction();
 		const lines = [
 			topLine(this.theme, width, "pi-continue"),
-			frame(this.theme, width, ` ${this.theme.fg("accent", this.theme.bold("Continue"))} ${this.theme.fg("dim", "native compaction + same-session")}`),
+			frame(this.theme, width, ` ${this.theme.fg("accent", this.theme.bold("Continue"))} ${this.theme.fg("dim", "save handoff, resume here")}`),
 			frame(this.theme, width, ` ${this.renderStateLine()}`),
 		];
 		for (const row of this.renderActionRows(width - 2)) lines.push(frame(this.theme, width, row));
-		const focusHint = isFocusActionId(selected.id) ? " | f focus" : "";
+		const focusHint = isFocusActionId(selected.id) ? " | f note" : "";
 		lines.push(frame(this.theme, width, ` Effect: ${this.effectFor(selected)}`));
-		lines.push(frame(this.theme, width, ` ${this.theme.fg("dim", `Up/Down | Enter run/open${focusHint} | Esc`)}`));
+		lines.push(frame(this.theme, width, ` ${this.theme.fg("dim", `Up/Down choose | Enter select${focusHint} | Esc close`)}`));
 		lines.push(bottomLine(this.theme, width));
 		return lines;
 	}
@@ -292,10 +292,10 @@ export class ContinuePaletteComponent {
 			frame(this.theme, width, ` ${action.desc}`),
 			frame(this.theme, width, ` Effect: ${this.effectFor(action)}`),
 			frame(this.theme, width, ""),
-			frame(this.theme, width, ` Optional focus`),
+			frame(this.theme, width, ` Optional note for the handoff`),
 			frame(this.theme, width, ` ${renderFocusField(draft, width - 4)}`),
-			frame(this.theme, width, ` ${this.theme.fg("dim", "Leave blank to continue normally.")}`),
-			frame(this.theme, width, ` ${this.theme.fg("dim", "Enter start | Esc back | Ctrl+C close")}`),
+			frame(this.theme, width, ` ${this.theme.fg("dim", "Leave blank to continue without extra guidance.")}`),
+			frame(this.theme, width, ` ${this.theme.fg("dim", "Enter to start | Esc back | Ctrl+C close")}`),
 			bottomLine(this.theme, width),
 		];
 	}
@@ -327,17 +327,17 @@ export class ContinuePaletteComponent {
 	}
 
 	private renderStateLine(): string {
-		const status = this.snapshot.enabled ? "Enabled" : this.theme.fg("warning", "Disabled");
+		const status = this.snapshot.enabled ? "On" : this.theme.fg("warning", "Off");
 		const context = this.snapshot.contextUsage.replace(" tokens", "");
 		const trigger = this.snapshot.threshold.split(" tokens")[0];
-		const guard = this.snapshot.config.midRunGuardEnabled ? "guard on" : this.theme.fg("warning", "guard off");
-		const running = this.snapshot.compactionRunning ? " | compaction running" : "";
-		return `${status} | ctx ${context} | trigger ${trigger} | ${guard}${running}`;
+		const guard = this.snapshot.config.midRunGuardEnabled ? "safety on" : this.theme.fg("warning", "safety off");
+		const running = this.snapshot.compactionRunning ? " | saving handoff" : "";
+		return `${status} | context ${context} | handoff at ${trigger} | ${guard}${running}`;
 	}
 
 	private effectFor(action: PaletteAction): string {
-		if (!this.snapshot.enabled && (action.id === "continue-now" || action.id === "queue")) return "Continuations are disabled; open settings to re-enable.";
-		if (this.snapshot.compactionRunning && (action.id === "continue-now" || action.id === "queue")) return "Compaction is already running; wait or check status.";
+		if (!this.snapshot.enabled && (action.id === "continue-now" || action.id === "queue")) return "Continuation is disabled; open settings to re-enable.";
+		if (this.snapshot.compactionRunning && (action.id === "continue-now" || action.id === "queue")) return "A handoff is already being saved; wait or check status.";
 		return action.effect;
 	}
 }

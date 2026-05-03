@@ -147,7 +147,7 @@ export class ScrollableTextOverlay {
 		this.title = sanitizeOverlayText(options.title).trim() || "Preview";
 		this.content = sanitizeOverlayText(options.content);
 		this.headerLines = (options.headerLines ?? []).map((line) => sanitizeOverlayText(line));
-		this.footer = options.footer ?? "↑↓/j/k scroll | hold keys to repeat | PgUp/PgDn | Enter/q/Esc close";
+		this.footer = options.footer ?? "↑↓/j/k scroll | PgUp/PgDn page | Enter/q/Esc close";
 		this.theme = theme;
 		this.done = done;
 		this.requestRender = requestRender;
@@ -176,7 +176,7 @@ export class ScrollableTextOverlay {
 	}
 
 	render(width: number): string[] {
-		if (width < MIN_WIDTH) return [truncateAnsi("Need wider terminal for preview", width)];
+		if (width < MIN_WIDTH) return [truncateAnsi("Widen the terminal to view this panel", width)];
 		const overlayWidth = Math.min(width, TARGET_WIDTH);
 		const content = this.contentLines(overlayWidth);
 		const page = this.pageSize();

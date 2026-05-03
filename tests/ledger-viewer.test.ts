@@ -83,7 +83,7 @@ test("showContinuationLedgerOverlay reports supported custom UI", async () => {
 	assert.equal(shown, true);
 });
 
-test("ContinuationLedgerOverlay renders scrollable ledger aftercare", () => {
+test("ContinuationLedgerOverlay renders scrollable ledger panel", () => {
 	let closed = false;
 	let renders = 0;
 	const overlay = new ContinuationLedgerOverlay(
@@ -98,7 +98,7 @@ test("ContinuationLedgerOverlay renders scrollable ledger aftercare", () => {
 	);
 	const text = overlay.render(80).join("\n");
 	assert.match(text, /Continuation Ledger/);
-	assert.match(text, /event continue-1 \| compaction compact-1/);
+	assert.match(text, /run continue-1 \| compaction compact-1/);
 	assert.match(text, /line 1/);
 	overlay.handleInput("down");
 	overlay.handleInput("q");

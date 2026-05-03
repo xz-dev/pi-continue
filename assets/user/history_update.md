@@ -22,8 +22,8 @@ You are updating an existing continuation checkpoint and repo-local continuation
 ## Agent guide candidate contract
 
 - Preserve still-correct guide content when no durable rule changes.
-- If the current AGENTS.md should change, set `agentGuideMarkdown` to the full replacement content for the configured guide path.
-- Use `agentGuideUpdates` for candidate notes; candidate notes do not write AGENTS.md without non-null `agentGuideMarkdown`.
+- If the configured agent guide should change, set `agentGuideMarkdown` to the full replacement content for the configured guide path.
+- Use `agentGuideUpdates` for candidate notes; candidate notes do not write the configured guide without non-null `agentGuideMarkdown`.
 - If no durable operating rule should change, set `agentGuideMarkdown` to null and explain why in `agentGuideChangeReason`.
 - Candidate guide changes should be active refinements or corrections, not a transcript summary.
-- Do not use `durablePromotions` to imply AGENTS.md was written; it is a normal-work resolution surface.
+- Do not use `durablePromotions` to imply the configured guide was written; it is a normal-work resolution surface.

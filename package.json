@@ -1,8 +1,8 @@
 {
   "name": "pi-continue",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "type": "module",
-  "description": "Pi extension for same-session continuation when context fills mid-run, using native compaction and structured Continuation Ledger artifacts.",
+  "description": "Same-session continuation for long Pi runs that hit the context limit, built on native Pi compaction and a structured handoff ledger.",
   "keywords": [
     "pi-package",
     "pi",
@@ -41,6 +41,6 @@
     "extensions": [
       "./extensions/continue/index.ts"
     ],
-    "image": "https://raw.githubusercontent.com/Tiziano-AI/pi-continue/v0.6.0/assets/gallery/pi-continue-gallery.webp"
+    "image": "https://raw.githubusercontent.com/Tiziano-AI/pi-continue/v0.6.1/assets/gallery/pi-continue-gallery.webp"
   }
 }

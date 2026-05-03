@@ -12,27 +12,27 @@ interface CommandCompletion {
 const TOP_LEVEL_COMMANDS: CommandCompletion[] = [
 	{
 		name: "steer",
-		description: "Continue now: abort active work if needed, compact, and resume in this session.",
+		description: "Continue this run now: save a handoff and resume in this session, stopping active work only if needed.",
 	},
 	{
 		name: "queue",
-		description: "Queue until idle: wait for Pi to stop running, then compact and resume.",
+		description: "Continue when idle: wait for Pi to finish current work, then save a handoff and resume.",
 	},
 	{
 		name: "preview",
-		description: "Preview the exact prompt payloads; optional focus text is supported.",
+		description: "Preview the handoff prompts before running; optional note text is supported.",
 	},
 	{
 		name: "status",
-		description: "Inspect latest aftercare, effective config, prompt sources, and the Pi compaction trigger.",
+		description: "Check the latest continuation, current settings, prompt sources, and trigger threshold.",
 	},
 	{
 		name: "ledger",
-		description: "Show the latest Continuation Ledger in a transient TUI overlay.",
+		description: "Show the latest Continuation Ledger: the handoff saved for this session.",
 	},
 	{
 		name: "settings",
-		description: "Configure project or global pi-continue settings in the TUI.",
+		description: "Edit project or global pi-continue settings in the TUI.",
 	},
 	{
 		name: "reset",

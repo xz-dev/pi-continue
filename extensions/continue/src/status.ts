@@ -31,7 +31,7 @@ function formatTimestamp(value: number | undefined): string {
 }
 
 function sourceLabel(event: ContinuationLatestEvent): string {
-	if (event.source === "mid-run-guard") return "automatic mid-run guard";
+	if (event.source === "mid-run-guard") return "automatic continuation";
 	if (event.source === "command-queue") return "queued /continue";
 	return "/continue steer";
 }
@@ -43,7 +43,7 @@ function resumeOutcome(event: ContinuationLatestEvent): ContinuationResumeOutcom
 function resumeLabel(event: ContinuationLatestEvent): string {
 	const resume = resumeOutcome(event);
 	if (resume.status === "not-requested") return "not requested";
-	if (resume.status === "pending") return "prompt sent; waiting for resumed assistant turn";
+	if (resume.status === "pending") return "resume request sent; waiting for assistant turn";
 	if (resume.status === "running") return "resumed assistant turn is running";
 	if (resume.status === "completed") return `completed${resume.stopReason ? ` (${resume.stopReason})` : ""}`;
 	if (resume.status === "aborted") return "aborted";
@@ -53,18 +53,18 @@ function resumeLabel(event: ContinuationLatestEvent): string {
 function statusLabel(event: ContinuationLatestEvent): string {
 	const resume = resumeOutcome(event);
 	if (event.status === "running") {
-		if (resume.status === "pending") return "compaction completed; resume is pending";
+		if (resume.status === "pending") return "handoff saved; resume is pending";
 		if (resume.status === "running") return "resume turn is running";
-		return "continuation is running";
+		return "handoff is being saved";
 	}
 	if (event.status === "failed") {
 		if (resume.status === "aborted") return "resume was aborted";
 		if (resume.status === "failed") return "resume needs attention";
 		return "continuation needs attention";
 	}
-	if (event.status === "blocked") return "guard blocked a repeated unsafe retry";
+	if (event.status === "blocked") return "blocked a repeated unsafe retry";
 	if (event.documentSync.continuationDoc === "failed" || event.documentSync.agentGuide === "failed") return "completed, but document sync needs attention";
-	if (event.promptStatus === "sent" && resume.status !== "completed") return "compaction completed; resume outcome unavailable";
+	if (event.promptStatus === "sent" && resume.status !== "completed") return "handoff saved; resume outcome unavailable";
 	return "completed successfully";
 }
 
@@ -78,15 +78,15 @@ function renderTrigger(event: ContinuationLatestEvent): string {
 }
 
 function renderSafeBoundary(event: ContinuationLatestEvent): string {
-	if (event.source === "mid-run-guard") return "completed assistant/tool-result batch before the next provider request";
-	if (event.source === "command-queue") return "queued until Pi was idle, then compacted";
-	return "user-requested native compaction; active work is aborted before compaction when needed";
+	if (event.source === "mid-run-guard") return "completed assistant/tool-result batch before the next model request";
+	if (event.source === "command-queue") return "waited until Pi was idle before saving the handoff";
+	return "requested by user; the current assistant turn stops first when needed";
 }
 
-function artifactLabel(event: ContinuationLatestEvent): string {
-	if (event.artifactStatus === "modeled") return "Continuation Ledger parsed successfully";
-	if (event.artifactStatus === "aborted") return "modeled synthesis aborted before a usable artifact";
-	return "waiting for continuation artifact";
+function ledgerLabel(event: ContinuationLatestEvent): string {
+	if (event.artifactStatus === "modeled") return "Continuation Ledger ready";
+	if (event.artifactStatus === "aborted") return "Continuation Ledger was not created";
+	return "waiting for Continuation Ledger";
 }
 
 function syncLabel(status: ContinuationSyncStatus): string {
@@ -108,12 +108,12 @@ function actionLine(event: ContinuationLatestEvent): string {
 	const resume = resumeOutcome(event);
 	if (event.status === "running" && resume.status === "pending") return "Wait for the resumed assistant turn to start.";
 	if (event.status === "running" && resume.status === "running") return "Wait for the resumed assistant turn to finish its first assistant response.";
-	if (event.status === "running") return "Wait; Pi is compacting now.";
-	if (event.status === "blocked") return "No new compaction was started; fix the failed compaction cause before retrying.";
+	if (event.status === "running") return "Wait; pi-continue is saving the handoff now.";
+	if (event.status === "blocked") return "No new handoff was started; fix the last failure before retrying.";
 	if (resume.status === "failed" || resume.status === "aborted") return "Review the resume outcome, correct the cause if needed, then continue from live state.";
-	if (event.status === "failed") return "Review the failure, correct the cause, then retry only when the session is stable.";
+	if (event.status === "failed") return "Review the failure, correct the cause, then retry when Pi is idle.";
 	if (event.documentSync.continuationDoc === "failed" || event.documentSync.agentGuide === "failed") return "Continuation completed; review document permissions or paths before relying on repo-document sync.";
-	if (event.documentSync.continuationDoc === "pending" || event.documentSync.agentGuide === "pending") return "Compaction completed; wait for document sync to settle.";
+	if (event.documentSync.continuationDoc === "pending" || event.documentSync.agentGuide === "pending") return "Handoff saved; wait for document sync to settle.";
 	return "No action needed.";
 }
 
@@ -131,7 +131,7 @@ function renderPassTelemetry(label: string, telemetry: PromptPassTelemetry | und
 }
 
 function renderSynthesisSummary(synthesis: ContinuationSynthesisTelemetry | undefined): string[] {
-	if (!synthesis) return [`- Synthesis: no modeled telemetry recorded.`];
+	if (!synthesis) return [`- Synthesis: no model-run details recorded for this continuation.`];
 	return [
 		`- Synthesis total: ${synthesis.totalTokens?.toLocaleString() ?? "unavailable"} tokens; ${formatCost(synthesis.totalCost)}.`,
 		renderPassTelemetry("History pass", synthesis.history),
@@ -142,47 +142,47 @@ function renderSynthesisSummary(synthesis: ContinuationSynthesisTelemetry | unde
 function renderEventSummary(event: ContinuationLatestEvent | undefined): string[] {
 	if (!event) {
 		return [
-			`## Continuation Aftercare`,
-			`- Current state: no continuation is running.`,
-			`- Last continuation: none recorded since this extension loaded.`,
+			`## Continuation`,
+			`- Current state: ready.`,
+			`- Last handoff: none in this session.`,
 			`- Action: No action needed.`,
 		];
 	}
 	const resume = resumeOutcome(event);
 	const currentState = event.status === "running"
 		? resume.status === "pending" || resume.status === "running"
-			? "continuation resume is still settling"
-			: "continuation compaction is running"
-		: "no continuation is running";
+			? "resume is still settling"
+			: "handoff is being saved"
+		: "ready";
 	const lines = [
-		`## Continuation Aftercare`,
+		`## Continuation`,
 		`- Current state: ${currentState}.`,
-		`- Last continuation: ${statusLabel(event)}.`,
+		`- Last handoff: ${statusLabel(event)}.`,
 		`- Source: ${sourceLabel(event)}.`,
-		`- Checkpoint: ${renderSafeBoundary(event)}.`,
+		`- Safe boundary: ${renderSafeBoundary(event)}.`,
 		`- Trigger: ${renderTrigger(event)}.`,
-		`- Artifact: ${artifactLabel(event)}.`,
+		`- Ledger: ${ledgerLabel(event)}.`,
 		...renderSynthesisSummary(event.synthesis),
-		`- Continuation prompt: ${event.promptStatus === "sent" ? "sent" : event.promptStatus === "pending" ? "pending" : event.promptStatus === "failed" ? "not sent" : "not requested"}.`,
+		`- Resume request: ${event.promptStatus === "sent" ? "sent" : event.promptStatus === "pending" ? "pending" : event.promptStatus === "failed" ? "not sent" : "not requested"}.`,
 		`- Resume outcome: ${resumeLabel(event)}.`,
 		resume.requestedModel ? `- Resume model: requested ${resume.requestedModel}${resume.responseModel ? `; routed ${resume.responseModel}` : ""}.` : undefined,
 		`- Document sync: continuation doc ${syncLabel(event.documentSync.continuationDoc)}; agent guide ${syncLabel(event.documentSync.agentGuide)}.`,
 		hasNoDocumentWrite(event) ? `- Document writes: none performed.` : undefined,
 		`- Action: ${actionLine(event)}`,
 		``,
-		`## Latest Event Details`,
-		`- Event id: ${event.id}`,
+		`## Diagnostics`,
+		`- Run id: ${event.id}`,
 		`- Started: ${formatTimestamp(event.startedAt)}`,
 		`- Settled: ${formatTimestamp(event.completedAt)}`,
 		resume.startedAt ? `- Resume started: ${formatTimestamp(resume.startedAt)}` : undefined,
 		resume.completedAt ? `- Resume settled: ${formatTimestamp(resume.completedAt)}` : undefined,
-		event.failureReason ? `- Attention: ${event.failureReason}` : undefined,
-		resume.failureReason && resume.failureReason !== event.failureReason ? `- Resume attention: ${resume.failureReason}` : undefined,
+		event.failureReason ? `- Needs attention: ${event.failureReason}` : undefined,
+		resume.failureReason && resume.failureReason !== event.failureReason ? `- Resume needs attention: ${resume.failureReason}` : undefined,
 	];
 	return lines.filter((line): line is string => line !== undefined);
 }
 
-/** Render effective config, prompt provenance, document-write semantics, and latest continuation aftercare. */
+/** Render effective config, prompt provenance, document-write behavior, and latest continuation status. */
 export function renderStatus(
 	ctx: ExtensionCommandContext,
 	config: ContinuationConfig,
@@ -201,18 +201,18 @@ export function renderStatus(
 		``,
 		...renderEventSummary(latestEvent),
 		``,
-		`## Effective Config`,
+		`## Effective Settings`,
 		`- Enabled: ${config.enabled ? "yes" : "no"}`,
-		`- Model: ${config.summarizerModel} -> ${modelDescription}`,
+		`- Handoff model: ${config.summarizerModel} -> ${modelDescription}`,
 		`- Reasoning: ${config.reasoning}`,
-		`- History tokens: ${config.historyMaxTokens ?? `pi-default (${historyBudget})`}`,
-		`- Split tokens: ${config.splitPrefixMaxTokens ?? `pi-default (${splitBudget})`}`,
-		`- Continuation doc: ${continuationDocPath}`,
-		`- Continuation sync: ${config.continuationDocSyncMode}`,
+		`- History budget: ${config.historyMaxTokens ?? `Pi default (${historyBudget})`}`,
+		`- Split-prefix budget: ${config.splitPrefixMaxTokens ?? `Pi default (${splitBudget})`}`,
+		`- Continuation file: ${continuationDocPath}`,
+		`- Save continuation file: ${config.continuationDocSyncMode}`,
 		`- Agent guide: ${agentGuidePath}`,
-		`- Agent guide sync: ${config.agentGuideSyncMode}`,
+		`- Agent guide updates: ${config.agentGuideSyncMode}`,
 		`- Agent guide writes: ${config.agentGuideSyncMode === "always" ? "full replacement only" : "off"}`,
-		`- Mid-run guard: ${config.midRunGuardEnabled ? "yes" : "no"}`,
+		`- Automatic mid-run continuation: ${config.midRunGuardEnabled ? "yes" : "no"}`,
 		`- Append compaction metadata: ${config.appendCompactionMetadata ? "yes" : "no"}`,
 		`- Append file tags: ${config.appendFileTags ? "yes" : "no"}`,
 		`- Prompt override policy: ${config.promptOverridePolicy}`,
@@ -224,21 +224,21 @@ export function renderStatus(
 		`- Trigger: ${renderSharedCompactionThreshold(ctx, piCompactionSettings.reserveTokens)}`,
 		`- Keep recent: ${piCompactionSettings.keepRecentTokens}`,
 		``,
-		`## Write Semantics`,
-		`- Continuation sync writes modeled document artifacts when set to always.`,
-		`- Agent guide sync writes only full agentGuideMarkdown replacements; candidates do not modify AGENTS.md.`,
-		`- Durable promotions are normal-work proposals, not compaction write proof.`,
-		`- Ledger display is transient UI only; it does not append a session message.`,
+		`## What Can Change`,
+		`- Continuation file sync writes the rendered continuation document when set to always.`,
+		`- Agent guide sync writes only full agentGuideMarkdown replacements to the configured guide; candidates do not modify files.`,
+		`- Durable promotions are normal-work proposals, not proof that a file was written.`,
+		`- Ledger display is temporary UI only; it does not append a session message.`,
 		``,
 		`## Project`,
 		`- Root: ${projectRoot}`,
 		payload ? `- Scenario: ${payload.scenario}` : `- Scenario: unavailable`,
 		payload ? `- Split now: ${payload.isSplitTurn ? "yes" : "no"}` : `- Split now: unavailable`,
-		payload ? `- History system: ${payload.history.sources.system}` : undefined,
-		payload ? `- History base: ${payload.history.sources.baseUser}` : undefined,
-		payload ? `- History scenario: ${payload.history.sources.scenarioUser}` : undefined,
-		payload?.split ? `- Split system: ${payload.split.sources.system}` : undefined,
-		payload?.split ? `- Split scenario: ${payload.split.sources.scenarioUser}` : undefined,
+		payload ? `- History prompt system: ${payload.history.sources.system}` : undefined,
+		payload ? `- History prompt base: ${payload.history.sources.baseUser}` : undefined,
+		payload ? `- History prompt scenario: ${payload.history.sources.scenarioUser}` : undefined,
+		payload?.split ? `- Split prompt system: ${payload.split.sources.system}` : undefined,
+		payload?.split ? `- Split prompt scenario: ${payload.split.sources.scenarioUser}` : undefined,
 	].filter((line): line is string => line !== undefined);
 	return `${lines.join("\n")}\n`;
 }

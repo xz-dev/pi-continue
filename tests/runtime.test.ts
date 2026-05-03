@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { markActiveContinuationArtifact } from "../extensions/continue/src/continuation-event.ts";
 import {
 	CONTINUATION_PROMPT,
 	createContinuationRuntimeState,
@@ -58,14 +59,13 @@ const trigger = {
 };
 
 test("continuation prompt prioritizes structured continuation ledger routing", () => {
-	assert.match(CONTINUATION_PROMPT, /Use the compaction summary as the primary continuation ledger/);
-	assert.match(CONTINUATION_PROMPT, /initiative charter, definition of done, recency ledger, current plan, progress trail/);
+	assert.match(CONTINUATION_PROMPT, /Use the compaction summary as the primary Continuation Ledger/);
+	assert.match(CONTINUATION_PROMPT, /active request, current state, constraints, validation, risks, durable learnings, and next working edge/);
 	assert.match(CONTINUATION_PROMPT, /Honor the recency ledger first/);
 	assert.match(CONTINUATION_PROMPT, /newer active user requests and supersession resolutions override older plan/);
-	assert.match(CONTINUATION_PROMPT, /dormant context, retired context, anti-rework, durable learnings, durable promotions/);
-	assert.match(CONTINUATION_PROMPT, /Resolve every non-none durable promotion/);
+	assert.match(CONTINUATION_PROMPT, /Resolve relevant non-none durable promotions before editing their target surfaces/);
 	assert.match(CONTINUATION_PROMPT, /Read repo documents or mapped sources only when the ledger says they unlock a decision/);
-	assert.match(CONTINUATION_PROMPT, /Treat AGENTS\.md candidate updates as guidance/);
+	assert.match(CONTINUATION_PROMPT, /Treat configured agent-guide candidate updates as guidance/);
 	assert.match(CONTINUATION_PROMPT, /Treat transcript and tool history as evidence, not replay/);
 	assert.doesNotMatch(CONTINUATION_PROMPT, /Read Before Acting/);
 	assert.doesNotMatch(CONTINUATION_PROMPT, /Resume Now/);
@@ -80,7 +80,7 @@ test("parseContinuationRequest defaults to steer and preserves instructions", ()
 	assert.deepEqual(parseContinuationRequest("now focus auth"), { mode: "steer", instructions: "now focus auth" });
 });
 
-test("startContinuationCompaction aborts active runs and sends continuation on completion", () => {
+test("startContinuationCompaction stops active runs and sends resume request on completion", () => {
 	const owner = createContext(false);
 	const ctx = bindContext(owner);
 	const runtime = createContinuationRuntimeState();
@@ -119,6 +119,30 @@ test("startContinuationCompaction aborts active runs and sends continuation on c
 	assert.equal(runtime.latestEvent?.status, "completed");
 	assert.equal(runtime.latestEvent?.resume.status, "completed");
 	assert.equal(runtime.activeEventId, undefined);
+});
+
+test("synchronous resume start proof survives prompt dispatch ordering", () => {
+	const owner = createContext(true);
+	const ctx = bindContext(owner);
+	const runtime = createContinuationRuntimeState();
+	const continuations = [];
+	const started = startContinuationCompaction(ctx, runtime, {
+		source: "command-steer",
+		instructions: undefined,
+		trigger: undefined,
+		abortActiveRun: false,
+		continueAfterComplete: true,
+		sendContinuation: (prompt) => {
+			continuations.push(prompt);
+			assert.equal(markAwaitingContinuationResumeStarted(runtime), "continue-1");
+		},
+	});
+	assert.equal(started, true);
+	owner.compactOptions.onComplete({});
+	assert.deepEqual(continuations, [CONTINUATION_PROMPT]);
+	assert.equal(runtime.latestEvent?.promptStatus, "sent");
+	assert.equal(runtime.latestEvent?.resume.status, "running");
+	assert.equal(runtime.awaitingResumeEventId, "continue-1");
 });
 
 test("stale assistant message_end cannot settle resume before start proof", () => {
@@ -177,7 +201,7 @@ test("agent-end resume failure requires start proof", () => {
 	assert.equal(runtime.awaitingResumeEventId, undefined);
 });
 
-test("mid-run guard aborts over-threshold request while compaction is already running", () => {
+test("mid-run guard stops over-limit request while handoff is already saving", () => {
 	const owner = createContext(true);
 	const ctx = bindContext(owner);
 	const runtime = createContinuationRuntimeState();
@@ -206,7 +230,7 @@ test("mid-run guard aborts over-threshold request while compaction is already ru
 	assert.equal(continuations.length, 0);
 });
 
-test("pending resume blocks new continuation without clobbering aftercare", () => {
+test("pending resume blocks new continuation without clobbering active state", () => {
 	const owner = createContext(true);
 	const ctx = bindContext(owner);
 	const runtime = createContinuationRuntimeState();
@@ -239,7 +263,7 @@ test("pending resume blocks new continuation without clobbering aftercare", () =
 	assert.equal(continuations.length, 1);
 });
 
-test("mid-run guard aborts over-threshold request while preserving pending aftercare", () => {
+test("mid-run guard stops over-limit request while preserving pending resume", () => {
 	const owner = createContext(true);
 	const ctx = bindContext(owner);
 	const runtime = createContinuationRuntimeState();
@@ -321,9 +345,28 @@ test("resume start timeout settles prompt dispatch that never starts", async () 
 	assert.deepEqual(failedEvents, ["continue-1"]);
 	assert.equal(runtime.latestEvent?.status, "failed");
 	assert.equal(runtime.latestEvent?.resume.status, "failed");
-	assert.equal(runtime.latestEvent?.failureReason, "Continuation prompt dispatch failed before the next run started.");
+	assert.equal(runtime.latestEvent?.failureReason, "Continuation resume request failed before the next run started.");
 	assert.equal(runtime.activeEventId, undefined);
 	assert.equal(runtime.awaitingResumeEventId, undefined);
+});
+
+test("compaction error preserves synthesis hard-fail reason", () => {
+	const owner = createContext(false);
+	const ctx = bindContext(owner);
+	const runtime = createContinuationRuntimeState();
+	const started = startContinuationCompaction(ctx, runtime, {
+		source: "command-steer",
+		instructions: undefined,
+		trigger: undefined,
+		abortActiveRun: true,
+		continueAfterComplete: true,
+		sendContinuation: () => {},
+	});
+	assert.equal(started, true);
+	markActiveContinuationArtifact(runtime, "aborted", "pi-continue could not create a usable handoff, so continuation stopped before resuming.");
+	owner.compactOptions.onError(new Error("compact failed"));
+	assert.equal(runtime.latestEvent?.status, "failed");
+	assert.equal(runtime.latestEvent?.failureReason, "pi-continue could not create a usable handoff, so continuation stopped before resuming.");
 });
 
 test("failed guard records a failure key and blocks identical retries", () => {
@@ -343,7 +386,7 @@ test("failed guard records a failure key and blocks identical retries", () => {
 	owner.compactOptions.onError(new Error("compact failed"));
 	assert.equal(runtime.compactionRunning, false);
 	assert.equal(runtime.latestEvent?.status, "failed");
-	assert.equal(runtime.latestEvent?.failureReason, "Continuation compaction failed.");
+	assert.equal(runtime.latestEvent?.failureReason, "Continuation handoff failed.");
 	assert.equal(continuations.length, 0);
 	const retry = startContinuationCompaction(ctx, runtime, {
 		source: "mid-run-guard",
@@ -356,7 +399,7 @@ test("failed guard records a failure key and blocks identical retries", () => {
 	assert.equal(retry, false);
 	assert.equal(owner.aborts, 2);
 	assert.equal(runtime.latestEvent?.status, "blocked");
-	assert.equal(runtime.latestEvent?.failureReason, "Repeated over-threshold retry was blocked after a failed compaction.");
+	assert.equal(runtime.latestEvent?.failureReason, "Repeated over-limit retry was blocked after a failed continuation.");
 });
 
 test("prompt dispatch failure settles the latest event", () => {
@@ -379,7 +422,7 @@ test("prompt dispatch failure settles the latest event", () => {
 	assert.equal(runtime.activeEventId, undefined);
 	assert.equal(runtime.latestEvent?.status, "failed");
 	assert.equal(runtime.latestEvent?.promptStatus, "failed");
-	assert.equal(runtime.latestEvent?.failureReason, "Continuation prompt dispatch failed.");
+	assert.equal(runtime.latestEvent?.failureReason, "Continuation resume request failed.");
 });
 
 test("duplicate terminal callbacks do not revive failed events", () => {

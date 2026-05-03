@@ -74,6 +74,23 @@ interface PartialContinuationConfig {
 	ledgerDisplayMode?: string;
 }
 
+export interface ContinuationConfigPatch {
+	enabled?: boolean;
+	summarizerModel?: string;
+	reasoning?: ContinuationReasoning;
+	historyMaxTokens?: number | null;
+	splitPrefixMaxTokens?: number | null;
+	continuationDocPath?: string;
+	continuationDocSyncMode?: DocumentSyncMode;
+	agentGuidePath?: string;
+	agentGuideSyncMode?: DocumentSyncMode;
+	midRunGuardEnabled?: boolean;
+	appendCompactionMetadata?: boolean;
+	appendFileTags?: boolean;
+	promptOverridePolicy?: PromptOverridePolicy;
+	ledgerDisplayMode?: LedgerDisplayMode;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
 }
@@ -97,22 +114,36 @@ function asString(value: unknown): string | undefined {
 
 function parsePartialConfig(value: unknown): PartialContinuationConfig {
 	if (!isRecord(value)) return {};
-	return {
-		enabled: asBoolean(value.enabled),
-		summarizerModel: asString(value.summarizerModel),
-		reasoning: asString(value.reasoning),
-		historyMaxTokens: asNullableNumber(value.historyMaxTokens),
-		splitPrefixMaxTokens: asNullableNumber(value.splitPrefixMaxTokens),
-		continuationDocPath: asString(value.continuationDocPath),
-		continuationDocSyncMode: asString(value.continuationDocSyncMode),
-		agentGuidePath: asString(value.agentGuidePath),
-		agentGuideSyncMode: asString(value.agentGuideSyncMode),
-		midRunGuardEnabled: asBoolean(value.midRunGuardEnabled),
-		appendCompactionMetadata: asBoolean(value.appendCompactionMetadata),
-		appendFileTags: asBoolean(value.appendFileTags),
-		promptOverridePolicy: asString(value.promptOverridePolicy),
-		ledgerDisplayMode: asString(value.ledgerDisplayMode),
-	};
+	const result: PartialContinuationConfig = {};
+	const enabled = asBoolean(value.enabled);
+	if (enabled !== undefined) result.enabled = enabled;
+	const summarizerModel = asString(value.summarizerModel);
+	if (summarizerModel !== undefined) result.summarizerModel = summarizerModel;
+	const reasoning = asString(value.reasoning);
+	if (reasoning !== undefined) result.reasoning = reasoning;
+	const historyMaxTokens = asNullableNumber(value.historyMaxTokens);
+	if (historyMaxTokens !== undefined) result.historyMaxTokens = historyMaxTokens;
+	const splitPrefixMaxTokens = asNullableNumber(value.splitPrefixMaxTokens);
+	if (splitPrefixMaxTokens !== undefined) result.splitPrefixMaxTokens = splitPrefixMaxTokens;
+	const continuationDocPath = asString(value.continuationDocPath);
+	if (continuationDocPath !== undefined) result.continuationDocPath = continuationDocPath;
+	const continuationDocSyncMode = asString(value.continuationDocSyncMode);
+	if (continuationDocSyncMode !== undefined) result.continuationDocSyncMode = continuationDocSyncMode;
+	const agentGuidePath = asString(value.agentGuidePath);
+	if (agentGuidePath !== undefined) result.agentGuidePath = agentGuidePath;
+	const agentGuideSyncMode = asString(value.agentGuideSyncMode);
+	if (agentGuideSyncMode !== undefined) result.agentGuideSyncMode = agentGuideSyncMode;
+	const midRunGuardEnabled = asBoolean(value.midRunGuardEnabled);
+	if (midRunGuardEnabled !== undefined) result.midRunGuardEnabled = midRunGuardEnabled;
+	const appendCompactionMetadata = asBoolean(value.appendCompactionMetadata);
+	if (appendCompactionMetadata !== undefined) result.appendCompactionMetadata = appendCompactionMetadata;
+	const appendFileTags = asBoolean(value.appendFileTags);
+	if (appendFileTags !== undefined) result.appendFileTags = appendFileTags;
+	const promptOverridePolicy = asString(value.promptOverridePolicy);
+	if (promptOverridePolicy !== undefined) result.promptOverridePolicy = promptOverridePolicy;
+	const ledgerDisplayMode = asString(value.ledgerDisplayMode);
+	if (ledgerDisplayMode !== undefined) result.ledgerDisplayMode = ledgerDisplayMode;
+	return result;
 }
 
 function errorMessage(error: unknown): string {
@@ -205,7 +236,7 @@ export function loadScopeConfig(scope: ConfigScope, projectRoot: string): Contin
 	return normalizeConfig(readPartialConfig(getConfigPath(scope, projectRoot)));
 }
 
-function serializeConfig(config: ContinuationConfig): string {
+function serializeConfig(config: ContinuationConfig | PartialContinuationConfig): string {
 	return `${JSON.stringify(config, null, 2)}\n`;
 }
 
@@ -219,6 +250,16 @@ export async function saveContinuationConfig(scope: ConfigScope, projectRoot: st
 	await withConfigMutationQueue(targetPath, async () => {
 		await mkdir(dirname(targetPath), { recursive: true });
 		await writeFile(targetPath, serializeConfig(config), "utf8");
+	});
+}
+
+/** Patch only explicitly edited keys at the selected scope, preserving inherited config from broader layers. */
+export async function patchContinuationConfig(scope: ConfigScope, projectRoot: string, patch: ContinuationConfigPatch): Promise<void> {
+	const targetPath = getConfigPath(scope, projectRoot);
+	await withConfigMutationQueue(targetPath, async () => {
+		const current = readPartialConfig(targetPath);
+		await mkdir(dirname(targetPath), { recursive: true });
+		await writeFile(targetPath, serializeConfig({ ...current, ...patch }), "utf8");
 	});
 }
 

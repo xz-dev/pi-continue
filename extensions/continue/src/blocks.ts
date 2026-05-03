@@ -307,7 +307,11 @@ export function parseHistoryArtifacts(text: string): ParsedHistoryArtifacts | un
 	};
 }
 
-/** Parse the split-prefix response. */
+/** Parse the raw split-prefix response; wrapper tags and Markdown fences are invalid because the renderer owns the saved tag. */
 export function parseSplitPrefix(text: string): string | undefined {
-	return extractTaggedBlock(text, "split-prefix");
+	const trimmed = text.trim();
+	if (trimmed.length === 0) return undefined;
+	if (/<\/?split-prefix\b/i.test(trimmed)) return undefined;
+	if (/(^|\n)\s*(?:`{3,}|~{3,})/.test(trimmed)) return undefined;
+	return trimmed;
 }

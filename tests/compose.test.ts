@@ -11,7 +11,7 @@ const details: ContinuationCompactionDetails = {
 	agentGuideSyncId: "guide-1",
 };
 
-test("composeCompactionSummary can append compact metadata without file paths", () => {
+test("composeCompactionSummary can append compaction metadata without file paths", () => {
 	const summary = composeCompactionSummary("continue", undefined, details, {
 		appendCompactionMetadata: true,
 		appendFileTags: false,
@@ -33,4 +33,13 @@ test("composeCompactionSummary renders path tags only when explicitly enabled", 
 	assert.match(summary, /<read-files>\n\/repo\/read\.ts\n<\/read-files>/);
 	assert.match(summary, /<modified-files>\n\/repo\/write\.ts\n<\/modified-files>/);
 	assert.doesNotMatch(summary, /readFileCount/);
+});
+
+test("composeCompactionSummary owns the single split-prefix wrapper", () => {
+	const summary = composeCompactionSummary("continue", "prefix", details, {
+		appendCompactionMetadata: false,
+		appendFileTags: false,
+	});
+	assert.match(summary, /<split-prefix>\nprefix\n<\/split-prefix>/);
+	assert.doesNotMatch(summary, /<split-prefix>\n<split-prefix>/);
 });

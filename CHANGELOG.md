@@ -2,6 +2,25 @@
 
 All notable changes to `pi-continue` are documented here.
 
+## 0.6.1 - 2026-05-03
+
+### Fixed
+
+- Split-prefix synthesis now returns raw summary text while runtime rendering owns the saved `<split-prefix>` wrapper; tagged, empty, malformed, or fenced split-prefix output fails closed.
+- Same-session resume tracking now registers the awaited resume before dispatch, so synchronous Pi start events cannot be missed.
+- Synthesis hard-fail status now preserves the actionable handoff failure reason through compaction error settlement.
+
+### Changed
+
+- Settings edits now patch only the selected scope instead of writing normalized defaults that could shadow broader config.
+- `/continue settings` and `/continue reset` now reject invalid scope arguments instead of silently targeting project settings.
+- Public docs, prompt assets, status text, and palette copy now use calmer configured-path handoff/resume language.
+
+### Added
+
+- Integration coverage for successful post-compaction continuation-document and configured agent-guide writes.
+- Release provenance tests for the 0.6.1 package metadata and gallery image tag.
+
 ## 0.6.0 - 2026-05-02
 
 ### Breaking changes
@@ -12,9 +31,9 @@ All notable changes to `pi-continue` are documented here.
 
 ### Changed
 
-- `/continue status` now reports artifact synthesis as modeled, pending, or aborted; fallback status and fallback guidance were removed.
+- `/continue status` now reports whether the Continuation Ledger is ready, waiting, or stopped; fallback status and fallback guidance were removed.
 - Failure reporting for synthesis, document sync, prompt dispatch, shutdown, and resume outcomes now uses explicit package-owned messages instead of parsing provider error text.
-- Prompt assets now emphasize the Continuation Ledger as a reducer with state ownership, semantic dominance, bloat control, one current working edge, durable promotions, durable learnings, dormant context, and retired context.
+- Prompt assets now produce denser ledgers with one current working edge, clearer stale-context handling, durable promotions, durable learnings, dormant context, and retired context.
 - Compaction metadata remains compact and path-free in the rendered summary, while explicit file tags are appended only when `appendFileTags` is enabled.
 
 ### Added
@@ -28,4 +47,4 @@ All notable changes to `pi-continue` are documented here.
 
 - `extensions/continue/src/fallback.ts` and its deterministic fallback test suite.
 - The package-level `fallbackMode` default, README/example documentation, status copy, command settings surface, and artifact status variant.
-- Brittle provider/error string sanitization and redaction heuristics that attempted to infer paths, tokens, or model references from free text.
+- Fragile parsing of provider error text for paths, tokens, and model references.

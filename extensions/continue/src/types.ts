@@ -165,7 +165,7 @@ export interface ContinuationEventStore {
 	nextEventSequence: number;
 }
 
-/** Persisted status for whether a compaction attempted an AGENTS.md replacement. */
+/** Persisted status for whether a compaction attempted a configured agent-guide replacement. */
 export type AgentGuideWriteStatus = "sync-off" | "no-replacement" | "replacement-pending";
 
 export type ContinuationCompactionDetailsKind = "pi-continue/v3";

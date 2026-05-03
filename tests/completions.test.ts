@@ -6,8 +6,8 @@ test("getContinueArgumentCompletions exposes action-first top-level shortcuts", 
 	const items = getContinueArgumentCompletions("");
 	assert.ok(items);
 	assert.deepEqual(items.map((item) => item.value), ["steer", "queue", "preview", "status", "ledger", "settings", "reset"]);
-	assert.match(items[0].description ?? "", /Continue now/);
-	assert.match(items[1].description ?? "", /Queue until idle/);
+	assert.match(items[0].description ?? "", /Continue this run now/);
+	assert.match(items[1].description ?? "", /Continue when idle/);
 });
 
 test("getContinueArgumentCompletions filters top-level shortcuts", () => {

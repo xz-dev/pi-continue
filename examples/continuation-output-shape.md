@@ -28,7 +28,7 @@ Continue the approved prompt/command/continuation redesign after compaction.
 ## Progress And Milestone Trail
 - Runtime already expects structured continuation artifacts.
 - The command surface is consolidated under `/continue`.
-- v3 now adds durable initiative-spine and recency-ledger fields inspired by Codex Continue's reducer ledger.
+- v3 now adds durable initiative-spine and recency-ledger fields for safer continuation across compactions.
 
 ## Current State
 - Runtime now expects `pi-continue-artifacts/v3` continuation ledger artifacts.
@@ -51,7 +51,7 @@ Continue the approved prompt/command/continuation redesign after compaction.
 - `pnpm test` must pass after the final contract edits.
 
 ## Risks
-- Renaming old sections without adding initiative spine, recency/supersession resolution, durable promotion, dormant/retired context, and validation freshness is not acceptable.
+- Do not rename old sections unless the v3 fields also preserve initiative spine, recency/supersession resolution, durable promotion, dormant/retired context, and validation freshness.
 
 ## Dormant But Important
 - Pi vendor compaction behavior may change; re-check installed Pi docs/source before changing compaction hooks.
