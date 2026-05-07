@@ -1,6 +1,6 @@
-import type { Api, Model, ModelThinkingLevel, ThinkingLevel } from "@mariozechner/pi-ai";
-import { clampThinkingLevel, completeSimple } from "@mariozechner/pi-ai";
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { Api, Model, ModelThinkingLevel, ThinkingLevel } from "@earendil-works/pi-ai";
+import { clampThinkingLevel, completeSimple } from "@earendil-works/pi-ai";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { resolveSummarizerModel } from "./model-settings.ts";
 import type { ContinuationConfig, PromptPassTelemetry } from "./types.ts";
 

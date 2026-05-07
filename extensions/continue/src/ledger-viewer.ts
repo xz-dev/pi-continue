@@ -1,4 +1,4 @@
-import type { ExtensionCommandContext, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { extractTaggedBlock } from "./blocks.ts";
 import { ScrollableTextOverlay, sanitizeOverlayText, showScrollableTextOverlay } from "./text-viewer.ts";
 import type { ContinuationLedgerSnapshot } from "./types.ts";

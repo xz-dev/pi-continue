@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import type { Api, Model, ModelThinkingLevel } from "@mariozechner/pi-ai";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { Api, Model, ModelThinkingLevel } from "@earendil-works/pi-ai";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { DEFAULT_CONTINUE_CONFIG } from "../extensions/continue/src/config.ts";
 import { getReasoningOptionsForModel } from "../extensions/continue/src/commands.ts";
 import { resolveReasoningLevel } from "../extensions/continue/src/model.ts";

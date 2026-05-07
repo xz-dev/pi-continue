@@ -1,4 +1,4 @@
-import type { ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 /** Return whether command handlers may call interactive/RPC UI methods. */
 export function commandHasUi(ctx: Pick<ExtensionCommandContext, "hasUI">): boolean {

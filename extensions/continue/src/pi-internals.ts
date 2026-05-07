@@ -19,7 +19,7 @@ let cachedInternals: Promise<PiInternals> | undefined;
 export async function loadPiInternals(): Promise<PiInternals> {
 	if (!cachedInternals) {
 		cachedInternals = (async () => {
-			const packageEntryUrl = import.meta.resolve("@mariozechner/pi-coding-agent");
+			const packageEntryUrl = import.meta.resolve("@earendil-works/pi-coding-agent");
 			const distRoot = dirname(fileURLToPath(packageEntryUrl));
 			const [compactionModule, messagesModule, utilsModule] = await Promise.all([
 				import(pathToFileURL(join(distRoot, "core", "compaction", "compaction.js")).href),

@@ -2,6 +2,13 @@
 
 All notable changes to `pi-continue` are documented here.
 
+## 0.6.3 - 2026-05-07
+
+### Changed
+
+- Aligned Pi runtime imports and peer dependency metadata to the `@earendil-works` Pi 0.74 package scope.
+- Updated the package gallery image URL to the v0.6.3 source tag.
+
 ## 0.6.2 - 2026-05-03
 
 ### Fixed

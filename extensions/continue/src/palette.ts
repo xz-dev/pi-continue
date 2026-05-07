@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { DEFAULT_CONTINUE_CONFIG, loadContinuationConfig } from "./config.ts";
 import { readEffectivePiCompactionSettings } from "./pi-settings.ts";
 import { resolveProjectContext } from "./project.ts";

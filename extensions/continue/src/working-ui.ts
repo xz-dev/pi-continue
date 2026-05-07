@@ -1,4 +1,4 @@
-import type { ExtensionContext, WorkingIndicatorOptions } from "@mariozechner/pi-coding-agent";
+import type { ExtensionContext, WorkingIndicatorOptions } from "@earendil-works/pi-coding-agent";
 import type { ContinuationRuntimeState } from "./runtime.ts";
 
 interface WorkingUiState {

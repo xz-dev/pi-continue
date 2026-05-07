@@ -1,6 +1,6 @@
-import type { Api, Model } from "@mariozechner/pi-ai";
-import { getSupportedThinkingLevels } from "@mariozechner/pi-ai";
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import type { Api, Model } from "@earendil-works/pi-ai";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { loadHistoryPromptAssets, loadSplitPromptAssets } from "./assets.ts";
 import { snapshotFileOperations } from "./compaction-preparation.ts";
 import { DEFAULT_CONTINUE_CONFIG, loadContinuationConfig, loadScopeConfig, patchContinuationConfig, resetContinuationConfig } from "./config.ts";
