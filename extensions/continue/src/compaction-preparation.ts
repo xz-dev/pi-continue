@@ -14,7 +14,7 @@ export interface ContinuationCompactionPreparation {
 	turnPrefixMessages: unknown[];
 	isSplitTurn: boolean;
 	tokensBefore: number;
-	previousSummary: string | undefined;
+	previousSummary?: string;
 	fileOps: FileOperations;
 	settings: PiCompactionSettings;
 }

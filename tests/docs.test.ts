@@ -100,7 +100,7 @@ test("npm dry-run package contents align with the public contract", () => {
 test("package metadata and package contents align with the public contract", () => {
 	const packageJson = JSON.parse(readText("package.json"));
 	assert.equal(packageJson.name, "pi-continue");
-	assert.equal(packageJson.version, "0.6.3");
+	assert.equal(packageJson.version, "0.6.4");
 	assert.match(packageJson.description, /Same-session continuation/);
 	assert.match(packageJson.description, /context limit/);
 	assert.match(packageJson.description, /native Pi compaction/);
@@ -116,6 +116,6 @@ test("package metadata and package contents align with the public contract", () 
 	assert.equal(packageJson.peerDependencies["@earendil-works/pi-ai"], ">=0.74.0");
 	assert.equal(packageJson.peerDependencies["@earendil-works/pi-coding-agent"], ">=0.74.0");
 	assert.deepEqual(packageJson.pi.extensions, ["./extensions/continue/index.ts"]);
-	assert.equal(packageJson.pi.image, "https://raw.githubusercontent.com/Tiziano-AI/pi-continue/v0.6.3/assets/gallery/pi-continue-gallery.webp");
+	assert.equal(packageJson.pi.image, "https://raw.githubusercontent.com/Tiziano-AI/pi-continue/v0.6.4/assets/gallery/pi-continue-gallery.webp");
 	assert.equal(existsSync("assets/gallery/pi-continue-gallery.webp"), true);
 });

@@ -26,6 +26,12 @@ interface ContinuePaletteSnapshot {
 	compactionRunning: boolean;
 }
 
+interface FocusDraft {
+	actionId: FocusActionId;
+	text: string;
+	cursor: number;
+}
+
 function keyMatches(data: string, key: "up" | "down" | "left" | "right" | "enter" | "escape" | "ctrl-c" | "backspace" | "delete" | "home" | "end"): boolean {
 	if (key === "up") return data === "up" || data === "\u001b[A";
 	if (key === "down") return data === "down" || data === "\u001b[B";
@@ -199,8 +205,9 @@ export class ContinuePaletteComponent {
 			this.requestRender();
 			return;
 		}
-		if (data.toLowerCase() === "f" && isFocusActionId(this.selectedAction().id)) {
-			this.focusDraft = { actionId: this.selectedAction().id, text: "", cursor: 0 };
+		const selectedAction = this.selectedAction();
+		if (data.toLowerCase() === "f" && isFocusActionId(selectedAction.id)) {
+			this.focusDraft = { actionId: selectedAction.id, text: "", cursor: 0 };
 			this.requestRender();
 		}
 	}

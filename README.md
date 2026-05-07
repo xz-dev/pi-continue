@@ -247,11 +247,12 @@ In this repository, `CONTINUE.md`, `PLAN.md`, `AGENTS.md`, `ARCH.md`, and `VISIO
 Run the normal local gate before changing package behavior or public docs:
 
 ```bash
-pnpm test
-jq empty examples/*.json package.json
-npm pack --dry-run --json --ignore-scripts
+pnpm run gate
 git diff --check
 ```
+
+`pnpm run gate` runs package-local TypeScript source typechecking, the no-network
+runtime test suite, JSON validation, and an npm package dry-run.
 
 For command-surface changes, also verify the command list when feasible:
 

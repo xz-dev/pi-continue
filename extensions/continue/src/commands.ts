@@ -92,7 +92,7 @@ async function buildPromptPreviewPayload(
 }
 
 async function showText(ctx: ExtensionCommandContext, title: string, content: string): Promise<void> {
-	if (!(await requireUi(ctx, title))) return;
+	if (!(await requireUi(ctx))) return;
 	const shown = await showScrollableTextOverlay(ctx, { title, content });
 	if (!shown) ctx.ui.notify(`${title} panel cannot open in this Pi mode.`, "warning");
 }
@@ -159,10 +159,14 @@ const CONFIG_KEYS = [
 	"ledgerDisplayMode",
 ] as const;
 
+function setConfigPatchValue<Key extends keyof ContinuationConfig>(patch: Partial<ContinuationConfig>, key: Key, value: ContinuationConfig[Key]): void {
+	patch[key] = value;
+}
+
 function diffConfig(previous: ContinuationConfig, next: ContinuationConfig): Partial<ContinuationConfig> {
 	const patch: Partial<ContinuationConfig> = {};
 	for (const key of CONFIG_KEYS) {
-		if (previous[key] !== next[key]) patch[key] = next[key];
+		if (previous[key] !== next[key]) setConfigPatchValue(patch, key, next[key]);
 	}
 	return patch;
 }

@@ -1,13 +1,12 @@
 import type { ExtensionContext, WorkingIndicatorOptions } from "@earendil-works/pi-coding-agent";
-import type { ContinuationRuntimeState } from "./runtime.ts";
 
 interface WorkingUiState {
 	activeEventId: string | undefined;
 }
 
-const states = new WeakMap<ContinuationRuntimeState, WorkingUiState>();
+const states = new WeakMap<object, WorkingUiState>();
 
-function stateFor(runtime: ContinuationRuntimeState): WorkingUiState {
+function stateFor(runtime: object): WorkingUiState {
 	const existing = states.get(runtime);
 	if (existing) return existing;
 	const next: WorkingUiState = { activeEventId: undefined };
@@ -29,7 +28,7 @@ function workingIndicator(ctx: ExtensionContext): WorkingIndicatorOptions {
 
 export function beginWorkingVisuals(
 	ctx: ExtensionContext,
-	runtime: ContinuationRuntimeState,
+	runtime: object,
 	eventId: string,
 	message: string,
 ): void {
@@ -40,7 +39,7 @@ export function beginWorkingVisuals(
 	ctx.ui.setWorkingIndicator(workingIndicator(ctx));
 }
 
-export function settleWorkingVisuals(ctx: ExtensionContext, runtime: ContinuationRuntimeState, eventId: string | undefined): void {
+export function settleWorkingVisuals(ctx: ExtensionContext, runtime: object, eventId: string | undefined): void {
 	if (!ctx.hasUI) return;
 	const state = stateFor(runtime);
 	if (!eventId || state.activeEventId !== eventId) return;
@@ -49,7 +48,7 @@ export function settleWorkingVisuals(ctx: ExtensionContext, runtime: Continuatio
 	ctx.ui.setWorkingIndicator();
 }
 
-export function clearWorkingVisuals(ctx: ExtensionContext, runtime: ContinuationRuntimeState): void {
+export function clearWorkingVisuals(ctx: ExtensionContext, runtime: object): void {
 	if (!ctx.hasUI) return;
 	const state = stateFor(runtime);
 	if (state.activeEventId) {

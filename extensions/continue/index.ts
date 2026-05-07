@@ -99,6 +99,7 @@ async function runContinuePaletteResult(
 		await runPreviewCommand(pi, ctx, result.instructions);
 		return;
 	}
+	if (result.kind !== "continue") return;
 	await runEnabledContinuationCommand(
 		pi,
 		ctx,
@@ -305,10 +306,11 @@ export default function (pi: ExtensionAPI) {
 			if (historyResult.status === "rejected") throw new SynthesisStageError("history-model", "History summarizer pass failed.");
 			if (splitResult.status === "rejected") throw new SynthesisStageError("split-model", "Split-prefix summarizer pass failed.");
 			if (!historyOutput) throw new SynthesisStageError("history-model", "History summarizer pass omitted a response.");
-			historyArtifacts = parseHistoryArtifacts(historyOutput.text);
-			if (!historyArtifacts) {
+			const parsedHistoryArtifacts = parseHistoryArtifacts(historyOutput.text);
+			if (!parsedHistoryArtifacts) {
 				throw new SynthesisStageError("history-artifact", "History pass omitted required pi-continue JSON artifacts.");
 			}
+			historyArtifacts = parsedHistoryArtifacts;
 			if (splitPrompt) {
 				splitPrefix = splitOutput ? parseSplitPrefix(splitOutput.text) : undefined;
 				if (!splitPrefix) {
