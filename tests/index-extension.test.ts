@@ -325,6 +325,51 @@ test("settings and reset reject invalid scope arguments without opening dialogs"
 	assert.equal(confirms, 0);
 });
 
+test("settings dialog can edit the human handoff trigger", async () => {
+	const cwd = mkdtempSync(join(tmpdir(), "pi-continue-trigger-settings-"));
+	try {
+		mkdirSync(join(cwd, ".pi"), { recursive: true });
+		writeFileSync(join(cwd, ".pi", "settings.json"), JSON.stringify({ compaction: { reserveTokens: 68000 } }), "utf8");
+		const pi = createFakePi(cwd);
+		const ctx = createCommandContext(cwd, async () => undefined);
+		const notifications = [];
+		let settingsSelectCount = 0;
+		ctx.ui.notify = (message, type) => {
+			notifications.push([message, type]);
+		};
+		ctx.ui.select = async (title, options) => {
+			if (title === "Continuation settings") {
+				settingsSelectCount += 1;
+				if (settingsSelectCount > 1) return "Done";
+				const triggerOption = options.find((option) => option.startsWith("Handoff trigger:"));
+				assert.equal(triggerOption, "Handoff trigger: 60,000 tokens");
+				return triggerOption;
+			}
+			if (title === "Handoff trigger") {
+				assert.deepEqual(options, [
+					"Keep current (60,000 tokens)",
+					"Set trigger token count",
+					"Use inherited/default trigger for this scope",
+				]);
+				return "Set trigger token count";
+			}
+			return undefined;
+		};
+		ctx.ui.input = async (title, placeholder) => {
+			assert.equal(title, "Handoff trigger");
+			assert.equal(placeholder, "token count, for example 96000");
+			return "96,000";
+		};
+		registerContinueExtension(pi);
+		await pi.commands.get("continue").handler("settings project", ctx);
+		const settings = JSON.parse(readFileSync(join(cwd, ".pi", "settings.json"), "utf8"));
+		assert.deepEqual(settings, { compaction: { reserveTokens: 32000 } });
+		assert.deepEqual(notifications, [["Updated project handoff trigger", "info"]]);
+	} finally {
+		rmSync(cwd, { recursive: true, force: true });
+	}
+});
+
 test("agent_end settles only a started continuation resume failure", async () => {
 	const cwd = process.cwd();
 	const pi = createFakePi(cwd);

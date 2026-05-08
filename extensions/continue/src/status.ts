@@ -19,9 +19,7 @@ function describeModel(config: ContinuationConfig, ctx: ExtensionCommandContext)
 function renderSharedCompactionThreshold(ctx: ExtensionCommandContext, reserveTokens: number): string {
 	const contextWindow = ctx.model?.contextWindow;
 	if (!contextWindow || !Number.isFinite(contextWindow) || contextWindow <= reserveTokens) return "unavailable";
-	const thresholdTokens = contextWindow - reserveTokens;
-	const thresholdPercent = (thresholdTokens / contextWindow) * 100;
-	return `${thresholdTokens.toLocaleString()} tokens (${thresholdPercent.toFixed(1)}% of ${contextWindow.toLocaleString()})`;
+	return `${(contextWindow - reserveTokens).toLocaleString()} tokens`;
 }
 
 function formatTimestamp(value: number | undefined): string {

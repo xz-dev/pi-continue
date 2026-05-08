@@ -135,9 +135,7 @@ function renderFocusField(draft: FocusDraft, maxWidth: number): string {
 
 function renderThreshold(contextWindow: number | undefined, reserveTokens: number): string {
 	if (!contextWindow || !Number.isFinite(contextWindow) || contextWindow <= reserveTokens) return "unavailable";
-	const thresholdTokens = contextWindow - reserveTokens;
-	const percent = (thresholdTokens / contextWindow) * 100;
-	return `${thresholdTokens.toLocaleString()} tokens (${percent.toFixed(1)}% of ${contextWindow.toLocaleString()})`;
+	return `${(contextWindow - reserveTokens).toLocaleString()} tokens`;
 }
 
 function renderUsage(ctx: ExtensionCommandContext): string {

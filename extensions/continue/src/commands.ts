@@ -7,6 +7,7 @@ import { DEFAULT_CONTINUE_CONFIG, loadContinuationConfig, loadScopeConfig, patch
 import { showLatestContinuationLedger } from "./ledger-viewer.ts";
 import { showScrollableTextOverlay } from "./text-viewer.ts";
 import { readEffectivePiCompactionSettings } from "./pi-settings.ts";
+import { renderHandoffTrigger, updateHandoffTriggerFromDialog } from "./pi-threshold-settings.ts";
 import { loadPiInternals } from "./pi-internals.ts";
 import { compileHistoryPrompt, compileSplitPrompt, renderPromptPreview } from "./prompt.ts";
 import { resolveProjectContext } from "./project.ts";
@@ -26,10 +27,6 @@ function parseScope(args: string | undefined, command: "settings" | "reset"): Pa
 	if (trimmed.length === 0) return { scope: "project", error: undefined };
 	if (trimmed === "project" || trimmed === "global") return { scope: trimmed, error: undefined };
 	return { scope: "project", error: `Usage: /continue ${command} [project|global]` };
-}
-
-function notifyUsageError(ctx: ExtensionCommandContext, message: string): void {
-	ctx.ui.notify(message, "warning");
 }
 
 function joinArgs(args: string | undefined): string | undefined {
@@ -190,7 +187,7 @@ export async function runSettingsDialog(pi: ExtensionAPI, ctx: ExtensionCommandC
 	const projectContext = await resolveProjectContext(pi, ctx.cwd, DEFAULT_CONTINUE_CONFIG.continuationDocPath);
 	const parsedScope = parseScope(args, "settings");
 	if (parsedScope.error) {
-		notifyUsageError(ctx, parsedScope.error);
+		ctx.ui.notify(parsedScope.error, "warning");
 		return;
 	}
 	let scope = parsedScope.scope;
@@ -208,6 +205,7 @@ export async function runSettingsDialog(pi: ExtensionAPI, ctx: ExtensionCommandC
 			`Agent guide path: ${config.agentGuidePath}`,
 			`Agent guide updates: ${config.agentGuideSyncMode} (full replacement only)`,
 			`Automatic mid-run continuation: ${config.midRunGuardEnabled ? "yes" : "no"}`,
+			`Handoff trigger: ${renderHandoffTrigger(ctx, scope, projectContext.projectRoot)}`,
 			`Append compaction metadata: ${config.appendCompactionMetadata ? "yes" : "no"}`,
 			`Append file tags: ${config.appendFileTags ? "yes" : "no"}`,
 			`Prompt override policy: ${config.promptOverridePolicy}`,
@@ -292,6 +290,10 @@ export async function runSettingsDialog(pi: ExtensionAPI, ctx: ExtensionCommandC
 			}));
 			continue;
 		}
+		if (selected.startsWith("Handoff trigger:")) {
+			await updateHandoffTriggerFromDialog(ctx, scope, projectContext.projectRoot);
+			continue;
+		}
 		if (selected.startsWith("Append compaction metadata:")) {
 			config = await updateSetting(scope, projectContext.projectRoot, config, async (current) => ({
 				...current,
@@ -364,7 +366,7 @@ export async function runResetCommand(pi: ExtensionAPI, ctx: ExtensionCommandCon
 	const projectContext = await resolveProjectContext(pi, ctx.cwd, DEFAULT_CONTINUE_CONFIG.continuationDocPath);
 	const parsedScope = parseScope(args, "reset");
 	if (parsedScope.error) {
-		notifyUsageError(ctx, parsedScope.error);
+		ctx.ui.notify(parsedScope.error, "warning");
 		return;
 	}
 	const scope = parsedScope.scope;

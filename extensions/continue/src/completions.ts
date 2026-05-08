@@ -32,7 +32,7 @@ const TOP_LEVEL_COMMANDS: CommandCompletion[] = [
 	},
 	{
 		name: "settings",
-		description: "Edit project or global pi-continue settings in the TUI.",
+		description: "Edit project or global pi-continue settings and the handoff trigger in the TUI.",
 	},
 	{
 		name: "reset",
@@ -44,11 +44,11 @@ const SCOPED_COMMANDS = new Set(["settings", "reset"]);
 const SCOPES: CommandCompletion[] = [
 	{
 		name: "project",
-		description: "Use this repository's .pi/extensions/pi-continue.json.",
+		description: "Use this repository's package config and handoff trigger.",
 	},
 	{
 		name: "global",
-		description: "Use ~/.pi/agent/extensions/pi-continue.json.",
+		description: "Use global package config and handoff trigger.",
 	},
 ];
 

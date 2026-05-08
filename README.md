@@ -46,7 +46,7 @@ Running only `/continue` opens a small action palette when UI is available. In n
 | `/continue preview [note]` | Show the handoff prompts that would be used; no compaction or resume. |
 | `/continue status` | Show the latest continuation, current settings, prompt sources, trigger threshold, and document-write state. |
 | `/continue ledger` | Show the latest Continuation Ledger in a temporary TUI panel; no transcript entry is appended. |
-| `/continue settings [project\|global]` | Edit package settings. |
+| `/continue settings [project\|global]` | Edit package settings and the handoff trigger. |
 | `/continue reset [project\|global]` | Delete package settings after confirmation. |
 
 Only `/continue` is registered. Typed subcommands such as `steer`, `queue`, and `status` are arguments to that command. There are no command aliases.
@@ -72,7 +72,7 @@ The threshold belongs to Pi, not this package:
 estimated context tokens > model.contextWindow - compaction.reserveTokens
 ```
 
-Configure the threshold in Pi settings:
+Configure the threshold directly in Pi settings, or choose `Handoff trigger` in `/continue settings [project|global]`:
 
 ```json
 {
@@ -84,7 +84,7 @@ Configure the threshold in Pi settings:
 }
 ```
 
-`reserveTokens` and `keepRecentTokens` are absolute token counts. For a 272K context model, `reserveTokens: 68000` triggers near 75 percent usage. See [`examples/pi-settings-compaction-75pct-272k.json`](examples/pi-settings-compaction-75pct-272k.json).
+`reserveTokens` and `keepRecentTokens` are absolute token counts. For a 272K context model, `reserveTokens: 68000` triggers near 75 percent usage. The `/continue settings` control shows and edits the human trigger token count, then saves Pi's canonical `compaction.reserveTokens` value at the selected settings scope; the trigger is not stored in `pi-continue.json`. See [`examples/pi-settings-compaction-75pct-272k.json`](examples/pi-settings-compaction-75pct-272k.json).
 
 Use `/continue status` after a continuation to see what happened. Status reports the latest local run: how the handoff started, whether the Continuation Ledger was created, whether Pi reported package-owned `pi-continue/v3` handoff proof, which summarizer model ran, whether the resume request was sent, whether the resumed assistant turn completed, whether optional document sync updated anything, and what to do next. UI sessions can also show the latest Continuation Ledger as a temporary panel; this never appends another transcript entry. Failure states use explicit package messages rather than parsing provider error text.
 
@@ -142,6 +142,8 @@ Common settings:
 | `appendFileTags` | `false` by default; when true, appends current compaction read/modified file tags. |
 | `promptOverridePolicy` | Chooses project overrides, global overrides, or package defaults. |
 | `ledgerDisplayMode` | `"overlay"` shows the latest Continuation Ledger in a temporary TUI panel; `"off"` disables automatic display. |
+
+`/continue settings` also includes a handoff trigger control. It shows one human-facing trigger token count and writes Pi core `compaction.reserveTokens` in `.pi/settings.json` or the global Pi settings file, not a package config key.
 
 Malformed JSON config fails loudly. Unknown config keys are ignored by the package parser. Command aliases are not registered.
 

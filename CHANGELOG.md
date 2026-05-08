@@ -2,6 +2,16 @@
 
 All notable changes to `pi-continue` are documented here.
 
+## 0.6.7 - 2026-05-08
+
+### Added
+
+- `/continue settings` can now edit the human-facing handoff trigger while writing Pi's `compaction.reserveTokens` at the selected project or global settings scope.
+
+### Changed
+
+- Updated the package gallery image URL to the v0.6.7 source tag.
+
 ## 0.6.6 - 2026-05-08
 
 ### Changed
