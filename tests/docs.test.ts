@@ -25,7 +25,8 @@ function extractJsonFenceAfter(content: string, marker: string): unknown {
 
 test("README stays a front-facing product and operator guide", () => {
 	const readme = readText("README.md");
-	assert.match(readme, /Pi extension package for long runs/);
+	assert.match(readme, /Pi extension package for mid-turn continuation/);
+	assert.match(readme, /long Pi tool run fills the context window/);
 	assert.match(readme, /same-session resume prompt/);
 	assert.match(readme, /native Pi compaction/i);
 	assert.match(readme, /Continuation Ledger/);
@@ -47,6 +48,10 @@ test("documented default config matches runtime and public example", () => {
 
 test("CHANGELOG documents the release contract", () => {
 	const changelog = readText("CHANGELOG.md");
+	assert.match(changelog, /## 0\.6\.6 - 2026-05-08/);
+	assert.match(changelog, /mid-turn continuation behavior for long Pi tool runs/);
+	assert.match(changelog, /Pi-required and product-specific tags/);
+	assert.match(changelog, /v0\.6\.6 source tag/);
 	assert.match(changelog, /## 0\.6\.5 - 2026-05-08/);
 	assert.match(changelog, /Pi `followUp` delivery/);
 	assert.match(changelog, /delivered continuation user message as resume-start proof/);
@@ -106,11 +111,28 @@ test("npm dry-run package contents align with the public contract", () => {
 test("package metadata and package contents align with the public contract", () => {
 	const packageJson = JSON.parse(readText("package.json"));
 	assert.equal(packageJson.name, "pi-continue");
-	assert.equal(packageJson.version, "0.6.5");
-	assert.match(packageJson.description, /Same-session continuation/);
-	assert.match(packageJson.description, /context limit/);
-	assert.match(packageJson.description, /native Pi compaction/);
+	assert.equal(packageJson.version, "0.6.6");
+	assert.match(packageJson.description, /Mid-turn continuation/);
+	assert.match(packageJson.description, /long Pi tool runs/);
+	assert.match(packageJson.description, /context overflow/);
+	assert.match(packageJson.description, /same session/);
 	assert.match(packageJson.description, /handoff ledger/);
+	assert.deepEqual(packageJson.keywords, [
+		"pi-package",
+		"pi-extension",
+		"continue",
+		"continuation",
+		"resume",
+		"same-session",
+		"mid-turn",
+		"mid-run",
+		"tool-loop",
+		"context-limit",
+		"context-window",
+		"compaction",
+		"handoff",
+		"continuation-ledger",
+	]);
 	assert.deepEqual(packageJson.files, [
 		"README.md",
 		"CHANGELOG.md",
@@ -122,6 +144,6 @@ test("package metadata and package contents align with the public contract", () 
 	assert.equal(packageJson.peerDependencies["@earendil-works/pi-ai"], ">=0.74.0");
 	assert.equal(packageJson.peerDependencies["@earendil-works/pi-coding-agent"], ">=0.74.0");
 	assert.deepEqual(packageJson.pi.extensions, ["./extensions/continue/index.ts"]);
-	assert.equal(packageJson.pi.image, "https://raw.githubusercontent.com/Tiziano-AI/pi-continue/v0.6.5/assets/gallery/pi-continue-gallery.webp");
+	assert.equal(packageJson.pi.image, "https://raw.githubusercontent.com/Tiziano-AI/pi-continue/v0.6.6/assets/gallery/pi-continue-gallery.webp");
 	assert.equal(existsSync("assets/gallery/pi-continue-gallery.webp"), true);
 });

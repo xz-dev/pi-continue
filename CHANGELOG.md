@@ -2,6 +2,14 @@
 
 All notable changes to `pi-continue` are documented here.
 
+## 0.6.6 - 2026-05-08
+
+### Changed
+
+- Elevated the package description and README opening around the unique mid-turn continuation behavior for long Pi tool runs.
+- Replaced generic package keywords with Pi-required and product-specific tags for same-session resume, mid-turn/mid-run tool loops, context limits, compaction, handoff, and Continuation Ledger discovery.
+- Updated the package gallery image URL to the v0.6.6 source tag.
+
 ## 0.6.5 - 2026-05-08
 
 ### Fixed

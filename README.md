@@ -1,6 +1,6 @@
 # pi-continue
 
-`pi-continue` is a Pi extension package for long runs. When context fills while Pi is still working, it saves a safe package-owned handoff with native Pi compaction and resumes the same task in the same Pi session only after Pi reports a valid `pi-continue/v3` compaction entry.
+`pi-continue` is a Pi extension package for mid-turn continuation. When a long Pi tool run fills the context window before the next model request, it saves a safe package-owned handoff with native Pi compaction and resumes the same task in the same Pi session only after Pi reports a valid `pi-continue/v3` compaction entry.
 
 The handoff is a structured Continuation Ledger, not a transcript replay. It tells the receiving agent what is still true, what changed recently, what to do next, which evidence is fresh, and what should not be repeated. The prompt assets are overrideable, while the ledger must still match the strict continuation artifact contract.
 
@@ -51,9 +51,9 @@ Running only `/continue` opens a small action palette when UI is available. In n
 
 Only `/continue` is registered. Typed subcommands such as `steer`, `queue`, and `status` are arguments to that command. There are no command aliases.
 
-## Mid-run continuation
+## Mid-turn continuation
 
-The automatic mid-run guard is the main reason to use this package. It acts when context fills while Pi is still working, before the next oversized provider request is sent.
+The automatic mid-turn guard is the main reason to use this package. It acts during long tool loops when context fills while Pi is still working, before the next oversized provider request is sent.
 
 It:
 

@@ -1,16 +1,22 @@
 {
   "name": "pi-continue",
-  "version": "0.6.5",
+  "version": "0.6.6",
   "type": "module",
-  "description": "Same-session continuation for long Pi runs that hit the context limit, built on native Pi compaction and a structured handoff ledger.",
+  "description": "Mid-turn continuation for long Pi tool runs: compact safely before context overflow, then resume the same session from a structured handoff ledger.",
   "keywords": [
     "pi-package",
-    "pi",
     "pi-extension",
     "continue",
     "continuation",
+    "resume",
+    "same-session",
+    "mid-turn",
     "mid-run",
+    "tool-loop",
+    "context-limit",
+    "context-window",
     "compaction",
+    "handoff",
     "continuation-ledger"
   ],
   "license": "MIT",
@@ -45,7 +51,7 @@
     "extensions": [
       "./extensions/continue/index.ts"
     ],
-    "image": "https://raw.githubusercontent.com/Tiziano-AI/pi-continue/v0.6.5/assets/gallery/pi-continue-gallery.webp"
+    "image": "https://raw.githubusercontent.com/Tiziano-AI/pi-continue/v0.6.6/assets/gallery/pi-continue-gallery.webp"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "^0.74.0",
