@@ -31,10 +31,18 @@ export interface PendingResumeDispatch {
 	proofVerified: boolean;
 }
 
+export interface AwaitingResumeStart {
+	eventId: string;
+	label: string;
+	onContinuationFailed: ((eventId: string) => void) | undefined;
+	resumeStartTimeoutMs: number;
+}
+
 export interface ResumeProofRuntimeState extends ContinuationEventStore {
 	compactionRunning: boolean;
 	guardFailureKey: string | undefined;
 	awaitingResumeEventId: string | undefined;
+	awaitingResumeStart: AwaitingResumeStart | undefined;
 	resumeStartTimeout: ReturnType<typeof setTimeout> | undefined;
 	compactionProofTimeout: ReturnType<typeof setTimeout> | undefined;
 	pendingResumeDispatch: PendingResumeDispatch | undefined;
@@ -64,10 +72,15 @@ function unrefTimer(timer: ReturnType<typeof setTimeout>): void {
 	if (typeof timer === "object" && timer !== null) timer.unref?.();
 }
 
-export function clearResumeStartTimeout(runtime: ResumeProofRuntimeState): void {
+function clearResumeStartTimer(runtime: ResumeProofRuntimeState): void {
 	if (!runtime.resumeStartTimeout) return;
 	clearTimeout(runtime.resumeStartTimeout);
 	runtime.resumeStartTimeout = undefined;
+}
+
+export function clearResumeStartTimeout(runtime: ResumeProofRuntimeState): void {
+	clearResumeStartTimer(runtime);
+	runtime.awaitingResumeStart = undefined;
 }
 
 export function clearCompactionProofTimeout(runtime: ResumeProofRuntimeState): void {
@@ -95,17 +108,18 @@ export function preparePendingResumeDispatch(runtime: ResumeProofRuntimeState, o
 	};
 }
 
-function scheduleResumeStartTimeout(ctx: ExtensionContext, runtime: ResumeProofRuntimeState, pending: PendingResumeDispatch): void {
-	clearResumeStartTimeout(runtime);
+function scheduleResumeStartTimeout(ctx: ExtensionContext, runtime: ResumeProofRuntimeState, resumeStart: AwaitingResumeStart): void {
+	clearResumeStartTimer(runtime);
+	runtime.awaitingResumeStart = resumeStart;
 	const timeout = setTimeout(() => {
-		if (runtime.awaitingResumeEventId !== pending.eventId) return;
-		const failed = failContinuationResumeStart(runtime, pending.eventId, RESUME_START_TIMEOUT_FAILURE);
+		if (runtime.awaitingResumeEventId !== resumeStart.eventId) return;
+		const failed = failContinuationResumeStart(runtime, resumeStart.eventId, RESUME_START_TIMEOUT_FAILURE);
 		if (!failed) return;
-		pending.onContinuationFailed?.(pending.eventId);
-		settleWorkingVisuals(ctx, runtime, pending.eventId);
-		setStatus(ctx, `${pending.label}: failed`);
-		notify(ctx, `${pending.label}: resume request failed.`, "error");
-	}, Math.max(0, pending.resumeStartTimeoutMs));
+		resumeStart.onContinuationFailed?.(resumeStart.eventId);
+		settleWorkingVisuals(ctx, runtime, resumeStart.eventId);
+		setStatus(ctx, `${resumeStart.label}: failed`);
+		notify(ctx, `${resumeStart.label}: resume request failed.`, "error");
+	}, Math.max(0, resumeStart.resumeStartTimeoutMs));
 	runtime.resumeStartTimeout = timeout;
 	unrefTimer(timeout);
 }
@@ -127,6 +141,21 @@ function failContinuationResumeStart(runtime: ResumeProofRuntimeState, eventId: 
 	return true;
 }
 
+function isAwaitingResumeStartPending(runtime: ResumeProofRuntimeState, eventId: string): boolean {
+	return runtime.awaitingResumeEventId === eventId
+		&& runtime.latestEvent?.id === eventId
+		&& runtime.latestEvent.resume.status === "pending";
+}
+
+/** Arm the resume-start timeout after an active parent turn had a chance to deliver queued follow-up. */
+export function armDeferredResumeStartTimeout(ctx: ExtensionContext, runtime: ResumeProofRuntimeState): boolean {
+	const resumeStart = runtime.awaitingResumeStart;
+	if (!resumeStart || runtime.resumeStartTimeout) return false;
+	if (!isAwaitingResumeStartPending(runtime, resumeStart.eventId)) return false;
+	scheduleResumeStartTimeout(ctx, runtime, resumeStart);
+	return true;
+}
+
 function dispatchIfReady(ctx: ExtensionContext, runtime: ResumeProofRuntimeState, eventId: string): boolean {
 	const pending = runtime.pendingResumeDispatch;
 	if (!pending || pending.eventId !== eventId || !pending.compactionCompleted || !pending.proofVerified) return false;
@@ -136,10 +165,19 @@ function dispatchIfReady(ctx: ExtensionContext, runtime: ResumeProofRuntimeState
 	setStatus(ctx, `${pending.label}: resuming this session`);
 	markContinuationResumePending(runtime, eventId);
 	runtime.awaitingResumeEventId = eventId;
-	scheduleResumeStartTimeout(ctx, runtime, pending);
+	const resumeStart: AwaitingResumeStart = {
+		eventId: pending.eventId,
+		label: pending.label,
+		onContinuationFailed: pending.onContinuationFailed,
+		resumeStartTimeoutMs: pending.resumeStartTimeoutMs,
+	};
+	runtime.awaitingResumeStart = resumeStart;
 	try {
 		pending.sendContinuation(CONTINUATION_PROMPT);
 		markContinuationPromptSent(runtime, eventId);
+		if (ctx.isIdle() && isAwaitingResumeStartPending(runtime, eventId)) {
+			scheduleResumeStartTimeout(ctx, runtime, resumeStart);
+		}
 		notify(ctx, `${pending.label}: resume request sent.`, "info");
 	} catch {
 		pending.onContinuationFailed?.(eventId);

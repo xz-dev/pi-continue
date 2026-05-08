@@ -30,7 +30,7 @@ pi -e /absolute/path/to/pi-continue
 
 Pi packages run with your local user permissions. Review package source before installing third-party packages.
 
-Requires Pi `0.72.0` or newer, where model-specific thinking support is described by `thinkingLevelMap`.
+Requires Pi `0.74.0` or newer, where model-specific thinking support is described by `thinkingLevelMap`.
 
 ## Use `/continue`
 
@@ -266,4 +266,4 @@ Expected extension command surface:
 continue
 ```
 
-The npm package should include `README.md`, `LICENSE`, `assets/`, `examples/`, and `extensions/`. It should not include tests, `.pi/`, tarballs, local runtime files, ignored Markdown notes or guides, or pnpm validation files.
+The npm package should include `README.md`, `CHANGELOG.md`, `LICENSE`, `assets/`, `examples/`, and `extensions/`. It should not include tests, `.pi/`, tarballs, local runtime files, ignored Markdown notes or guides, or pnpm validation files.

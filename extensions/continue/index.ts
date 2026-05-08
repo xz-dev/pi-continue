@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { loadHistoryPromptAssets, loadSplitPromptAssets } from "./src/assets.ts";
 import { parseHistoryArtifacts, parseSplitPrefix } from "./src/blocks.ts";
-import { splitContinueSubcommand, shouldOpenContinuePalette, buildContinuationCommandArgs } from "./src/command-shape.ts";
+import { splitContinueSubcommand, shouldOpenContinuePalette } from "./src/command-shape.ts";
+import { runContinuePaletteResult, runEnabledContinuationCommand } from "./src/command-runner.ts";
 import { runLedgerCommand, runPreviewCommand, runResetCommand, runSettingsDialog, runStatusCommand } from "./src/commands.ts";
 import { getContinueArgumentCompletions } from "./src/completions.ts";
 import { normalizeCompactionPreparation, snapshotFileOperations } from "./src/compaction-preparation.ts";
@@ -28,18 +29,18 @@ import { resolveTokenBudget, runPromptPass } from "./src/model.ts";
 import { loadPiInternals } from "./src/pi-internals.ts";
 import { compileHistoryPrompt, compileSplitPrompt } from "./src/prompt.ts";
 import { resolveProjectContext, writeRepoDocument } from "./src/project.ts";
+import { isContinuationPromptUserMessage } from "./src/prompt-dispatch.ts";
 import { showContinuePalette } from "./src/palette.ts";
-import type { ContinuePaletteResult } from "./src/palette-actions.ts";
 import {
 	CONTINUATION_PROMPT,
 	CONTINUE_STATUS_KEY,
 	acceptContinuationCompactionProof,
+	armDeferredResumeStartTimeout,
 	clearResumeStartTimeout,
 	createContinuationRuntimeState,
 	failContinuationCompactionProof,
 	failRunningAwaitingContinuationResume,
 	markAwaitingContinuationResumeStarted,
-	runContinuationCommand,
 	settleAwaitingContinuationResumeFromAssistant,
 	type ContinuationRuntimeState,
 } from "./src/runtime.ts";
@@ -54,61 +55,6 @@ import {
 	clearWorkingVisuals,
 	settleWorkingVisuals,
 } from "./src/working-ui.ts";
-
-async function runEnabledContinuationCommand(
-	pi: ExtensionAPI,
-	ctx: ExtensionCommandContext,
-	runtime: ContinuationRuntimeState,
-	args: string | undefined,
-	sendContinuation: (prompt: string) => void,
-	onContinuationFailed: (eventId: string) => void,
-): Promise<void> {
-	const projectContext = await resolveProjectContext(pi, ctx.cwd, "CONTINUE.md");
-	const config = loadContinuationConfig(projectContext.projectRoot);
-	if (!config.enabled) {
-		if (ctx.hasUI) ctx.ui.notify("pi-continue is disabled. Re-enable it with /continue settings.", "warning");
-		return;
-	}
-	await runContinuationCommand(ctx, runtime, args, sendContinuation, onContinuationFailed);
-}
-
-async function runContinuePaletteResult(
-	pi: ExtensionAPI,
-	ctx: ExtensionCommandContext,
-	runtime: ContinuationRuntimeState,
-	result: ContinuePaletteResult,
-	onContinuationFailed: (eventId: string) => void,
-): Promise<void> {
-	if (result.kind === "status") {
-		await runStatusCommand(pi, ctx, runtime);
-		return;
-	}
-	if (result.kind === "ledger") {
-		await runLedgerCommand(ctx, runtime);
-		return;
-	}
-	if (result.kind === "settings") {
-		await runSettingsDialog(pi, ctx, result.scope);
-		return;
-	}
-	if (result.kind === "reset") {
-		await runResetCommand(pi, ctx, result.scope);
-		return;
-	}
-	if (result.kind === "preview") {
-		await runPreviewCommand(pi, ctx, result.instructions);
-		return;
-	}
-	if (result.kind !== "continue") return;
-	await runEnabledContinuationCommand(
-		pi,
-		ctx,
-		runtime,
-		buildContinuationCommandArgs(result.mode, result.instructions),
-		(prompt) => pi.sendUserMessage(prompt),
-		onContinuationFailed,
-	);
-}
 
 function decideAgentGuideWriteStatus(syncMode: DocumentSyncMode, agentGuideMd: string | undefined): AgentGuideWriteStatus {
 	if (syncMode === "off") return "sync-off";
@@ -194,7 +140,6 @@ export default function (pi: ExtensionAPI) {
 				ctx,
 				runtime,
 				args,
-				(prompt) => pi.sendUserMessage(prompt),
 				(eventId) => cleanupPendingDocumentWrites(eventId),
 			);
 		},
@@ -208,6 +153,11 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("message_start", async (event, ctx) => {
+		if (isContinuationPromptUserMessage(event.message, CONTINUATION_PROMPT)) {
+			const eventId = markAwaitingContinuationResumeStarted(runtime);
+			if (eventId) setRuntimeStatus(ctx, "pi-continue resume running");
+			return;
+		}
 		if (!isAssistantMessage(event.message)) return;
 		const eventId = runtime.awaitingResumeEventId;
 		if (!eventId || runtime.latestEvent?.id !== eventId || runtime.latestEvent.resume.status !== "running") return;
@@ -216,9 +166,12 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("agent_end", async (_event, ctx) => {
 		const settlement = failRunningAwaitingContinuationResume(runtime, "Continuation resume did not produce an assistant response.");
-		if (!settlement) return;
-		settleWorkingVisuals(ctx, runtime, settlement.eventId);
-		setRuntimeStatus(ctx, "pi-continue resume failed");
+		if (settlement) {
+			settleWorkingVisuals(ctx, runtime, settlement.eventId);
+			setRuntimeStatus(ctx, "pi-continue resume failed");
+			return;
+		}
+		armDeferredResumeStartTimeout(ctx, runtime);
 	});
 
 	pi.on("message_end", async (event, ctx) => {

@@ -2,6 +2,17 @@
 
 All notable changes to `pi-continue` are documented here.
 
+## 0.6.5 - 2026-05-08
+
+### Fixed
+
+- Queued same-session resume prompts now use Pi `followUp` delivery and recognize the delivered continuation user message as resume-start proof, so active parent turns and tools cannot falsely trip the start timeout before the follow-up begins.
+
+### Changed
+
+- Requires Pi `0.74.0` or newer in README installation docs, matching the peer dependency contract.
+- Updated the package gallery image URL to the v0.6.5 source tag.
+
 ## 0.6.4 - 2026-05-07
 
 ### Changed

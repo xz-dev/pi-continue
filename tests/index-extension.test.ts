@@ -19,22 +19,51 @@ function assistantMessage(stopReason = "stop") {
 	};
 }
 
+function highUsageAssistantMessage() {
+	return {
+		...assistantMessage("toolUse"),
+		usage: { input: 45, output: 45, cacheRead: 0, cacheWrite: 0, totalTokens: 90, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+	};
+}
+
+function userMessage(text) {
+	return {
+		role: "user",
+		content: [{ type: "text", text }],
+		timestamp: 0,
+	};
+}
+
+function toolResultMessage(text) {
+	return {
+		role: "toolResult",
+		toolCallId: "tool-1",
+		toolName: "bash",
+		content: [{ type: "text", text }],
+		isError: false,
+		timestamp: 0,
+	};
+}
+
 function createFakePi(cwd) {
 	const commands = new Map();
 	const events = new Map();
 	const sent = [];
+	const sentOptions = [];
 	return {
 		commands,
 		events,
 		sent,
+		sentOptions,
 		registerCommand(name, command) {
 			commands.set(name, command);
 		},
 		on(name, handler) {
 			events.set(name, handler);
 		},
-		sendUserMessage(prompt) {
+		sendUserMessage(prompt, options) {
 			sent.push(prompt);
+			sentOptions.push(options);
 		},
 		getThinkingLevel() {
 			return undefined;
@@ -194,6 +223,7 @@ test("extension registers only /continue and exact RPC-style /continue falls thr
 	assert.deepEqual(pi.sent, []);
 	await pi.events.get("session_compact")(ownedCompactionEvent(), ctx);
 	assert.deepEqual(pi.sent, [CONTINUATION_PROMPT]);
+	assert.deepEqual(pi.sentOptions, [{ deliverAs: "followUp" }]);
 	await pi.events.get("agent_end")({}, ctx);
 	assert.equal(ctx.statusCalls.at(-1), "/continue steer: resuming this session");
 	await pi.events.get("before_agent_start")({ prompt: CONTINUATION_PROMPT }, ctx);
@@ -203,6 +233,67 @@ test("extension registers only /continue and exact RPC-style /continue falls thr
 	await pi.events.get("message_end")({ message: assistantMessage() }, ctx);
 	await pi.commands.get("continue").handler(undefined, ctx);
 	assert.equal(ctx.compactCount, 2);
+});
+
+test("palette continuation dispatches resume as follow-up", async () => {
+	const cwd = process.cwd();
+	const pi = createFakePi(cwd);
+	const ctx = createCommandContext(cwd, async (factory) => {
+		let selected;
+		const component = factory({ requestRender() {} }, ctx.ui.theme, {}, (result) => {
+			selected = result;
+		});
+		component.handleInput("enter");
+		return selected;
+	});
+	registerContinueExtension(pi);
+	await pi.commands.get("continue").handler(undefined, ctx);
+	assert.equal(ctx.compactCount, 1);
+	ctx.compactOptions.onComplete({});
+	await pi.events.get("session_compact")(ownedCompactionEvent(), ctx);
+	assert.deepEqual(pi.sent, [CONTINUATION_PROMPT]);
+	assert.deepEqual(pi.sentOptions, [{ deliverAs: "followUp" }]);
+});
+
+test("queued follow-up message_start starts same-session resume proof", async () => {
+	const cwd = process.cwd();
+	const pi = createFakePi(cwd);
+	const ctx = createCommandContext(cwd, async () => undefined);
+	ctx.isIdle = () => false;
+	registerContinueExtension(pi);
+	await pi.commands.get("continue").handler("steer", ctx);
+	ctx.compactOptions.onComplete({});
+	await pi.events.get("session_compact")(ownedCompactionEvent(), ctx);
+	assert.deepEqual(pi.sent, [CONTINUATION_PROMPT]);
+	assert.deepEqual(pi.sentOptions, [{ deliverAs: "followUp" }]);
+	await pi.events.get("message_start")({ message: userMessage(CONTINUATION_PROMPT) }, ctx);
+	assert.equal(ctx.statusCalls.at(-1), "pi-continue resume running");
+	await pi.events.get("message_end")({ message: assistantMessage() }, ctx);
+	assert.equal(ctx.statusCalls.at(-1), undefined);
+});
+
+test("mid-run guard dispatches resume as follow-up after context threshold proof", async () => {
+	const cwd = mkdtempSync(join(tmpdir(), "pi-continue-mid-run-dispatch-"));
+	try {
+		mkdirSync(join(cwd, ".pi"), { recursive: true });
+		writeFileSync(join(cwd, ".pi", "settings.json"), JSON.stringify({
+			compaction: { enabled: true, reserveTokens: 20, keepRecentTokens: 10 },
+		}), "utf8");
+		const pi = createFakePi(cwd);
+		const ctx = createCommandContext(cwd, async () => undefined);
+		ctx.model = { ...ctx.model, contextWindow: 100 };
+		registerContinueExtension(pi);
+		await pi.events.get("context")({
+			messages: [userMessage("run tool"), highUsageAssistantMessage(), toolResultMessage("x".repeat(160))],
+		}, ctx);
+		assert.equal(ctx.compactCount, 1);
+		ctx.compactOptions.onComplete({});
+		await pi.events.get("session_compact")(ownedCompactionEvent(), ctx);
+		assert.deepEqual(pi.sent, [CONTINUATION_PROMPT]);
+		assert.deepEqual(pi.sentOptions, [{ deliverAs: "followUp" }]);
+	} finally {
+		rmSync(cwd, { recursive: true, force: true });
+	}
 });
 
 test("settings and reset reject invalid scope arguments without opening dialogs", async () => {

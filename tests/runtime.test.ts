@@ -4,6 +4,7 @@ import { markActiveContinuationArtifact } from "../extensions/continue/src/conti
 import {
 	CONTINUATION_PROMPT,
 	acceptContinuationCompactionProof,
+	armDeferredResumeStartTimeout,
 	createContinuationRuntimeState,
 	failRunningAwaitingContinuationResume,
 	markAwaitingContinuationResumeStarted,
@@ -265,7 +266,7 @@ test("duplicate compaction terminal callbacks cannot double-send or fail pending
 	assert.equal(runtime.activeEventId, "continue-1");
 });
 
-test("resume start timeout settles prompt dispatch that never starts", async () => {
+test("resume start timeout settles idle prompt dispatch that never starts", async () => {
 	const owner = createContext(true);
 	const ctx = bindContext(owner);
 	const runtime = createContinuationRuntimeState();
@@ -290,6 +291,73 @@ test("resume start timeout settles prompt dispatch that never starts", async () 
 	assert.equal(runtime.latestEvent?.resume.status, "failed");
 	assert.equal(runtime.latestEvent?.failureReason, "Continuation resume request failed before the next run started.");
 	assert.equal(runtime.activeEventId, undefined);
+	assert.equal(runtime.awaitingResumeEventId, undefined);
+});
+
+test("queued follow-up resume can start after the parent turn remains active", async () => {
+	const owner = createContext(false);
+	const ctx = bindContext(owner);
+	const runtime = createContinuationRuntimeState();
+	const failedEvents = [];
+	const continuations = [];
+	const started = startContinuationCompaction(ctx, runtime, {
+		source: "command-steer",
+		instructions: undefined,
+		trigger: undefined,
+		abortActiveRun: false,
+		continueAfterComplete: true,
+		sendContinuation: (prompt) => continuations.push(prompt),
+		onContinuationFailed: (eventId) => failedEvents.push(eventId),
+		resumeStartTimeoutMs: 0,
+	});
+	assert.equal(started, true);
+	completeAndVerify(owner, ctx, runtime);
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	assert.deepEqual(continuations, [CONTINUATION_PROMPT]);
+	assert.deepEqual(failedEvents, []);
+	assert.equal(runtime.latestEvent?.status, "running");
+	assert.equal(runtime.latestEvent?.resume.status, "pending");
+	assert.equal(runtime.awaitingResumeEventId, "continue-1");
+	assert.equal(markAwaitingContinuationResumeStarted(runtime), "continue-1");
+	const settlement = settleAwaitingContinuationResumeFromAssistant(runtime, {
+		role: "assistant",
+		provider: "openai",
+		model: "gpt-test",
+		content: [{ type: "text", text: "continuing" }],
+		usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+		stopReason: "stop",
+		timestamp: 0,
+	});
+	assert.deepEqual(settlement, { eventId: "continue-1", status: "completed" });
+	assert.equal(runtime.latestEvent?.status, "completed");
+	assert.equal(runtime.latestEvent?.resume.status, "completed");
+});
+
+test("queued follow-up resume start timeout arms after the active parent turn ends", async () => {
+	const owner = createContext(false);
+	const ctx = bindContext(owner);
+	const runtime = createContinuationRuntimeState();
+	const failedEvents = [];
+	const continuations = [];
+	const started = startContinuationCompaction(ctx, runtime, {
+		source: "command-steer",
+		instructions: undefined,
+		trigger: undefined,
+		abortActiveRun: false,
+		continueAfterComplete: true,
+		sendContinuation: (prompt) => continuations.push(prompt),
+		onContinuationFailed: (eventId) => failedEvents.push(eventId),
+		resumeStartTimeoutMs: 0,
+	});
+	assert.equal(started, true);
+	completeAndVerify(owner, ctx, runtime);
+	assert.equal(armDeferredResumeStartTimeout(ctx, runtime), true);
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	assert.deepEqual(continuations, [CONTINUATION_PROMPT]);
+	assert.deepEqual(failedEvents, ["continue-1"]);
+	assert.equal(runtime.latestEvent?.status, "failed");
+	assert.equal(runtime.latestEvent?.resume.status, "failed");
+	assert.equal(runtime.latestEvent?.failureReason, "Continuation resume request failed before the next run started.");
 	assert.equal(runtime.awaitingResumeEventId, undefined);
 });
 

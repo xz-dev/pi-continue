@@ -31,7 +31,7 @@ import {
 } from "./working-ui.ts";
 
 export { CONTINUATION_PROMPT } from "./continuation-prompt.ts";
-export { CONTINUE_STATUS_KEY, acceptContinuationCompactionProof, clearResumeStartTimeout, failContinuationCompactionProof } from "./resume-proof.ts";
+export { CONTINUE_STATUS_KEY, acceptContinuationCompactionProof, armDeferredResumeStartTimeout, clearResumeStartTimeout, failContinuationCompactionProof } from "./resume-proof.ts";
 
 export type ContinuationRequestMode = "steer" | "queue";
 export type ContinuationRequestSource = ContinuationEventSource;
@@ -102,6 +102,7 @@ export function createContinuationRuntimeState(): ContinuationRuntimeState {
 		compactionRunning: false,
 		guardFailureKey: undefined,
 		awaitingResumeEventId: undefined,
+		awaitingResumeStart: undefined,
 		resumeStartTimeout: undefined,
 		compactionProofTimeout: undefined,
 		pendingResumeDispatch: undefined,

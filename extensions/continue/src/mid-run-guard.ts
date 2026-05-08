@@ -3,6 +3,7 @@ import { DEFAULT_CONTINUE_CONFIG, loadContinuationConfig } from "./config.ts";
 import { readEffectivePiCompactionSettings } from "./pi-settings.ts";
 import { loadPiInternals } from "./pi-internals.ts";
 import { resolveProjectContext } from "./project.ts";
+import { sendContinuationPrompt } from "./prompt-dispatch.ts";
 import { startContinuationCompaction, type ContinuationRuntimeState } from "./runtime.ts";
 import type {
 	ContextUsageEstimateSnapshot,
@@ -90,7 +91,7 @@ export async function runMidRunGuard(
 		trigger,
 		abortActiveRun: true,
 		continueAfterComplete: true,
-		sendContinuation: (prompt) => pi.sendUserMessage(prompt),
+		sendContinuation: (prompt) => sendContinuationPrompt(pi, prompt),
 		onContinuationFailed,
 	});
 }
