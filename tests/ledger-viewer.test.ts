@@ -17,10 +17,6 @@ test("extractContinuationLedger reads only the continuation block", () => {
 		"task: finish runtime proof",
 		"workingEdge: tests",
 		"</continuation>",
-		"",
-		"<split-prefix>",
-		"old turn prefix",
-		"</split-prefix>",
 	].join("\n");
 	assert.equal(extractContinuationLedger(summary), "task: finish runtime proof\nworkingEdge: tests");
 });

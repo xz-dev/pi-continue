@@ -55,9 +55,9 @@ test("buildContinuationSynthesisTelemetry stores only allowlisted telemetry", ()
 	assert.equal(synthesis.totalTokens, 33);
 });
 
-test("parseContinuationDetails reads the full v3 session details payload", () => {
+test("parseContinuationDetails reads the full v4 session details payload", () => {
 	const parsed = parseContinuationDetails({
-		kind: "pi-continue/v3",
+		kind: "pi-continue/v4",
 		readFiles: ["/repo/read.ts"],
 		modifiedFiles: ["/repo/write.ts"],
 		documentSyncId: "sync-2",
@@ -67,7 +67,7 @@ test("parseContinuationDetails reads the full v3 session details payload", () =>
 		continuationEventId: "continue-2",
 	});
 	assert.deepEqual(parsed, {
-		kind: "pi-continue/v3",
+		kind: "pi-continue/v4",
 		readFiles: ["/repo/read.ts"],
 		modifiedFiles: ["/repo/write.ts"],
 		documentSyncId: "sync-2",
@@ -78,7 +78,7 @@ test("parseContinuationDetails reads the full v3 session details payload", () =>
 	});
 });
 
-test("parseContinuationDetails rejects retired v2 and count-only details", () => {
+test("parseContinuationDetails rejects retired v2/v3 and count-only details", () => {
 	assert.equal(parseContinuationDetails({
 		kind: "pi-continue/v2",
 		readFiles: ["/repo/read.ts"],
@@ -86,6 +86,11 @@ test("parseContinuationDetails rejects retired v2 and count-only details", () =>
 	}), undefined);
 	assert.equal(parseContinuationDetails({
 		kind: "pi-continue/v3",
+		readFiles: ["/repo/read.ts"],
+		modifiedFiles: ["/repo/write.ts"],
+	}), undefined);
+	assert.equal(parseContinuationDetails({
+		kind: "pi-continue/v4",
 		readFileCount: 1,
 		modifiedFileCount: 1,
 	}), undefined);
@@ -93,19 +98,19 @@ test("parseContinuationDetails rejects retired v2 and count-only details", () =>
 
 test("parseContinuationDetails rejects nested extras and invalid optional values", () => {
 	assert.equal(parseContinuationDetails({
-		kind: "pi-continue/v3",
+		kind: "pi-continue/v4",
 		readFiles: ["/repo/read.ts"],
 		modifiedFiles: ["/repo/write.ts"],
 		documentSyncId: 12,
 	}), undefined);
 	assert.equal(parseContinuationDetails({
-		kind: "pi-continue/v3",
+		kind: "pi-continue/v4",
 		readFiles: ["/repo/read.ts"],
 		modifiedFiles: ["/repo/write.ts"],
 		agentGuideWriteStatus: "fallback",
 	}), undefined);
 	assert.equal(parseContinuationDetails({
-		kind: "pi-continue/v3",
+		kind: "pi-continue/v4",
 		readFiles: ["/repo/read.ts"],
 		modifiedFiles: ["/repo/write.ts"],
 		synthesis: {
@@ -117,7 +122,7 @@ test("parseContinuationDetails rejects nested extras and invalid optional values
 		},
 	}), undefined);
 	assert.equal(parseContinuationDetails({
-		kind: "pi-continue/v3",
+		kind: "pi-continue/v4",
 		readFiles: ["/repo/read.ts"],
 		modifiedFiles: ["/repo/write.ts"],
 		synthesis: {
@@ -128,7 +133,7 @@ test("parseContinuationDetails rejects nested extras and invalid optional values
 		},
 	}), undefined);
 	assert.equal(parseContinuationDetails({
-		kind: "pi-continue/v3",
+		kind: "pi-continue/v4",
 		readFiles: ["/repo/read.ts"],
 		modifiedFiles: ["/repo/write.ts"],
 		synthesis: {
@@ -139,7 +144,7 @@ test("parseContinuationDetails rejects nested extras and invalid optional values
 
 test("renderContinuationDetails writes compact metadata without file paths", () => {
 	const rendered = renderContinuationDetails({
-		kind: "pi-continue/v3",
+		kind: "pi-continue/v4",
 		readFiles: ["/repo/read.ts"],
 		modifiedFiles: ["/repo/write.ts"],
 		documentSyncId: "sync-3",
@@ -149,7 +154,7 @@ test("renderContinuationDetails writes compact metadata without file paths", () 
 		continuationEventId: "continue-3",
 	});
 	assert.match(rendered, /<continuation-compaction-details>/);
-	assert.match(rendered, /"kind": "pi-continue\/v3"/);
+	assert.match(rendered, /"kind": "pi-continue\/v4"/);
 	assert.match(rendered, /"readFileCount": 1/);
 	assert.match(rendered, /"modifiedFileCount": 1/);
 	assert.match(rendered, /"documentSyncId": "sync-3"/);

@@ -31,7 +31,10 @@ test("renderStatus reports local runtime wiring and write behavior", () => {
 		assert.match(rendered, /Last handoff: none in this session/);
 		assert.match(rendered, /- Handoff model: inherit -> openai\/gpt-test/);
 		assert.match(rendered, /- Agent guide writes: off/);
-		assert.match(rendered, /Durable promotions are normal-work proposals, not proof that a file was written/);
+		assert.match(rendered, /full agentGuideUpdate\.content replacements/);
+		assert.match(rendered, /- Append read file tags: no/);
+		assert.match(rendered, /- Append modified file tags: yes/);
+		assert.match(rendered, /Brief entries guide the receiver; they are not proof that files were written/);
 		assert.match(rendered, /- Scenario: unavailable/);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
@@ -91,7 +94,7 @@ test("renderStatus summarizes a completed latest continuation calmly", () => {
 		assert.match(rendered, /Last handoff: completed successfully/);
 		assert.match(rendered, /Safe boundary: completed assistant\/tool-result batch before the next model request/);
 		assert.match(rendered, /Ledger: Continuation Ledger ready/);
-		assert.match(rendered, /Saved handoff proof: verified package-owned pi-continue\/v3 compaction/);
+		assert.match(rendered, /Saved handoff proof: verified package-owned pi-continue\/v4 compaction/);
 		assert.match(rendered, /Document writes: none performed/);
 		assert.match(rendered, /Action: No action needed/);
 	} finally {
@@ -123,7 +126,7 @@ test("renderStatus reports handoff failure without failed-resume copy", () => {
 				continuationDoc: "off",
 				agentGuide: "off",
 			},
-			synthesisFailure: { stage: "split-prefix", reason: "Split-prefix pass omitted raw summary text." },
+			synthesisFailure: { stage: "history-artifact", reason: "History pass omitted required pi-continue JSON artifacts." },
 			failureReason: "Continuation handoff failed.",
 		};
 		const rendered = renderStatus(
@@ -136,7 +139,7 @@ test("renderStatus reports handoff failure without failed-resume copy", () => {
 			latestEvent,
 		);
 		assert.match(rendered, /Last handoff: continuation needs attention/);
-		assert.match(rendered, /Synthesis failure: split-prefix; Split-prefix pass omitted raw summary text\./);
+		assert.match(rendered, /Synthesis failure: history-artifact; History pass omitted required pi-continue JSON artifacts\./);
 		assert.match(rendered, /Resume outcome: not requested/);
 		assert.doesNotMatch(rendered, /resume needs attention/);
 	} finally {

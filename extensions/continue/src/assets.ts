@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { HistoryScenario, HistoryPromptAssets, LoadedPromptAsset, PromptOverridePolicy, SplitPromptAssets } from "./types.ts";
+import type { HistoryScenario, HistoryPromptAssets, LoadedPromptAsset, PromptOverridePolicy } from "./types.ts";
 import { resolveAgentDir } from "./agent-dir.ts";
 
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
@@ -58,13 +58,5 @@ export function loadHistoryPromptAssets(
 		system: loadPromptAsset(projectRoot, policy, `system/history_${scenario}.md`),
 		baseUser: loadPromptAsset(projectRoot, policy, "user/continuation_base.md"),
 		scenarioUser: loadPromptAsset(projectRoot, policy, `user/history_${scenario}.md`),
-	};
-}
-
-/** Resolve the asset set for the split-prefix pass. */
-export function loadSplitPromptAssets(projectRoot: string, policy: PromptOverridePolicy): SplitPromptAssets {
-	return {
-		system: loadPromptAsset(projectRoot, policy, "system/split_prefix.md"),
-		scenarioUser: loadPromptAsset(projectRoot, policy, "user/split_prefix.md"),
 	};
 }

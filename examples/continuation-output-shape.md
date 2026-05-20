@@ -1,74 +1,56 @@
 # Example continuation output shape
 
-This is a shape example for rendered `brief` content. Real output should use the actual session facts and omit irrelevant sections.
+This is a shape example for rendered `brief` content. Real output uses actual session facts and omits any of the five entry-array sections (`Forbid`, `Established`, `Learned`, `Open`, `Next`) that have no entries this cycle. `Task` and `Done When` always appear.
+
+The same rendered brief is what the receiver gets as its first turn after compaction, what is written to `CONTINUE.md` when `continuationDocSyncMode: "always"`, and what is shown in the TUI overlay when `showAfterCompact: true`. All three are the byte-identical render of the brief — pi-continue (the extension) renders them deterministically, not the synthesizer.
 
 ```text
 ## Task
-Continue the approved prompt/command/continuation redesign after compaction.
+Continue the v3 → v4 continuation ledger cutover for pi-continue.
 
-## Initiative Charter
-- Problem: long Pi runs can cross context limits mid-run and lose task continuity.
-- Why it matters: the user wants Pi to keep working without redoing discovery or losing product intent.
-- Strategy: use native Pi compaction plus a package-owned continuation ledger, not session forks or vendor patches.
+## Done When
+pnpm run gate exits 0 against the working tree and README, CHANGELOG, and assets describe pi-continue-artifacts/v4 only.
 
-## Definition Of Done
-- Runtime compacts at safe checkpoints and sends a same-session continuation prompt.
-- Prompt assets, parser, docs, examples, and tests agree on the ledger schema.
-- Validation gate passes after final edits.
+## Forbid
+- Do not introduce a v3 compatibility shim. — source: user@msg-greenfield-decision
+- Do not edit vendor/ paths. — source: user@msg-vendor-lock
 
-## Recency And Supersession
-- active: current redesign request — evidence: latest user asked to land recency/supersession handling properly; resolution: update the v3 contract, docs, tests, and prompts before release approval.
-- superseded: earlier await-direction state — evidence: newer allowed work exists before irreversible publish approval; resolution: finish adversarial review and validation choreography first.
+## Established
+- Finding 7 (duplicate channel) is invalid: the assertion path in delegation.test.ts covers it deterministically. — evidence: tests/delegation.test.ts:142; basis: test; reopen: if tests/delegation.test.ts changes around line 142
+- Cross-service eventing uses queues, not pubsub. — evidence: user@msg-arch-decision: 'use queues; pubsub loses messages we cannot lose'; basis: user; reopen: none
+- The OpenAI batch API delivers a webhook on terminal status. — evidence: doc:https://platform.openai.com/docs/api-reference/batch#webhooks; basis: doc; reopen: if the OpenAI batch spec changes
+- pnpm run gate exits 0 against working tree at SHA abcd123. — evidence: cmd:pnpm run gate#exit-status-line; basis: output; reopen: if any file under extensions/ or tests/ changes
 
-## Current Plan
-- Update prompt assets and parser contract.
-- Align docs and examples.
-- Run the repository gate before claiming completion.
+## Learned
+- Multi-line content stuffed into a single brief field re-atomizes into spurious sub-entries on the next render cycle; flatten field values to single lines at synthesis time. — source: session experience: round-trip explosion observed during v4 stabilization
+- Test runner needs `--loader ./tests/pi-peer-loader.mjs` to resolve internal Pi imports; plain `node --test` will fail with module-not-found. — source: cmd:node --no-warnings --experimental-strip-types --loader ./tests/pi-peer-loader.mjs --test tests/blocks.test.ts#first-line
 
-## Progress And Milestone Trail
-- Runtime already expects structured continuation artifacts.
-- The command surface is consolidated under `/continue`.
-- v3 now adds durable initiative-spine and recency-ledger fields for safer continuation across compactions.
+## Open
+- Does the gate still pass after the README rewrite? — verifies: Run pnpm run gate and observe exit 0 after committing README changes.
+- Are the BAD/GOOD anchor pairs in history_initial.md sufficient for dumb-model adherence? — verifies: Run one real compaction cycle with a small model and inspect the resulting established entries for anchor specificity.
 
-## Current State
-- Runtime now expects `pi-continue-artifacts/v3` continuation ledger artifacts.
-
-## Decisions and Constraints
-- Do not preserve the old mandatory read-now/do-now heading contract.
-- Do not impose numeric caps on source routing.
-- AGENTS.md writes stay off by default and require a full `agentGuideMarkdown` replacement when enabled.
-
-## Context Map
-- `/repo/README.md` — operator package guide; use it to verify runtime boundaries and artifact ownership.
-- `/repo/extensions/continue/src/blocks.ts` — structured artifact parser/renderer; use it before changing JSON fields.
-- `/repo/tests/blocks.test.ts` — executable artifact contract; use it to validate parser behavior.
-
-## Working Edge
-- Update prompt assets, docs, and tests to the same structured field vocabulary.
-- Run the repository gate before claiming completion.
-
-## Validation
-- `pnpm test` must pass after the final contract edits.
-
-## Risks
-- Do not rename old sections unless the v3 fields also preserve initiative spine, recency/supersession resolution, durable promotion, dormant/retired context, and validation freshness.
-
-## Dormant But Important
-- Pi vendor compaction behavior may change; re-check installed Pi docs/source before changing compaction hooks.
-
-## Retired Or Obsolete
-- Mandatory `Read Before Acting` and `Resume Now` headings are obsolete; `contextMap` and `workingEdge` replace them.
-
-## Anti-Rework
-- Do not redo completed external prompt-research discovery unless a specific claim is missing evidence.
-
-## Durable Learnings
-- Avoid preserving a weak old contract under new labels; replace it with the product shape the user approved.
-
-## Durable Promotions
-- apply: README.md — record continuation ledger conservation semantics for operators; evidence: parser and prompt assets require v3 fields; durability: README owns the package-facing contract; risk: future prompt edits may drift if package docs omit it; next: update README.md before delivery.
-
-## Agent Guide Updates
-- Candidate: add durable prompt-contract rules to AGENTS.md if the next synthesis can emit a full replacement guide.
-- Candidate notes alone do not write AGENTS.md; guide sync writes only non-null `agentGuideMarkdown`.
+## Next
+- Run pnpm run gate from the repo root. → Either exit 0 (closes the gate-pass open question) or a concrete failure to triage.
+- If gate passes, perform the manual integration smoke described in CHANGELOG 0.7.0. → A new established entry covering same-session resume behavior.
 ```
+
+## Anchor styles
+
+The `evidence` field on every `established` entry must be a navigable identifier the receiver can look up. Bare file names ("tests/delegation.test.ts") are not anchors. Accepted styles:
+
+- `path:line` — `tests/delegation.test.ts:142`
+- `test:name` — `test:parseHistoryArtifacts rejects invalid basis`
+- `cmd:command#output-anchor` — `cmd:pnpm run gate#exit-status-line`
+- `doc:url#section` — `doc:https://platform.openai.com/docs/api-reference/batch#webhooks`
+- `user@msg-id` — `user@msg-arch-decision: 'verbatim quote of the decision'`
+
+The `basis` enum is fixed: `observed | test | output | user | doc`. Each `established` entry must declare exactly one basis matching the evidence form.
+
+The `reopen` field is freeform. Use `"none"` only when the claim is absolute (immutable user directive, fixed vendor contract).
+
+## Learned vs established
+
+`established` and `learned` look similar but answer different questions:
+
+- `established` — "what is currently true at this code location, with anchored proof?" Each entry has a `reopen` clause tied to its anchor. Used for closures the receiver should trust without re-verification.
+- `learned` — "what did we discover during this session that we want to remember?" Cross-cutting insights from many reads, confirmed human preferences, dead-end paths with their reason, successful approaches worth reusing. `source` is looser than `established.evidence`; a narrative reference is acceptable when the lesson was derived from a sequence of events, not a single anchor.

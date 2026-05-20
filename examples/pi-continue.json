@@ -3,14 +3,14 @@
   "summarizerModel": "inherit",
   "reasoning": "inherit",
   "historyMaxTokens": null,
-  "splitPrefixMaxTokens": null,
   "continuationDocPath": "CONTINUE.md",
   "continuationDocSyncMode": "off",
   "agentGuidePath": "AGENTS.md",
   "agentGuideSyncMode": "off",
   "midRunGuardEnabled": true,
   "appendCompactionMetadata": false,
-  "appendFileTags": false,
+  "appendReadFileTags": false,
+  "appendModifiedFileTags": true,
   "promptOverridePolicy": "project-override",
-  "ledgerDisplayMode": "overlay"
+  "showAfterCompact": true
 }

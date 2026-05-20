@@ -76,41 +76,34 @@ function createFakePi(cwd) {
 	};
 }
 
-function continuationArtifactJson(agentGuideMarkdown = null) {
-	const structured = {
+function continuationArtifactJson(agentGuideContent: string | null = null) {
+	const brief = {
 		task: "Continue the task.",
-		initiativeCharter: ["Preserve same-session continuation."],
-		definitionOfDone: ["A valid continuation ledger is available."],
-		recencyLedger: [{ status: "active", subject: "current request", evidence: "test", resolution: "continue" }],
-		currentPlan: ["Run the next validation step."],
-		progress: ["Compaction synthesis succeeded."],
-		state: ["Test fixture state."],
-		decisions: ["Use strict v3 JSON artifacts."],
-		contextMap: [{ source: "tests/index-extension.test.ts", relevance: "fixture", use: "prove split failure" }],
-		workingEdge: ["Fail before document sync when split-prefix parsing fails."],
-		validation: ["Test fixture."],
-		risks: ["None."],
-		dormantContext: ["None."],
-		retiredContext: ["None."],
-		antiRework: ["Do not use fallback artifacts."],
-		durableLearnings: ["Hard-fail synthesis."],
-		durablePromotions: [{
-			status: "none",
-			targetSurface: "none",
-			proposal: "No durable surface update from this fixture.",
-			evidence: "test",
-			durability: "not applicable",
-			risk: "not applicable",
-			nextAction: "No action.",
+		done_when: "A valid pi-continue/v4 continuation ledger is saved.",
+		forbid: [{ rule: "Do not use fallback artifacts.", source: "user@msg-test-fixture" }],
+		established: [{
+			claim: "Compaction synthesis succeeded for this fixture.",
+			evidence: "tests/index-extension.test.ts:1",
+			basis: "test",
+			reopen: "none",
 		}],
-		agentGuideUpdates: ["No guide write."],
+		learned: [],
+		open: [{
+			question: "Does the next compaction also succeed?",
+			verifies: "Run the next cycle and parse its artifact.",
+		}],
+		next: [{
+			action: "Run the next validation step.",
+			outcome: "A new established entry covers the validation result.",
+		}],
 	};
 	return JSON.stringify({
-		version: "pi-continue-artifacts/v3",
-		brief: structured,
-		document: structured,
-		agentGuideMarkdown,
-		agentGuideChangeReason: agentGuideMarkdown ? "Write configured guide replacement." : "No guide write.",
+		version: "pi-continue-artifacts/v4",
+		brief,
+		agentGuideUpdate: {
+			content: agentGuideContent,
+			reason: agentGuideContent ? "Write configured guide replacement." : "No guide write.",
+		},
 	});
 }
 
@@ -200,7 +193,7 @@ function ownedCompactionEvent(eventId = "continue-1", details = {}) {
 		compactionEntry: {
 			id: `compact-${eventId}`,
 			summary: "<continuation>\nledger body\n</continuation>",
-			details: { kind: "pi-continue/v3", readFiles: [], modifiedFiles: [], continuationEventId: eventId, ...details },
+			details: { kind: "pi-continue/v4", readFiles: [], modifiedFiles: [], continuationEventId: eventId, ...details },
 		},
 	};
 }
@@ -432,7 +425,7 @@ test("session_compact native or invalid active handoff proof fails closed withou
 	invalidCtx.compactOptions.onComplete({});
 	await invalidPi.events.get("session_compact")({
 		fromExtension: true,
-		compactionEntry: { id: "invalid", summary: "invalid summary", details: { kind: "pi-continue/v3", readFiles: [] } },
+		compactionEntry: { id: "invalid", summary: "invalid summary", details: { kind: "pi-continue/v4", readFiles: [] } },
 	}, invalidCtx);
 	assert.deepEqual(invalidPi.sent, []);
 	assert.equal(invalidCtx.statusCalls.at(-1), "pi-continue: failed");
@@ -447,7 +440,7 @@ test("session_compact native or invalid active handoff proof fails closed withou
 		compactionEntry: {
 			id: "stale",
 			summary: "<continuation>\nstale summary\n</continuation>",
-			details: { kind: "pi-continue/v3", readFiles: [], modifiedFiles: [], continuationEventId: "continue-stale" },
+			details: { kind: "pi-continue/v4", readFiles: [], modifiedFiles: [], continuationEventId: "continue-stale" },
 		},
 	}, staleCtx);
 	assert.deepEqual(stalePi.sent, []);
@@ -468,7 +461,7 @@ test("session_compact unsupported automatic ledger overlay reports the degraded 
 		compactionEntry: {
 			id: "compact-1",
 			summary: "<continuation>\nledger body\n</continuation>",
-			details: { kind: "pi-continue/v3", readFiles: [], modifiedFiles: [] },
+			details: { kind: "pi-continue/v4", readFiles: [], modifiedFiles: [] },
 		},
 	}, ctx);
 	await new Promise((resolve) => setTimeout(resolve, 0));
@@ -493,7 +486,7 @@ test("stale session_compact does not replace the latest owned ledger", async () 
 		compactionEntry: {
 			id: "compact-1",
 			summary: "<continuation>\nfirst ledger\n</continuation>",
-			details: { kind: "pi-continue/v3", readFiles: [], modifiedFiles: [], continuationEventId: "continue-1" },
+			details: { kind: "pi-continue/v4", readFiles: [], modifiedFiles: [], continuationEventId: "continue-1" },
 		},
 	}, ctx);
 	await pi.events.get("session_compact")({
@@ -501,7 +494,7 @@ test("stale session_compact does not replace the latest owned ledger", async () 
 		compactionEntry: {
 			id: "compact-stale",
 			summary: "<continuation>\nstale ledger\n</continuation>",
-			details: { kind: "pi-continue/v3", readFiles: [], modifiedFiles: [], continuationEventId: "continue-stale" },
+			details: { kind: "pi-continue/v4", readFiles: [], modifiedFiles: [], continuationEventId: "continue-stale" },
 		},
 	}, ctx);
 	await pi.commands.get("continue").handler("ledger", ctx);
@@ -524,7 +517,7 @@ test("session_compact ledger display is transient UI and does not send a continu
 		compactionEntry: {
 			id: "compact-1",
 			summary: "<continuation>\nledger body\n</continuation>",
-			details: { kind: "pi-continue/v3", readFiles: [], modifiedFiles: [] },
+			details: { kind: "pi-continue/v4", readFiles: [], modifiedFiles: [] },
 		},
 	}, ctx);
 	await new Promise((resolve) => setTimeout(resolve, 0));
@@ -537,12 +530,13 @@ test("session_before_compact and session_compact write configured documents only
 	const faux = registerFauxProvider();
 	try {
 		writeAlwaysSyncConfig(cwd);
-		faux.setResponses([fauxAssistantMessage(continuationArtifactJson("# Agent Guide\n\nDurable rule.\n")), fauxAssistantMessage("raw split prefix")]);
+		faux.setResponses([fauxAssistantMessage(continuationArtifactJson("# Agent Guide\n\nDurable rule.\n"))]);
 		const pi = createFakePi(cwd);
 		const ctx = createCommandContext(cwd, async () => undefined);
 		ctx.model = faux.models[0];
 		ctx.modelRegistry.getApiKeyAndHeaders = async () => ({ ok: true, apiKey: "test", headers: {} });
 		registerContinueExtension(pi);
+		await pi.commands.get("continue").handler("steer", ctx);
 		const result = await pi.events.get("session_before_compact")(compactionEvent({
 			isSplitTurn: true,
 			turnPrefixMessages: [{ role: "user", content: [{ type: "text", text: "split turn prefix" }], timestamp: 0 }],
@@ -551,8 +545,8 @@ test("session_before_compact and session_compact write configured documents only
 		assert.equal(existsSync(join(cwd, "AGENTS.md")), false);
 		assert.deepEqual(pi.sent, []);
 		const summary = result.compaction.summary;
-		assert.equal(summary.match(/<split-prefix>/g)?.length, 1);
-		assert.match(summary, /<split-prefix>\nraw split prefix\n<\/split-prefix>/);
+		assert.doesNotMatch(summary, /<split-prefix>/);
+		assert.match(summary, /<continuation>/);
 		await pi.events.get("session_compact")({
 			fromExtension: true,
 			compactionEntry: {
@@ -561,7 +555,9 @@ test("session_before_compact and session_compact write configured documents only
 				details: result.compaction.details,
 			},
 		}, ctx);
-		assert.match(readFileSync(join(cwd, "CONTINUE.md"), "utf8"), /# Continuation/);
+		const continueContent = readFileSync(join(cwd, "CONTINUE.md"), "utf8");
+		assert.match(continueContent, /## Task\nContinue the task\./);
+		assert.match(continueContent, /## Established/);
 		assert.match(readFileSync(join(cwd, "AGENTS.md"), "utf8"), /Durable rule/);
 		assert.deepEqual(pi.sent, []);
 	} finally {
@@ -581,6 +577,7 @@ test("session_before_compact fails closed when ledger synthesis cannot authentic
 			error: "provider auth failed",
 		});
 		registerContinueExtension(pi);
+		await pi.commands.get("continue").handler("steer", ctx);
 		const result = await pi.events.get("session_before_compact")(compactionEvent(), ctx);
 		assert.deepEqual(result, { cancel: true });
 		assertNoFailedSynthesisSideEffects(cwd, pi);
@@ -600,6 +597,7 @@ test("session_before_compact fails closed when history artifacts are malformed",
 		ctx.model = faux.models[0];
 		ctx.modelRegistry.getApiKeyAndHeaders = async () => ({ ok: true, apiKey: "test", headers: {} });
 		registerContinueExtension(pi);
+		await pi.commands.get("continue").handler("steer", ctx);
 		const result = await pi.events.get("session_before_compact")(compactionEvent(), ctx);
 		assert.deepEqual(result, { cancel: true });
 		assertNoFailedSynthesisSideEffects(cwd, pi);
@@ -609,21 +607,43 @@ test("session_before_compact fails closed when history artifacts are malformed",
 	}
 });
 
-test("session_before_compact fails closed when split-prefix output is empty", async () => {
-	const cwd = mkdtempSync(join(tmpdir(), "pi-continue-hard-fail-"));
+test("session_before_compact opts out when no extension-owned continuation event is active", async () => {
+	const cwd = mkdtempSync(join(tmpdir(), "pi-continue-optout-"));
+	try {
+		writeAlwaysSyncConfig(cwd);
+		const pi = createFakePi(cwd);
+		const ctx = createCommandContext(cwd, async () => undefined);
+		registerContinueExtension(pi);
+		const result = await pi.events.get("session_before_compact")(compactionEvent(), ctx);
+		assert.equal(result, undefined);
+		assert.deepEqual(pi.sent, []);
+		assert.equal(existsSync(join(cwd, "CONTINUE.md")), false);
+		assert.equal(existsSync(join(cwd, "AGENTS.md")), false);
+	} finally {
+		rmSync(cwd, { recursive: true, force: true });
+	}
+});
+
+test("session_before_compact rejects retired v3 envelope from the synthesizer", async () => {
+	const cwd = mkdtempSync(join(tmpdir(), "pi-continue-v3-reject-"));
 	const faux = registerFauxProvider();
 	try {
 		writeAlwaysSyncConfig(cwd);
-		faux.setResponses([fauxAssistantMessage(continuationArtifactJson()), fauxAssistantMessage("\n\t")]);
+		const v3Envelope = JSON.stringify({
+			version: "pi-continue-artifacts/v3",
+			brief: { task: "x" },
+			document: { task: "x" },
+			agentGuideMarkdown: null,
+			agentGuideChangeReason: "v3 shape",
+		});
+		faux.setResponses([fauxAssistantMessage(v3Envelope)]);
 		const pi = createFakePi(cwd);
 		const ctx = createCommandContext(cwd, async () => undefined);
 		ctx.model = faux.models[0];
 		ctx.modelRegistry.getApiKeyAndHeaders = async () => ({ ok: true, apiKey: "test", headers: {} });
 		registerContinueExtension(pi);
-		const result = await pi.events.get("session_before_compact")(compactionEvent({
-			isSplitTurn: true,
-			turnPrefixMessages: [{ role: "user", content: [{ type: "text", text: "split turn prefix" }], timestamp: 0 }],
-		}), ctx);
+		await pi.commands.get("continue").handler("steer", ctx);
+		const result = await pi.events.get("session_before_compact")(compactionEvent(), ctx);
 		assert.deepEqual(result, { cancel: true });
 		assertNoFailedSynthesisSideEffects(cwd, pi);
 	} finally {

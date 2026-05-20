@@ -1,91 +1,59 @@
 import type { ParsedHistoryArtifacts } from "./types.ts";
 
-const HISTORY_ARTIFACT_VERSION = "pi-continue-artifacts/v3";
+const HISTORY_ARTIFACT_VERSION = "pi-continue-artifacts/v4";
 
-const DURABLE_PROMOTION_STATUSES = new Set<string>([
-	"apply",
-	"reject",
-	"defer",
-	"already-covered",
-	"none",
+const ESTABLISHED_BASIS = new Set<string>([
+	"observed",
+	"test",
+	"output",
+	"user",
+	"doc",
 ]);
 
-const RECENCY_LEDGER_STATUSES = new Set<string>([
-	"active",
-	"amended",
-	"superseded",
-	"stale",
-	"confirmed",
-	"unknown",
-]);
+const HISTORY_ARTIFACT_KEYS = ["version", "brief", "agentGuideUpdate"] as const;
+const BRIEF_KEYS = ["task", "done_when", "forbid", "established", "learned", "open", "next"] as const;
+const FORBID_KEYS = ["rule", "source"] as const;
+const ESTABLISHED_KEYS = ["claim", "evidence", "basis", "reopen"] as const;
+const LEARNED_KEYS = ["lesson", "source"] as const;
+const OPEN_KEYS = ["question", "verifies"] as const;
+const NEXT_KEYS = ["action", "outcome"] as const;
+const AGENT_GUIDE_UPDATE_KEYS = ["content", "reason"] as const;
 
-const HISTORY_ARTIFACT_KEYS = ["version", "brief", "document", "agentGuideMarkdown", "agentGuideChangeReason"] as const;
-const STRUCTURED_CONTINUATION_KEYS = [
-	"task",
-	"initiativeCharter",
-	"definitionOfDone",
-	"recencyLedger",
-	"currentPlan",
-	"progress",
-	"state",
-	"decisions",
-	"contextMap",
-	"workingEdge",
-	"validation",
-	"risks",
-	"dormantContext",
-	"retiredContext",
-	"antiRework",
-	"durableLearnings",
-	"durablePromotions",
-	"agentGuideUpdates",
-] as const;
-const CONTEXT_MAP_KEYS = ["source", "relevance", "use"] as const;
-const DURABLE_PROMOTION_KEYS = ["status", "targetSurface", "proposal", "evidence", "durability", "risk", "nextAction"] as const;
-const RECENCY_LEDGER_KEYS = ["status", "subject", "evidence", "resolution"] as const;
-
-interface ContextMapEntry {
+interface ForbidEntry {
+	rule: string;
 	source: string;
-	relevance: string;
-	use: string;
 }
 
-interface DurablePromotion {
-	status: string;
-	targetSurface: string;
-	proposal: string;
+interface EstablishedEntry {
+	claim: string;
 	evidence: string;
-	durability: string;
-	risk: string;
-	nextAction: string;
+	basis: string;
+	reopen: string;
 }
 
-interface RecencyLedgerEntry {
-	status: string;
-	subject: string;
-	evidence: string;
-	resolution: string;
+interface LearnedEntry {
+	lesson: string;
+	source: string;
 }
 
-interface StructuredContinuation {
+interface OpenEntry {
+	question: string;
+	verifies: string;
+}
+
+interface NextEntry {
+	action: string;
+	outcome: string;
+}
+
+interface BriefEnvelope {
 	task: string;
-	initiativeCharter: string[];
-	definitionOfDone: string[];
-	recencyLedger: RecencyLedgerEntry[];
-	currentPlan: string[];
-	progress: string[];
-	state: string[];
-	decisions: string[];
-	contextMap: ContextMapEntry[];
-	workingEdge: string[];
-	validation: string[];
-	risks: string[];
-	dormantContext: string[];
-	retiredContext: string[];
-	antiRework: string[];
-	durableLearnings: string[];
-	durablePromotions: DurablePromotion[];
-	agentGuideUpdates: string[];
+	done_when: string;
+	forbid: ForbidEntry[];
+	established: EstablishedEntry[];
+	learned: LearnedEntry[];
+	open: OpenEntry[];
+	next: NextEntry[];
 }
 
 function escapeTag(tag: string): string {
@@ -113,163 +81,123 @@ function nullableString(value: unknown): string | undefined {
 	return value === null ? undefined : nonEmptyString(value);
 }
 
-function stringList(value: unknown): string[] | undefined {
+// Collapse any newlines and embedded markdown bullet markers in a per-entry field
+// to a single space, so the rendered brief stays one-bullet-per-entry and the next
+// synthesizer cannot re-atomize sub-lines the synthesizer accidentally embedded.
+function singleLineString(value: unknown): string | undefined {
+	if (typeof value !== "string") return undefined;
+	const collapsed = value
+		.split(/\r?\n/)
+		.map((line) => line.replace(/^\s*[-*]\s+/, "").trim())
+		.filter((line) => line.length > 0)
+		.join(" ")
+		.replace(/\s+/g, " ")
+		.trim();
+	return collapsed.length > 0 ? collapsed : undefined;
+}
+
+function parseForbidEntry(value: unknown): ForbidEntry | undefined {
+	if (!isRecord(value) || !hasExactKeys(value, FORBID_KEYS)) return undefined;
+	const rule = singleLineString(value.rule);
+	const source = singleLineString(value.source);
+	if (!rule || !source) return undefined;
+	return { rule, source };
+}
+
+function parseEstablishedEntry(value: unknown): EstablishedEntry | undefined {
+	if (!isRecord(value) || !hasExactKeys(value, ESTABLISHED_KEYS)) return undefined;
+	const claim = singleLineString(value.claim);
+	const evidence = singleLineString(value.evidence);
+	const basis = singleLineString(value.basis);
+	const reopen = singleLineString(value.reopen);
+	if (!claim || !evidence || !basis || !reopen) return undefined;
+	if (!ESTABLISHED_BASIS.has(basis)) return undefined;
+	return { claim, evidence, basis, reopen };
+}
+
+function parseLearnedEntry(value: unknown): LearnedEntry | undefined {
+	if (!isRecord(value) || !hasExactKeys(value, LEARNED_KEYS)) return undefined;
+	const lesson = singleLineString(value.lesson);
+	const source = singleLineString(value.source);
+	if (!lesson || !source) return undefined;
+	return { lesson, source };
+}
+
+function parseOpenEntry(value: unknown): OpenEntry | undefined {
+	if (!isRecord(value) || !hasExactKeys(value, OPEN_KEYS)) return undefined;
+	const question = singleLineString(value.question);
+	const verifies = singleLineString(value.verifies);
+	if (!question || !verifies) return undefined;
+	return { question, verifies };
+}
+
+function parseNextEntry(value: unknown): NextEntry | undefined {
+	if (!isRecord(value) || !hasExactKeys(value, NEXT_KEYS)) return undefined;
+	const action = singleLineString(value.action);
+	const outcome = singleLineString(value.outcome);
+	if (!action || !outcome) return undefined;
+	return { action, outcome };
+}
+
+function parseEntryArray<T>(value: unknown, parseEntry: (entry: unknown) => T | undefined): T[] | undefined {
 	if (!Array.isArray(value)) return undefined;
-	const result: string[] = [];
+	const result: T[] = [];
 	for (const entry of value) {
-		const trimmed = nonEmptyString(entry);
-		if (!trimmed) return undefined;
-		result.push(trimmed);
+		const parsed = parseEntry(entry);
+		if (!parsed) return undefined;
+		result.push(parsed);
 	}
 	return result;
 }
 
-function parseContextMap(value: unknown): ContextMapEntry[] | undefined {
-	if (!Array.isArray(value)) return undefined;
-	const result: ContextMapEntry[] = [];
-	for (const entry of value) {
-		if (!isRecord(entry) || !hasExactKeys(entry, CONTEXT_MAP_KEYS)) return undefined;
-		const source = nonEmptyString(entry.source);
-		const relevance = nonEmptyString(entry.relevance);
-		const use = nonEmptyString(entry.use);
-		if (!source || !relevance || !use) return undefined;
-		result.push({ source, relevance, use });
-	}
-	return result;
+function parseBriefEnvelope(value: unknown): BriefEnvelope | undefined {
+	if (!isRecord(value) || !hasExactKeys(value, BRIEF_KEYS)) return undefined;
+	const task = singleLineString(value.task);
+	const done_when = singleLineString(value.done_when);
+	if (!task || !done_when) return undefined;
+	const forbid = parseEntryArray(value.forbid, parseForbidEntry);
+	const established = parseEntryArray(value.established, parseEstablishedEntry);
+	const learned = parseEntryArray(value.learned, parseLearnedEntry);
+	const open = parseEntryArray(value.open, parseOpenEntry);
+	const next = parseEntryArray(value.next, parseNextEntry);
+	if (!forbid || !established || !learned || !open || !next) return undefined;
+	return { task, done_when, forbid, established, learned, open, next };
 }
 
-function parseDurablePromotions(value: unknown): DurablePromotion[] | undefined {
-	if (!Array.isArray(value)) return undefined;
-	const result: DurablePromotion[] = [];
-	for (const entry of value) {
-		if (!isRecord(entry) || !hasExactKeys(entry, DURABLE_PROMOTION_KEYS)) return undefined;
-		const status = nonEmptyString(entry.status);
-		const targetSurface = nonEmptyString(entry.targetSurface);
-		const proposal = nonEmptyString(entry.proposal);
-		const evidence = nonEmptyString(entry.evidence);
-		const durability = nonEmptyString(entry.durability);
-		const risk = nonEmptyString(entry.risk);
-		const nextAction = nonEmptyString(entry.nextAction);
-		if (!status || !DURABLE_PROMOTION_STATUSES.has(status) || !targetSurface || !proposal || !evidence || !durability || !risk || !nextAction) {
-			return undefined;
-		}
-		result.push({ status, targetSurface, proposal, evidence, durability, risk, nextAction });
-	}
-	return result;
+function renderEntrySection<T>(title: string, entries: T[], renderEntry: (entry: T) => string): string | undefined {
+	if (entries.length === 0) return undefined;
+	return [`## ${title}`, ...entries.map(renderEntry)].join("\n");
 }
 
-function parseRecencyLedger(value: unknown): RecencyLedgerEntry[] | undefined {
-	if (!Array.isArray(value)) return undefined;
-	const result: RecencyLedgerEntry[] = [];
-	for (const entry of value) {
-		if (!isRecord(entry) || !hasExactKeys(entry, RECENCY_LEDGER_KEYS)) return undefined;
-		const status = nonEmptyString(entry.status);
-		const subject = nonEmptyString(entry.subject);
-		const evidence = nonEmptyString(entry.evidence);
-		const resolution = nonEmptyString(entry.resolution);
-		if (!status || !RECENCY_LEDGER_STATUSES.has(status) || !subject || !evidence || !resolution) {
-			return undefined;
-		}
-		result.push({ status, subject, evidence, resolution });
-	}
-	return result.length > 0 ? result : undefined;
+function renderForbidEntry(entry: ForbidEntry): string {
+	return `- ${entry.rule} — source: ${entry.source}`;
 }
 
-function parseStructuredContinuation(value: unknown): StructuredContinuation | undefined {
-	if (!isRecord(value) || !hasExactKeys(value, STRUCTURED_CONTINUATION_KEYS)) return undefined;
-	const task = nonEmptyString(value.task);
-	const initiativeCharter = stringList(value.initiativeCharter);
-	const definitionOfDone = stringList(value.definitionOfDone);
-	const recencyLedger = parseRecencyLedger(value.recencyLedger);
-	const currentPlan = stringList(value.currentPlan);
-	const progress = stringList(value.progress);
-	const state = stringList(value.state);
-	const decisions = stringList(value.decisions);
-	const contextMap = parseContextMap(value.contextMap);
-	const workingEdge = stringList(value.workingEdge);
-	const validation = stringList(value.validation);
-	const risks = stringList(value.risks);
-	const dormantContext = stringList(value.dormantContext);
-	const retiredContext = stringList(value.retiredContext);
-	const antiRework = stringList(value.antiRework);
-	const durableLearnings = stringList(value.durableLearnings);
-	const durablePromotions = parseDurablePromotions(value.durablePromotions);
-	const agentGuideUpdates = stringList(value.agentGuideUpdates);
-	if (!task || !initiativeCharter || !definitionOfDone || !recencyLedger || !currentPlan || !progress || !state || !decisions || !contextMap || !workingEdge || !validation || !risks || !dormantContext || !retiredContext || !antiRework || !durableLearnings || !durablePromotions || !agentGuideUpdates) {
-		return undefined;
-	}
-	return {
-		task,
-		initiativeCharter,
-		definitionOfDone,
-		recencyLedger,
-		currentPlan,
-		progress,
-		state,
-		decisions,
-		contextMap,
-		workingEdge,
-		validation,
-		risks,
-		dormantContext,
-		retiredContext,
-		antiRework,
-		durableLearnings,
-		durablePromotions,
-		agentGuideUpdates,
-	};
+function renderEstablishedEntry(entry: EstablishedEntry): string {
+	return `- ${entry.claim} — evidence: ${entry.evidence}; basis: ${entry.basis}; reopen: ${entry.reopen}`;
 }
 
-function renderStringSection(title: string, values: string[]): string | undefined {
-	if (values.length === 0) return undefined;
-	return [`## ${title}`, ...values.map((value) => `- ${value}`)].join("\n");
+function renderLearnedEntry(entry: LearnedEntry): string {
+	return `- ${entry.lesson} — source: ${entry.source}`;
 }
 
-function renderContextMap(values: ContextMapEntry[]): string | undefined {
-	if (values.length === 0) return undefined;
-	return [
-		`## Context Map`,
-		...values.map((entry) => `- ${entry.source} — ${entry.relevance}; use it to ${entry.use}.`),
-	].join("\n");
+function renderOpenEntry(entry: OpenEntry): string {
+	return `- ${entry.question} — verifies: ${entry.verifies}`;
 }
 
-function renderDurablePromotions(values: DurablePromotion[]): string | undefined {
-	if (values.length === 0) return undefined;
-	return [
-		`## Durable Promotions`,
-		...values.map((entry) => `- ${entry.status}: ${entry.targetSurface} — ${entry.proposal}; evidence: ${entry.evidence}; durability: ${entry.durability}; risk: ${entry.risk}; next: ${entry.nextAction}`),
-	].join("\n");
+function renderNextEntry(entry: NextEntry): string {
+	return `- ${entry.action} → ${entry.outcome}`;
 }
 
-function renderRecencyLedger(values: RecencyLedgerEntry[]): string | undefined {
-	if (values.length === 0) return undefined;
-	return [
-		`## Recency And Supersession`,
-		...values.map((entry) => `- ${entry.status}: ${entry.subject} — evidence: ${entry.evidence}; resolution: ${entry.resolution}`),
-	].join("\n");
-}
-
-function renderStructuredContinuation(value: StructuredContinuation, title: string | undefined): string {
+function renderBriefEnvelope(brief: BriefEnvelope): string {
 	const sections = [
-		title,
-		`## Task\n${value.task}`,
-		renderStringSection("Initiative Charter", value.initiativeCharter),
-		renderStringSection("Definition Of Done", value.definitionOfDone),
-		renderRecencyLedger(value.recencyLedger),
-		renderStringSection("Current Plan", value.currentPlan),
-		renderStringSection("Progress And Milestone Trail", value.progress),
-		renderStringSection("Current State", value.state),
-		renderStringSection("Decisions and Constraints", value.decisions),
-		renderContextMap(value.contextMap),
-		renderStringSection("Working Edge", value.workingEdge),
-		renderStringSection("Validation", value.validation),
-		renderStringSection("Risks", value.risks),
-		renderStringSection("Dormant But Important", value.dormantContext),
-		renderStringSection("Retired Or Obsolete", value.retiredContext),
-		renderStringSection("Anti-Rework", value.antiRework),
-		renderStringSection("Durable Learnings", value.durableLearnings),
-		renderDurablePromotions(value.durablePromotions),
-		renderStringSection("Agent Guide Updates", value.agentGuideUpdates),
+		`## Task\n${brief.task}`,
+		`## Done When\n${brief.done_when}`,
+		renderEntrySection("Forbid", brief.forbid, renderForbidEntry),
+		renderEntrySection("Established", brief.established, renderEstablishedEntry),
+		renderEntrySection("Learned", brief.learned, renderLearnedEntry),
+		renderEntrySection("Open", brief.open, renderOpenEntry),
+		renderEntrySection("Next", brief.next, renderNextEntry),
 	].filter((section): section is string => section !== undefined && section.length > 0);
 	return sections.join("\n\n");
 }
@@ -293,25 +221,17 @@ export function parseHistoryArtifacts(text: string): ParsedHistoryArtifacts | un
 	}
 	if (!isRecord(parsed) || !hasExactKeys(parsed, HISTORY_ARTIFACT_KEYS)) return undefined;
 	if (parsed.version !== HISTORY_ARTIFACT_VERSION) return undefined;
-	const brief = parseStructuredContinuation(parsed.brief);
-	const document = parseStructuredContinuation(parsed.document);
-	const agentGuideMd = nullableString(parsed.agentGuideMarkdown);
-	const agentGuideChangeReason = nonEmptyString(parsed.agentGuideChangeReason);
-	if (!brief || !document || !agentGuideChangeReason) return undefined;
-	if (parsed.agentGuideMarkdown !== null && agentGuideMd === undefined) return undefined;
+	const brief = parseBriefEnvelope(parsed.brief);
+	if (!brief) return undefined;
+	if (!isRecord(parsed.agentGuideUpdate) || !hasExactKeys(parsed.agentGuideUpdate, AGENT_GUIDE_UPDATE_KEYS)) return undefined;
+	const rawContent = parsed.agentGuideUpdate.content;
+	if (rawContent !== null && nonEmptyString(rawContent) === undefined) return undefined;
+	const agentGuideMd = rawContent === null ? undefined : nullableString(rawContent);
+	const agentGuideChangeReason = nonEmptyString(parsed.agentGuideUpdate.reason);
+	if (!agentGuideChangeReason) return undefined;
 	return {
-		continuation: renderStructuredContinuation(brief, undefined),
-		continuationMd: renderStructuredContinuation(document, "# Continuation"),
+		briefMarkdown: renderBriefEnvelope(brief),
 		agentGuideMd,
 		agentGuideChangeReason,
 	};
-}
-
-/** Parse the raw split-prefix response; wrapper tags and Markdown fences are invalid because the renderer owns the saved tag. */
-export function parseSplitPrefix(text: string): string | undefined {
-	const trimmed = text.trim();
-	if (trimmed.length === 0) return undefined;
-	if (/<\/?split-prefix\b/i.test(trimmed)) return undefined;
-	if (/(^|\n)\s*(?:`{3,}|~{3,})/.test(trimmed)) return undefined;
-	return trimmed;
 }

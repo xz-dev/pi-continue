@@ -87,9 +87,9 @@ function ledgerLabel(event: ContinuationLatestEvent): string {
 }
 
 function compactionProofLabel(event: ContinuationLatestEvent): string {
-	if (event.compactionProof.status === "verified") return `verified package-owned pi-continue/v3 compaction${event.compactionProof.compactionEntryId ? ` (${event.compactionProof.compactionEntryId})` : ""}`;
+	if (event.compactionProof.status === "verified") return `verified package-owned pi-continue/v4 compaction${event.compactionProof.compactionEntryId ? ` (${event.compactionProof.compactionEntryId})` : ""}`;
 	if (event.compactionProof.status === "failed") return "missing or invalid package-owned compaction proof";
-	return "waiting for package-owned pi-continue/v3 compaction proof";
+	return "waiting for package-owned pi-continue/v4 compaction proof";
 }
 
 function syncLabel(status: ContinuationSyncStatus): string {
@@ -206,7 +206,6 @@ export function renderStatus(
 	const piCompactionSettings = readEffectivePiCompactionSettings(projectRoot);
 	const modelDescription = describeModel(config, ctx);
 	const historyBudget = resolveTokenBudget(piCompactionSettings.reserveTokens, config.historyMaxTokens, "history");
-	const splitBudget = resolveTokenBudget(piCompactionSettings.reserveTokens, config.splitPrefixMaxTokens, "split");
 	const lines = [
 		`# Continuation Status`,
 		``,
@@ -217,7 +216,6 @@ export function renderStatus(
 		`- Handoff model: ${config.summarizerModel} -> ${modelDescription}`,
 		`- Reasoning: ${config.reasoning}`,
 		`- History budget: ${config.historyMaxTokens ?? `Pi default (${historyBudget})`}`,
-		`- Split-prefix budget: ${config.splitPrefixMaxTokens ?? `Pi default (${splitBudget})`}`,
 		`- Continuation file: ${continuationDocPath}`,
 		`- Save continuation file: ${config.continuationDocSyncMode}`,
 		`- Agent guide: ${agentGuidePath}`,
@@ -225,9 +223,10 @@ export function renderStatus(
 		`- Agent guide writes: ${config.agentGuideSyncMode === "always" ? "full replacement only" : "off"}`,
 		`- Automatic mid-run continuation: ${config.midRunGuardEnabled ? "yes" : "no"}`,
 		`- Append compaction metadata: ${config.appendCompactionMetadata ? "yes" : "no"}`,
-		`- Append file tags: ${config.appendFileTags ? "yes" : "no"}`,
+		`- Append read file tags: ${config.appendReadFileTags ? "yes" : "no"}`,
+		`- Append modified file tags: ${config.appendModifiedFileTags ? "yes" : "no"}`,
 		`- Prompt override policy: ${config.promptOverridePolicy}`,
-		`- Ledger display: ${config.ledgerDisplayMode}`,
+		`- Show brief after compaction: ${config.showAfterCompact ? "yes" : "no"}`,
 		``,
 		`## Pi Core Compaction`,
 		`- Enabled: ${piCompactionSettings.enabled ? "yes" : "no"}`,
@@ -237,8 +236,8 @@ export function renderStatus(
 		``,
 		`## What Can Change`,
 		`- Continuation file sync writes the rendered continuation document when set to always.`,
-		`- Agent guide sync writes only full agentGuideMarkdown replacements to the configured guide; candidates do not modify files.`,
-		`- Durable promotions are normal-work proposals, not proof that a file was written.`,
+		`- Agent guide sync writes only full agentGuideUpdate.content replacements to the configured guide; candidates do not modify files.`,
+		`- Brief entries guide the receiver; they are not proof that files were written.`,
 		`- Ledger display is temporary UI only; it does not append a session message.`,
 		``,
 		`## Project`,
@@ -248,8 +247,6 @@ export function renderStatus(
 		payload ? `- History prompt system: ${payload.history.sources.system}` : undefined,
 		payload ? `- History prompt base: ${payload.history.sources.baseUser}` : undefined,
 		payload ? `- History prompt scenario: ${payload.history.sources.scenarioUser}` : undefined,
-		payload?.split ? `- Split prompt system: ${payload.split.sources.system}` : undefined,
-		payload?.split ? `- Split prompt scenario: ${payload.split.sources.scenarioUser}` : undefined,
 	].filter((line): line is string => line !== undefined);
 	return `${lines.join("\n")}\n`;
 }

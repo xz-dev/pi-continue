@@ -1,29 +1,30 @@
-Use the base Pi Continuation Ledger contract as the quality bar for both structured artifacts.
+# Update cycle
 
-You are updating an existing continuation checkpoint and repo-local continuation document.
+You are updating an existing continuation. `<previous-compaction-summary>` contains the prior `brief` rendered as Markdown sections (Task, Done When, Forbid, Established, Learned, Open, Next) — this is the durable spine. Each entry there is a tattoo the agent already wears.
 
-## Durable continuation document contract
+## What changes vs what carries forward
 
-- It replaces the configured repo-local continuation document in full after runtime rendering.
-- It is broader and more stable than `brief`.
-- It should merge still-correct durable material from the existing continuation document with the new history.
-- It should remove stale, contradicted, or already-resolved guidance unless it remains useful as retired context, anti-rework, durable learning, or durable promotion evidence.
-- It should preserve stable objectives, initiative charter, definition of done, active request recency, plan of record, progress rationale, decisions, constraints, implementation truth, dormant-but-important facts, retired/obsolete context, durable risks, `durableLearnings`, `durablePromotions`, `agentGuideUpdates`, and next execution edges.
-- It should apply the same Evidence Gate as `brief`: keep only details that still affect future action, validation, safety, context routing, durable promotion, or durable operating guidance.
-- Its `contextMap` should identify sources whose absence would likely cause rework, risk, or a wrong decision.
-- Its `workingEdge` should explain how to resume work without reducing the artifact to one brittle next step.
-- Its `durablePromotions` should carry forward unresolved non-`none` promotions until they are applied, rejected, deferred with a new next action, or proven already covered.
-- It should not impose or mention a numeric reading quota.
-- It should remove transient chat noise, provenance-only details, files read only for discovery, duplicated phrasing, and retired assumptions that no longer affect future behavior.
-- Its `recencyLedger` must contain at least one entry and should mark older plan/await-direction state as superseded or stale when a newer user request creates allowed work before irreversible release approval.
-- It should stand on its own for a future agent opening this repo later.
-- It should be grounded in the supplied previous summary, existing continuation document, existing agent guide, and new history only.
+**Universal rule**: every carrying-forward slot (`forbid`, `established`, `learned`, `open`, `next`) retires entries only via a traceable, anchored cause that is self-evident from this cycle's added entries. **Silent drops are the cardinal sin in every slot.** If you cannot point at the cause, you carry forward verbatim.
 
-## Agent guide candidate contract
+- `task` and `done_when` carry forward from the prior brief unless the human redirected scope in `<history-to-summarize>` or `<turn-prefix-messages>`.
+- `forbid` carries forward verbatim. Add new prohibitions from the new transcript. Retire only on explicit human retraction.
+- `established`: for each prior entry, evaluate its `reopen` clause against this cycle's evidence. If triggered, demote to `open` with a precise `verifies` plan. If not triggered, copy forward unchanged. Then promote: for every newly anchored observation in the new transcript, add one `established` entry. If you cannot demote via a triggered `reopen`, the entry carries forward verbatim.
+- `learned`: carry prior entries forward. Retire only by supersession (cite the supersession in `source`) or explicit human retraction. Add new insights from this cycle's experience.
+- `open`: an entry retires only when (a) a matching `established` you added this cycle anchors the answer, (b) a matching `learned` you added this cycle supersedes the question, or (c) the human explicitly retracted it. Otherwise carry forward verbatim. **Apparent overlap is not closure** — two adjacent findings that touch the same file or area are still two findings until each has its own closure trace. Conflation is the disguise silent drops most often wear. Then add new unresolved questions.
+- `next`: an entry retires only when the action was applied this cycle in a way you can point to (typically a matching `established` was added whose evidence anchors the outcome). Otherwise carry forward. Add new actions; reorder so `next[0]` is the immediate resume action.
 
-- Preserve still-correct guide content when no durable rule changes.
-- If the configured agent guide should change, set `agentGuideMarkdown` to the full replacement content for the configured guide path.
-- Use `agentGuideUpdates` for candidate notes; candidate notes do not write the configured guide without non-null `agentGuideMarkdown`.
-- If no durable operating rule should change, set `agentGuideMarkdown` to null and explain why in `agentGuideChangeReason`.
-- Candidate guide changes should be active refinements or corrections, not a transcript summary.
-- Do not use `durablePromotions` to imply the configured guide was written; it is a normal-work resolution surface.
+Do not append a new layer alongside the prior brief. Produce one reconciled replacement.
+
+## Agent guide
+
+If a durable operating rule should change AGENTS.md, emit the full replacement in `agentGuideUpdate.content`. Otherwise set `content` to `null`. In either case explain why in `reason`. Active-task learnings stay in the brief's `learned`; only repo-wide rules, stable human preferences, corrected command truth, or reusable procedures belong in the agent guide.
+
+If `<existing-agent-guide>` has content and your `content` is non-null, your replacement must be a complete guide, not a patch — preserve still-correct material and integrate the new rules.
+
+## Inputs to read
+
+- `<previous-compaction-summary>` — the prior brief; the durable spine.
+- `<history-to-summarize>` and `<turn-prefix-messages>` — the new transcript material.
+- `<file-operations>` — files read or modified during this cycle (signal, not evidence).
+- `<existing-agent-guide>` — prior agent guide, if any.
+- `<custom-instructions>` — operator guidance for this run, if any.

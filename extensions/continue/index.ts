@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { loadHistoryPromptAssets, loadSplitPromptAssets } from "./src/assets.ts";
-import { parseHistoryArtifacts, parseSplitPrefix } from "./src/blocks.ts";
+import { loadHistoryPromptAssets } from "./src/assets.ts";
+import { parseHistoryArtifacts } from "./src/blocks.ts";
 import { splitContinueSubcommand, shouldOpenContinuePalette } from "./src/command-shape.ts";
 import { runContinuePaletteResult, runEnabledContinuationCommand } from "./src/command-runner.ts";
 import { runLedgerCommand, runPreviewCommand, runResetCommand, runSettingsDialog, runStatusCommand } from "./src/commands.ts";
@@ -27,7 +27,7 @@ import { buildLedgerSnapshot, showContinuationLedgerOverlaySoon } from "./src/le
 import { runMidRunGuard } from "./src/mid-run-guard.ts";
 import { resolveTokenBudget, runPromptPass } from "./src/model.ts";
 import { loadPiInternals } from "./src/pi-internals.ts";
-import { compileHistoryPrompt, compileSplitPrompt } from "./src/prompt.ts";
+import { compileHistoryPrompt } from "./src/prompt.ts";
 import { resolveProjectContext, writeRepoDocument } from "./src/project.ts";
 import { isContinuationPromptUserMessage } from "./src/prompt-dispatch.ts";
 import { showContinuePalette } from "./src/palette.ts";
@@ -195,6 +195,7 @@ export default function (pi: ExtensionAPI) {
 		const projectContext = await resolveProjectContext(pi, ctx.cwd, "CONTINUE.md");
 		const config = loadContinuationConfig(projectContext.projectRoot);
 		if (!config.enabled) return undefined;
+		if (getActiveContinuationEventId(runtime) === undefined) return undefined;
 		const resolvedProjectContext = await resolveProjectContext(pi, ctx.cwd, config.continuationDocPath, config.agentGuidePath);
 		const preparation = normalizeCompactionPreparation(event.preparation, event.branchEntries);
 		if (preparation.repairedNoOpCut && ctx.hasUI) {
@@ -202,6 +203,17 @@ export default function (pi: ExtensionAPI) {
 		}
 		const fileOpsSnapshot = snapshotFileOperations(preparation.fileOps);
 		const internals = await loadPiInternals();
+		// Strip pi-continue's own receiver prompt so the synthesizer never mistakes
+		// our resume wrapper ("Continue from the same-session pi-continue/v4 handoff…")
+		// for user content. Otherwise the synthesizer can promote our wrapper sentences
+		// as `forbid` or `task` entries.
+		const stripPiContinueInjection = <T>(messages: T[]): T[] =>
+			messages.filter((message) => !isContinuationPromptUserMessage(message, CONTINUATION_PROMPT));
+		const messagesToSummarize = stripPiContinueInjection(preparation.messagesToSummarize);
+		const turnPrefixMessages = stripPiContinueInjection(preparation.turnPrefixMessages);
+		const turnPrefixTranscript = preparation.isSplitTurn && turnPrefixMessages.length > 0
+			? internals.serializeConversation(internals.convertToLlm(turnPrefixMessages))
+			: undefined;
 		const historyPrompt = compileHistoryPrompt(
 			loadHistoryPromptAssets(
 				resolvedProjectContext.projectRoot,
@@ -216,60 +228,36 @@ export default function (pi: ExtensionAPI) {
 				agentGuidePath: resolvedProjectContext.agentGuidePath,
 				existingAgentGuide: resolvedProjectContext.existingAgentGuide,
 				previousSummary: preparation.previousSummary,
-				historyTranscript: internals.serializeConversation(internals.convertToLlm(preparation.messagesToSummarize)),
+				historyTranscript: internals.serializeConversation(internals.convertToLlm(messagesToSummarize)),
+				turnPrefixTranscript,
 				customInstructions: event.customInstructions,
 				fileOps: fileOpsSnapshot,
 			},
 		);
-		const splitPrompt =
-			preparation.isSplitTurn && preparation.turnPrefixMessages.length > 0
-				? compileSplitPrompt(
-						loadSplitPromptAssets(resolvedProjectContext.projectRoot, config.promptOverridePolicy),
-						{
-							projectRoot: resolvedProjectContext.projectRoot,
-							continuationDocPath: resolvedProjectContext.continuationDocPath,
-							splitPrefixTranscript: internals.serializeConversation(internals.convertToLlm(preparation.turnPrefixMessages)),
-							customInstructions: event.customInstructions,
-						},
-				  )
-				: undefined;
 		const historyBudget = resolveTokenBudget(
 			preparation.settings.reserveTokens,
 			config.historyMaxTokens,
 			"history",
 		);
-		const splitBudget = resolveTokenBudget(
-			preparation.settings.reserveTokens,
-			config.splitPrefixMaxTokens,
-			"split",
-		);
 		let historyArtifacts: ParsedHistoryArtifacts;
-		let splitPrefix: string | undefined;
 		let synthesis: ContinuationSynthesisTelemetry | undefined;
 		try {
-			const historyTask = runPromptPass(pi, ctx, config, historyPrompt, historyBudget, event.signal);
-			const splitTask = splitPrompt
-				? runPromptPass(pi, ctx, config, splitPrompt, splitBudget, event.signal)
-				: Promise.resolve(undefined);
-			const [historyResult, splitResult] = await Promise.allSettled([historyTask, splitTask]);
-			const historyOutput = historyResult.status === "fulfilled" ? historyResult.value : undefined;
-			const splitOutput = splitResult.status === "fulfilled" ? splitResult.value : undefined;
-			synthesis = buildContinuationSynthesisTelemetry(historyOutput, splitOutput);
+			let historyOutput: Awaited<ReturnType<typeof runPromptPass>> | undefined;
+			try {
+				historyOutput = await runPromptPass(pi, ctx, config, historyPrompt, historyBudget, event.signal);
+			} catch {
+				synthesis = buildContinuationSynthesisTelemetry(undefined, undefined);
+				recordActiveSynthesisTelemetry(runtime, synthesis);
+				throw new SynthesisStageError("history-model", "History summarizer pass failed.");
+			}
+			synthesis = buildContinuationSynthesisTelemetry(historyOutput, undefined);
 			recordActiveSynthesisTelemetry(runtime, synthesis);
-			if (historyResult.status === "rejected") throw new SynthesisStageError("history-model", "History summarizer pass failed.");
-			if (splitResult.status === "rejected") throw new SynthesisStageError("split-model", "Split-prefix summarizer pass failed.");
 			if (!historyOutput) throw new SynthesisStageError("history-model", "History summarizer pass omitted a response.");
 			const parsedHistoryArtifacts = parseHistoryArtifacts(historyOutput.text);
 			if (!parsedHistoryArtifacts) {
 				throw new SynthesisStageError("history-artifact", "History pass omitted required pi-continue JSON artifacts.");
 			}
 			historyArtifacts = parsedHistoryArtifacts;
-			if (splitPrompt) {
-				splitPrefix = splitOutput ? parseSplitPrefix(splitOutput.text) : undefined;
-				if (!splitPrefix) {
-					throw new SynthesisStageError("split-prefix", "Split-prefix pass omitted raw summary text.");
-				}
-			}
 			markActiveContinuationArtifact(runtime, "modeled", undefined);
 		} catch (error) {
 			recordActiveSynthesisFailure(runtime, normalizeSynthesisFailure(error));
@@ -281,7 +269,7 @@ export default function (pi: ExtensionAPI) {
 		if (documentSyncId) {
 			pendingDocumentWrites.set(documentSyncId, {
 				path: resolvedProjectContext.continuationDocPath,
-				content: historyArtifacts.continuationMd,
+				content: historyArtifacts.briefMarkdown,
 				label: "continuation document",
 				target: "continuation-doc",
 				eventId: activeEventId,
@@ -321,9 +309,10 @@ export default function (pi: ExtensionAPI) {
 		);
 		return {
 			compaction: {
-				summary: composeCompactionSummary(historyArtifacts.continuation, splitPrefix, details, {
+				summary: composeCompactionSummary(historyArtifacts.briefMarkdown, details, {
 					appendCompactionMetadata: config.appendCompactionMetadata,
-					appendFileTags: config.appendFileTags,
+					appendReadFileTags: config.appendReadFileTags,
+					appendModifiedFileTags: config.appendModifiedFileTags,
 				}),
 				firstKeptEntryId: preparation.firstKeptEntryId,
 				tokensBefore: preparation.tokensBefore,
@@ -358,7 +347,7 @@ export default function (pi: ExtensionAPI) {
 			runtime.latestLedger = ledger;
 			const projectContext = await resolveProjectContext(pi, ctx.cwd, DEFAULT_CONTINUE_CONFIG.continuationDocPath);
 			const config = loadContinuationConfig(projectContext.projectRoot);
-			if (config.enabled && config.ledgerDisplayMode === "overlay") {
+			if (config.enabled && config.showAfterCompact) {
 				showContinuationLedgerOverlaySoon(ctx, ledger, (reason) => {
 					if (ctx.hasUI) ctx.ui.notify(`Could not open Continuation Ledger: ${reason}`, "error");
 				});

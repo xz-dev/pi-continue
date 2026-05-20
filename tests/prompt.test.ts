@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { compileHistoryPrompt, compileSplitPrompt } from "../extensions/continue/src/prompt.ts";
+import { compileHistoryPrompt } from "../extensions/continue/src/prompt.ts";
 
 test("compileHistoryPrompt includes runtime sections and provenance", () => {
 	const prompt = compileHistoryPrompt(
@@ -18,6 +18,7 @@ test("compileHistoryPrompt includes runtime sections and provenance", () => {
 			existingAgentGuide: "agent guide",
 			previousSummary: "old summary",
 			historyTranscript: "serialized history",
+			turnPrefixTranscript: undefined,
 			customInstructions: "focus here",
 			fileOps: { readFiles: ["/repo/a.ts"], modifiedFiles: ["/repo/b.ts"] },
 		},
@@ -28,6 +29,7 @@ test("compileHistoryPrompt includes runtime sections and provenance", () => {
 	assert.match(prompt.userPrompt, /<agent-guide-path>[\s\S]*\/repo\/AGENTS\.md/);
 	assert.match(prompt.userPrompt, /<existing-agent-guide>[\s\S]*agent guide/);
 	assert.match(prompt.userPrompt, /<history-to-summarize>[\s\S]*serialized history/);
+	assert.match(prompt.userPrompt, /<turn-prefix-messages>\s*\(none\)\s*<\/turn-prefix-messages>/);
 	assert.match(prompt.userPrompt, /<file-operations>[\s\S]*<read-files>[\s\S]*\/repo\/a.ts/);
 	assert.deepEqual(prompt.sources, {
 		system: "/pkg/system.md",
@@ -36,21 +38,26 @@ test("compileHistoryPrompt includes runtime sections and provenance", () => {
 	});
 });
 
-test("compileSplitPrompt includes split transcript", () => {
-	const prompt = compileSplitPrompt(
+test("compileHistoryPrompt renders turn-prefix-messages when split-turn material is present", () => {
+	const prompt = compileHistoryPrompt(
 		{
-			system: { content: "split system", sourcePath: "/pkg/split-system.md" },
-			scenarioUser: { content: "split user", sourcePath: "/pkg/split-user.md" },
+			system: { content: "system", sourcePath: "/pkg/s.md" },
+			baseUser: { content: "base", sourcePath: "/pkg/b.md" },
+			scenarioUser: { content: "scenario", sourcePath: "/pkg/u.md" },
 		},
 		{
+			scenario: "initial",
 			projectRoot: "/repo",
 			continuationDocPath: "/repo/CONTINUE.md",
-			splitPrefixTranscript: "prefix transcript",
+			existingContinuationDoc: undefined,
+			agentGuidePath: "/repo/AGENTS.md",
+			existingAgentGuide: undefined,
+			previousSummary: undefined,
+			historyTranscript: "",
+			turnPrefixTranscript: "user asks for the work; assistant began grepping",
 			customInstructions: undefined,
+			fileOps: { readFiles: [], modifiedFiles: [] },
 		},
 	);
-	assert.equal(prompt.systemPrompt, "split system");
-	assert.match(prompt.userPrompt, /<split-prefix-history>[\s\S]*prefix transcript/);
-	assert.equal(prompt.sources.system, "/pkg/split-system.md");
-	assert.equal(prompt.sources.scenarioUser, "/pkg/split-user.md");
+	assert.match(prompt.userPrompt, /<turn-prefix-messages>[\s\S]*user asks for the work/);
 });

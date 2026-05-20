@@ -6,7 +6,6 @@ import type {
 	ContinuationConfig,
 	DocumentSyncMode,
 	ContinuationReasoning,
-	LedgerDisplayMode,
 	PromptOverridePolicy,
 } from "./types.ts";
 import { resolveAgentDir } from "./agent-dir.ts";
@@ -26,7 +25,6 @@ const PROMPT_OVERRIDE_POLICIES = new Set<PromptOverridePolicy>([
 	"project-override",
 ]);
 const DOCUMENT_SYNC_MODES = new Set<DocumentSyncMode>(["always", "off"]);
-const LEDGER_DISPLAY_MODES = new Set<LedgerDisplayMode>(["overlay", "off"]);
 const mutationQueues = new Map<string, Promise<void>>();
 
 async function withConfigMutationQueue(path: string, work: () => Promise<void>): Promise<void> {
@@ -45,16 +43,16 @@ export const DEFAULT_CONTINUE_CONFIG: ContinuationConfig = {
 	summarizerModel: "inherit",
 	reasoning: "inherit",
 	historyMaxTokens: null,
-	splitPrefixMaxTokens: null,
 	continuationDocPath: "CONTINUE.md",
 	continuationDocSyncMode: "off",
 	agentGuidePath: "AGENTS.md",
 	agentGuideSyncMode: "off",
 	midRunGuardEnabled: true,
 	appendCompactionMetadata: false,
-	appendFileTags: false,
+	appendReadFileTags: false,
+	appendModifiedFileTags: true,
 	promptOverridePolicy: "project-override",
-	ledgerDisplayMode: "overlay",
+	showAfterCompact: true,
 };
 
 interface PartialContinuationConfig {
@@ -62,16 +60,16 @@ interface PartialContinuationConfig {
 	summarizerModel?: string;
 	reasoning?: string;
 	historyMaxTokens?: number | null;
-	splitPrefixMaxTokens?: number | null;
 	continuationDocPath?: string;
 	continuationDocSyncMode?: string;
 	agentGuidePath?: string;
 	agentGuideSyncMode?: string;
 	midRunGuardEnabled?: boolean;
 	appendCompactionMetadata?: boolean;
-	appendFileTags?: boolean;
+	appendReadFileTags?: boolean;
+	appendModifiedFileTags?: boolean;
 	promptOverridePolicy?: string;
-	ledgerDisplayMode?: string;
+	showAfterCompact?: boolean;
 }
 
 export interface ContinuationConfigPatch {
@@ -79,16 +77,16 @@ export interface ContinuationConfigPatch {
 	summarizerModel?: string;
 	reasoning?: ContinuationReasoning;
 	historyMaxTokens?: number | null;
-	splitPrefixMaxTokens?: number | null;
 	continuationDocPath?: string;
 	continuationDocSyncMode?: DocumentSyncMode;
 	agentGuidePath?: string;
 	agentGuideSyncMode?: DocumentSyncMode;
 	midRunGuardEnabled?: boolean;
 	appendCompactionMetadata?: boolean;
-	appendFileTags?: boolean;
+	appendReadFileTags?: boolean;
+	appendModifiedFileTags?: boolean;
 	promptOverridePolicy?: PromptOverridePolicy;
-	ledgerDisplayMode?: LedgerDisplayMode;
+	showAfterCompact?: boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -123,8 +121,6 @@ function parsePartialConfig(value: unknown): PartialContinuationConfig {
 	if (reasoning !== undefined) result.reasoning = reasoning;
 	const historyMaxTokens = asNullableNumber(value.historyMaxTokens);
 	if (historyMaxTokens !== undefined) result.historyMaxTokens = historyMaxTokens;
-	const splitPrefixMaxTokens = asNullableNumber(value.splitPrefixMaxTokens);
-	if (splitPrefixMaxTokens !== undefined) result.splitPrefixMaxTokens = splitPrefixMaxTokens;
 	const continuationDocPath = asString(value.continuationDocPath);
 	if (continuationDocPath !== undefined) result.continuationDocPath = continuationDocPath;
 	const continuationDocSyncMode = asString(value.continuationDocSyncMode);
@@ -137,12 +133,14 @@ function parsePartialConfig(value: unknown): PartialContinuationConfig {
 	if (midRunGuardEnabled !== undefined) result.midRunGuardEnabled = midRunGuardEnabled;
 	const appendCompactionMetadata = asBoolean(value.appendCompactionMetadata);
 	if (appendCompactionMetadata !== undefined) result.appendCompactionMetadata = appendCompactionMetadata;
-	const appendFileTags = asBoolean(value.appendFileTags);
-	if (appendFileTags !== undefined) result.appendFileTags = appendFileTags;
+	const appendReadFileTags = asBoolean(value.appendReadFileTags);
+	if (appendReadFileTags !== undefined) result.appendReadFileTags = appendReadFileTags;
+	const appendModifiedFileTags = asBoolean(value.appendModifiedFileTags);
+	if (appendModifiedFileTags !== undefined) result.appendModifiedFileTags = appendModifiedFileTags;
 	const promptOverridePolicy = asString(value.promptOverridePolicy);
 	if (promptOverridePolicy !== undefined) result.promptOverridePolicy = promptOverridePolicy;
-	const ledgerDisplayMode = asString(value.ledgerDisplayMode);
-	if (ledgerDisplayMode !== undefined) result.ledgerDisplayMode = ledgerDisplayMode;
+	const showAfterCompact = asBoolean(value.showAfterCompact);
+	if (showAfterCompact !== undefined) result.showAfterCompact = showAfterCompact;
 	return result;
 }
 
@@ -177,12 +175,6 @@ function normalizeSyncMode(value: string | undefined, fallback: DocumentSyncMode
 		: fallback;
 }
 
-function normalizeLedgerDisplayMode(value: string | undefined): LedgerDisplayMode {
-	return value !== undefined && LEDGER_DISPLAY_MODES.has(value as LedgerDisplayMode)
-		? (value as LedgerDisplayMode)
-		: DEFAULT_CONTINUE_CONFIG.ledgerDisplayMode;
-}
-
 function normalizePath(value: string | undefined, fallback: string): string {
 	const trimmed = value?.trim();
 	return trimmed && trimmed.length > 0 ? trimmed : fallback;
@@ -205,16 +197,16 @@ function normalizeConfig(partial: PartialContinuationConfig): ContinuationConfig
 		summarizerModel: normalizeSummarizerModel(partial.summarizerModel),
 		reasoning: normalizeReasoning(partial.reasoning),
 		historyMaxTokens: normalizeTokenOverride(partial.historyMaxTokens),
-		splitPrefixMaxTokens: normalizeTokenOverride(partial.splitPrefixMaxTokens),
 		continuationDocPath: normalizePath(partial.continuationDocPath, DEFAULT_CONTINUE_CONFIG.continuationDocPath),
 		continuationDocSyncMode: normalizeSyncMode(partial.continuationDocSyncMode, DEFAULT_CONTINUE_CONFIG.continuationDocSyncMode),
 		agentGuidePath: normalizePath(partial.agentGuidePath, DEFAULT_CONTINUE_CONFIG.agentGuidePath),
 		agentGuideSyncMode: normalizeSyncMode(partial.agentGuideSyncMode, DEFAULT_CONTINUE_CONFIG.agentGuideSyncMode),
 		midRunGuardEnabled: partial.midRunGuardEnabled ?? DEFAULT_CONTINUE_CONFIG.midRunGuardEnabled,
 		appendCompactionMetadata: partial.appendCompactionMetadata ?? DEFAULT_CONTINUE_CONFIG.appendCompactionMetadata,
-		appendFileTags: partial.appendFileTags ?? DEFAULT_CONTINUE_CONFIG.appendFileTags,
+		appendReadFileTags: partial.appendReadFileTags ?? DEFAULT_CONTINUE_CONFIG.appendReadFileTags,
+		appendModifiedFileTags: partial.appendModifiedFileTags ?? DEFAULT_CONTINUE_CONFIG.appendModifiedFileTags,
 		promptOverridePolicy: normalizePromptOverridePolicy(partial.promptOverridePolicy),
-		ledgerDisplayMode: normalizeLedgerDisplayMode(partial.ledgerDisplayMode),
+		showAfterCompact: partial.showAfterCompact ?? DEFAULT_CONTINUE_CONFIG.showAfterCompact,
 	};
 }
 

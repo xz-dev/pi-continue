@@ -1,7 +1,7 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { loadHistoryPromptAssets, loadSplitPromptAssets } from "./assets.ts";
+import { loadHistoryPromptAssets } from "./assets.ts";
 import { snapshotFileOperations } from "./compaction-preparation.ts";
 import { DEFAULT_CONTINUE_CONFIG, loadContinuationConfig, loadScopeConfig, patchContinuationConfig, resetContinuationConfig } from "./config.ts";
 import { showLatestContinuationLedger } from "./ledger-viewer.ts";
@@ -9,7 +9,7 @@ import { showScrollableTextOverlay } from "./text-viewer.ts";
 import { readEffectivePiCompactionSettings } from "./pi-settings.ts";
 import { renderHandoffTrigger, updateHandoffTriggerFromDialog } from "./pi-threshold-settings.ts";
 import { loadPiInternals } from "./pi-internals.ts";
-import { compileHistoryPrompt, compileSplitPrompt, renderPromptPreview } from "./prompt.ts";
+import { compileHistoryPrompt, renderPromptPreview } from "./prompt.ts";
 import { resolveProjectContext } from "./project.ts";
 import { resolveSummarizerModel } from "./model-settings.ts";
 import { getLatestContinuationEvent, getLatestContinuationLedger, type ContinuationRuntimeState } from "./runtime.ts";
@@ -58,6 +58,9 @@ async function buildPromptPreviewPayload(
 	if (!preparation) return undefined;
 	const scenario = preparation.previousSummary ? "update" : "initial";
 	const historyTranscript = internals.serializeConversation(internals.convertToLlm(preparation.messagesToSummarize));
+	const turnPrefixTranscript = preparation.isSplitTurn && preparation.turnPrefixMessages.length > 0
+		? internals.serializeConversation(internals.convertToLlm(preparation.turnPrefixMessages))
+		: undefined;
 	const fileOps = snapshotFileOperations(preparation.fileOps);
 	const historyAssets = loadHistoryPromptAssets(projectContext.projectRoot, config.promptOverridePolicy, scenario);
 	const history = compileHistoryPrompt(historyAssets, {
@@ -69,20 +72,12 @@ async function buildPromptPreviewPayload(
 		existingAgentGuide: projectContext.existingAgentGuide,
 		previousSummary: preparation.previousSummary,
 		historyTranscript,
+		turnPrefixTranscript,
 		customInstructions,
 		fileOps,
 	});
-	const split = preparation.isSplitTurn && preparation.turnPrefixMessages.length > 0
-		? compileSplitPrompt(loadSplitPromptAssets(projectContext.projectRoot, config.promptOverridePolicy), {
-				projectRoot: projectContext.projectRoot,
-				continuationDocPath: projectContext.continuationDocPath,
-				splitPrefixTranscript: internals.serializeConversation(internals.convertToLlm(preparation.turnPrefixMessages)),
-				customInstructions,
-			})
-		: undefined;
 	return {
 		history,
-		split,
 		scenario,
 		isSplitTurn: preparation.isSplitTurn,
 	};
@@ -119,10 +114,6 @@ async function chooseReasoning(ctx: ExtensionCommandContext, config: Continuatio
 	return selected as ContinuationConfig["reasoning"] | undefined;
 }
 
-async function chooseLedgerDisplayMode(ctx: ExtensionCommandContext): Promise<ContinuationConfig["ledgerDisplayMode"] | undefined> {
-	const selected = await ctx.ui.select("Ledger display", ["overlay", "off"]);
-	return selected as ContinuationConfig["ledgerDisplayMode"] | undefined;
-}
 
 async function chooseTokenOverride(
 	ctx: ExtensionCommandContext,
@@ -144,16 +135,16 @@ const CONFIG_KEYS = [
 	"summarizerModel",
 	"reasoning",
 	"historyMaxTokens",
-	"splitPrefixMaxTokens",
 	"continuationDocPath",
 	"continuationDocSyncMode",
 	"agentGuidePath",
 	"agentGuideSyncMode",
 	"midRunGuardEnabled",
 	"appendCompactionMetadata",
-	"appendFileTags",
+	"appendReadFileTags",
+	"appendModifiedFileTags",
 	"promptOverridePolicy",
-	"ledgerDisplayMode",
+	"showAfterCompact",
 ] as const;
 
 function setConfigPatchValue<Key extends keyof ContinuationConfig>(patch: Partial<ContinuationConfig>, key: Key, value: ContinuationConfig[Key]): void {
@@ -199,7 +190,6 @@ export async function runSettingsDialog(pi: ExtensionAPI, ctx: ExtensionCommandC
 			`Handoff model: ${config.summarizerModel}`,
 			`Reasoning: ${config.reasoning}`,
 			`History budget: ${config.historyMaxTokens ?? "Pi default"}`,
-			`Split-prefix budget: ${config.splitPrefixMaxTokens ?? "Pi default"}`,
 			`Continuation file: ${config.continuationDocPath}`,
 			`Save continuation file: ${config.continuationDocSyncMode}`,
 			`Agent guide path: ${config.agentGuidePath}`,
@@ -207,9 +197,10 @@ export async function runSettingsDialog(pi: ExtensionAPI, ctx: ExtensionCommandC
 			`Automatic mid-run continuation: ${config.midRunGuardEnabled ? "yes" : "no"}`,
 			`Handoff trigger: ${renderHandoffTrigger(ctx, scope, projectContext.projectRoot)}`,
 			`Append compaction metadata: ${config.appendCompactionMetadata ? "yes" : "no"}`,
-			`Append file tags: ${config.appendFileTags ? "yes" : "no"}`,
+			`Append read file tags: ${config.appendReadFileTags ? "yes" : "no"}`,
+			`Append modified file tags: ${config.appendModifiedFileTags ? "yes" : "no"}`,
 			`Prompt override policy: ${config.promptOverridePolicy}`,
-			`Ledger display: ${config.ledgerDisplayMode}`,
+			`Show brief after compaction: ${config.showAfterCompact ? "yes" : "no"}`,
 			`Reset ${scope} settings`,
 			"Done",
 		]);
@@ -245,13 +236,6 @@ export async function runSettingsDialog(pi: ExtensionAPI, ctx: ExtensionCommandC
 			config = await updateSetting(scope, projectContext.projectRoot, config, async (current) => {
 				const next = await chooseTokenOverride(ctx, "History max tokens", current.historyMaxTokens);
 				return next !== undefined ? { ...current, historyMaxTokens: next } : undefined;
-			});
-			continue;
-		}
-		if (selected.startsWith("Split-prefix budget:")) {
-			config = await updateSetting(scope, projectContext.projectRoot, config, async (current) => {
-				const next = await chooseTokenOverride(ctx, "Split-prefix max tokens", current.splitPrefixMaxTokens);
-				return next !== undefined ? { ...current, splitPrefixMaxTokens: next } : undefined;
 			});
 			continue;
 		}
@@ -301,10 +285,17 @@ export async function runSettingsDialog(pi: ExtensionAPI, ctx: ExtensionCommandC
 			}));
 			continue;
 		}
-		if (selected.startsWith("Append file tags:")) {
+		if (selected.startsWith("Append read file tags:")) {
 			config = await updateSetting(scope, projectContext.projectRoot, config, async (current) => ({
 				...current,
-				appendFileTags: !current.appendFileTags,
+				appendReadFileTags: !current.appendReadFileTags,
+			}));
+			continue;
+		}
+		if (selected.startsWith("Append modified file tags:")) {
+			config = await updateSetting(scope, projectContext.projectRoot, config, async (current) => ({
+				...current,
+				appendModifiedFileTags: !current.appendModifiedFileTags,
 			}));
 			continue;
 		}
@@ -315,11 +306,11 @@ export async function runSettingsDialog(pi: ExtensionAPI, ctx: ExtensionCommandC
 			});
 			continue;
 		}
-		if (selected.startsWith("Ledger display:")) {
-			config = await updateSetting(scope, projectContext.projectRoot, config, async (current) => {
-				const next = await chooseLedgerDisplayMode(ctx);
-				return next ? { ...current, ledgerDisplayMode: next } : undefined;
-			});
+		if (selected.startsWith("Show brief after compaction:")) {
+			config = await updateSetting(scope, projectContext.projectRoot, config, async (current) => ({
+				...current,
+				showAfterCompact: !current.showAfterCompact,
+			}));
 			continue;
 		}
 		if (selected === `Reset ${scope} settings`) {
@@ -384,9 +375,6 @@ export async function runPreviewCommand(pi: ExtensionAPI, ctx: ExtensionCommandC
 		ctx.ui.notify("No handoff preview is available.", "warning");
 		return;
 	}
-	const sections = [
-		renderPromptPreview(`History prompt (${payload.scenario})`, payload.history),
-		payload.split ? renderPromptPreview("Split-prefix prompt", payload.split) : undefined,
-	].filter((section): section is string => section !== undefined);
-	await showText(ctx, "handoff prompt preview", sections.join("\n\n---\n\n"));
+	const section = renderPromptPreview(`Handoff prompt (${payload.scenario})`, payload.history);
+	await showText(ctx, "handoff prompt preview", section);
 }

@@ -10,24 +10,22 @@ function renderFileListTag(tag: string, values: string[]): string | undefined {
 	return renderBlock(tag, values.join("\n"));
 }
 
-/** Render the compaction summary that Pi persists in session history. The split prefix is raw summary text; this renderer owns the saved wrapper tag. */
+/** Render the compaction summary that Pi persists in session history. */
 export function composeCompactionSummary(
 	continuation: string,
-	splitPrefix: string | undefined,
 	details: ContinuationCompactionDetails,
-	options: { appendCompactionMetadata: boolean; appendFileTags: boolean },
+	options: { appendCompactionMetadata: boolean; appendReadFileTags: boolean; appendModifiedFileTags: boolean },
 ): string {
 	const parts = [renderBlock("continuation", continuation)];
-	if (splitPrefix && splitPrefix.trim().length > 0) {
-		parts.push(renderBlock("split-prefix", splitPrefix));
-	}
 	if (options.appendCompactionMetadata) {
 		parts.push(renderContinuationDetails(details));
 	}
-	if (options.appendFileTags) {
+	if (options.appendReadFileTags) {
 		const readFiles = renderFileListTag("read-files", details.readFiles);
-		const modifiedFiles = renderFileListTag("modified-files", details.modifiedFiles);
 		if (readFiles) parts.push(readFiles);
+	}
+	if (options.appendModifiedFileTags) {
+		const modifiedFiles = renderFileListTag("modified-files", details.modifiedFiles);
 		if (modifiedFiles) parts.push(modifiedFiles);
 	}
 	return `${parts.join("\n\n")}\n`;

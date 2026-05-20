@@ -4,17 +4,30 @@ import { composeCompactionSummary } from "../extensions/continue/src/compose.ts"
 import type { ContinuationCompactionDetails } from "../extensions/continue/src/types.ts";
 
 const details: ContinuationCompactionDetails = {
-	kind: "pi-continue/v3",
+	kind: "pi-continue/v4",
 	readFiles: ["/repo/read.ts"],
 	modifiedFiles: ["/repo/write.ts"],
 	documentSyncId: "sync-1",
 	agentGuideSyncId: "guide-1",
 };
 
+test("composeCompactionSummary wraps the brief in <continuation> with no fallback paths", () => {
+	const summary = composeCompactionSummary("continue", details, {
+		appendCompactionMetadata: false,
+		appendReadFileTags: false,
+		appendModifiedFileTags: false,
+	});
+	assert.match(summary, /<continuation>\ncontinue\n<\/continuation>/);
+	assert.doesNotMatch(summary, /<split-prefix>/);
+	assert.doesNotMatch(summary, /<read-files>/);
+	assert.doesNotMatch(summary, /readFileCount/);
+});
+
 test("composeCompactionSummary can append compaction metadata without file paths", () => {
-	const summary = composeCompactionSummary("continue", undefined, details, {
+	const summary = composeCompactionSummary("continue", details, {
 		appendCompactionMetadata: true,
-		appendFileTags: false,
+		appendReadFileTags: false,
+		appendModifiedFileTags: false,
 	});
 	assert.match(summary, /<continuation>\ncontinue\n<\/continuation>/);
 	assert.match(summary, /"readFileCount": 1/);
@@ -25,21 +38,22 @@ test("composeCompactionSummary can append compaction metadata without file paths
 	assert.doesNotMatch(summary, /\/repo\/write\.ts/);
 });
 
-test("composeCompactionSummary renders path tags only when explicitly enabled", () => {
-	const summary = composeCompactionSummary("continue", undefined, details, {
+test("composeCompactionSummary renders read and modified path tags independently", () => {
+	const modifiedOnly = composeCompactionSummary("continue", details, {
 		appendCompactionMetadata: false,
-		appendFileTags: true,
+		appendReadFileTags: false,
+		appendModifiedFileTags: true,
 	});
-	assert.match(summary, /<read-files>\n\/repo\/read\.ts\n<\/read-files>/);
-	assert.match(summary, /<modified-files>\n\/repo\/write\.ts\n<\/modified-files>/);
-	assert.doesNotMatch(summary, /readFileCount/);
-});
+	assert.doesNotMatch(modifiedOnly, /<read-files>/);
+	assert.match(modifiedOnly, /<modified-files>\n\/repo\/write\.ts\n<\/modified-files>/);
+	assert.doesNotMatch(modifiedOnly, /readFileCount/);
 
-test("composeCompactionSummary owns the single split-prefix wrapper", () => {
-	const summary = composeCompactionSummary("continue", "prefix", details, {
+	const readOnly = composeCompactionSummary("continue", details, {
 		appendCompactionMetadata: false,
-		appendFileTags: false,
+		appendReadFileTags: true,
+		appendModifiedFileTags: false,
 	});
-	assert.match(summary, /<split-prefix>\nprefix\n<\/split-prefix>/);
-	assert.doesNotMatch(summary, /<split-prefix>\n<split-prefix>/);
+	assert.match(readOnly, /<read-files>\n\/repo\/read\.ts\n<\/read-files>/);
+	assert.doesNotMatch(readOnly, /<modified-files>/);
+	assert.doesNotMatch(readOnly, /readFileCount/);
 });

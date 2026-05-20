@@ -2,19 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { parseHistoryArtifacts } from "../extensions/continue/src/blocks.ts";
 
-const duplicateSentinel = "DUPLICATE_CONTEXT_CLAIM";
-const dormantSentinel = "DORMANT_REVIEW_CONTEXT";
-const staleSentinel = "STALE_AWAIT_DIRECTION";
-const activeSentinel = "NEW_ACTIVE_REQUEST";
+const ANCHOR_TOKEN_PATTERN = /(?::\d+\b|@\w[\w-]*\b|^cmd:|^doc:https?:\/\/|^test:\S+\b)/m;
+const PATH_LINE_PATTERN = /\b[\w./-]+:\d+\b/;
 
 interface ContractValidationResult {
 	valid: boolean;
 	failures: string[];
-}
-
-function countOccurrences(text: string, needle: string): number {
-	if (needle.length === 0) return 0;
-	return text.split(needle).length - 1;
 }
 
 function sectionBody(text: string, heading: string): string {
@@ -26,92 +19,120 @@ function sectionBody(text: string, heading: string): string {
 	return nextHeading < 0 ? text.slice(bodyStart) : text.slice(bodyStart, nextHeading);
 }
 
-function validateRenderedContinuationContract(text: string): ContractValidationResult {
+function establishedEntryEvidence(text: string): string[] {
+	const body = sectionBody(text, "Established").trim();
+	if (body.length === 0) return [];
+	return body.split("\n").map((line) => {
+		const match = line.match(/evidence:\s*([^;]+);/);
+		return match ? match[1].trim() : "";
+	}).filter((entry) => entry.length > 0);
+}
+
+function validateAnchorContract(text: string): ContractValidationResult {
 	const failures: string[] = [];
-	if (sectionBody(text, "Current Plan").includes(staleSentinel)) {
-		failures.push("stale await-direction state survived in Current Plan");
+	const evidenceEntries = establishedEntryEvidence(text);
+	if (evidenceEntries.length === 0) {
+		failures.push("expected at least one established entry in the rendered brief");
 	}
-	if (sectionBody(text, "Working Edge").includes(staleSentinel)) {
-		failures.push("stale await-direction state survived in Working Edge");
-	}
-	if (!text.includes(activeSentinel)) {
-		failures.push("newest active request was not preserved");
-	}
-	if (!text.includes(dormantSentinel)) {
-		failures.push("dormant but important context was not preserved");
-	}
-	if (countOccurrences(text, duplicateSentinel) > 1) {
-		failures.push("duplicate semantic claim was not collapsed");
+	for (const evidence of evidenceEntries) {
+		const looksAnchored = ANCHOR_TOKEN_PATTERN.test(evidence) || PATH_LINE_PATTERN.test(evidence);
+		if (!looksAnchored) {
+			failures.push(`evidence "${evidence}" lacks a navigable anchor token`);
+		}
 	}
 	return { valid: failures.length === 0, failures };
 }
 
-function structuredArtifact(overrides = {}) {
+function briefEnvelope(overrides: Record<string, unknown> = {}) {
 	return {
-		task: `Finish ${activeSentinel}.`,
-		initiativeCharter: ["Preserve same-session continuation without replaying transcript history."],
-		definitionOfDone: ["The receiving agent has one current working edge and fresh validation state."],
-		recencyLedger: [{
-			status: "active",
-			subject: activeSentinel,
-			evidence: "newest user request in the compacted history",
-			resolution: "Use the active request instead of older await-direction state.",
+		task: "Verify the contract-validator anchor rules.",
+		done_when: "Every established entry has a navigable evidence anchor.",
+		forbid: [{ rule: "Do not skip anchor checks.", source: "user@msg-test-contract" }],
+		established: [{
+			claim: "Anchor tokens carry navigable identifiers.",
+			evidence: "tests/contract-validator.test.ts:1",
+			basis: "test",
+			reopen: "if the anchor pattern changes",
 		}],
-		currentPlan: ["Run the targeted continuation contract checks."],
-		progress: [`${duplicateSentinel} was consolidated into one reusable finding.`],
-		state: ["Prompt contract uses state ownership and semantic dominance."],
-		decisions: ["Do not keep stale and current claims co-active."],
-		contextMap: [{ source: "assets/system/history_initial.md", relevance: "compact prompt contract", use: "verify state ownership language" }],
-		workingEdge: [`Continue ${activeSentinel} without reviving retired plans.`],
-		validation: ["Contract sentinel checks are deterministic test fixtures."],
-		risks: ["A prompt edit could reintroduce duplicate semantic claims."],
-		dormantContext: [`${dormantSentinel} returns when continuation prompt behavior changes.`],
-		retiredContext: [`${staleSentinel} is retired from the active edge.`],
-		antiRework: ["Do not replay raw transcript chronology."],
-		durableLearnings: ["Keep the ledger dense; keep one owner for each retained fact."],
-		durablePromotions: [{
-			status: "none",
-			targetSurface: "none",
-			proposal: "No durable external-surface update is required by this fixture.",
-			evidence: "synthetic test artifact",
-			durability: "not applicable",
-			risk: "not applicable",
-			nextAction: "No action.",
+		learned: [],
+		open: [{
+			question: "Are anchor sentinels exhaustive?",
+			verifies: "Add a counter-example test and confirm it fails as expected.",
 		}],
-		agentGuideUpdates: ["No guide write is warranted by this fixture."],
+		next: [{
+			action: "Run pnpm test to confirm anchor coverage.",
+			outcome: "Open question closes when the new test fails on the malformed fixture.",
+		}],
 		...overrides,
 	};
 }
 
-function artifactJson(overrides = {}): string {
-	const brief = structuredArtifact(overrides);
+function envelope(overrides: Record<string, unknown> = {}) {
 	return JSON.stringify({
-		version: "pi-continue-artifacts/v3",
-		brief,
-		document: brief,
-		agentGuideMarkdown: null,
-		agentGuideChangeReason: "No guide write is warranted by this fixture.",
+		version: "pi-continue-artifacts/v4",
+		brief: briefEnvelope(overrides),
+		agentGuideUpdate: { content: null, reason: "no guide write warranted by this fixture" },
 	});
 }
 
-test("contract sentinel validator accepts a consolidated rendered continuation", () => {
-	const parsed = parseHistoryArtifacts(artifactJson());
+test("rendered brief preserves anchored established evidence", () => {
+	const parsed = parseHistoryArtifacts(envelope());
 	assert.ok(parsed);
-	assert.deepEqual(validateRenderedContinuationContract(parsed.continuation), { valid: true, failures: [] });
+	const validation = validateAnchorContract(parsed.briefMarkdown);
+	assert.deepEqual(validation, { valid: true, failures: [] });
 });
 
-test("contract sentinel validator catches stale active slots and duplicate semantics", () => {
-	const parsed = parseHistoryArtifacts(artifactJson({
-		currentPlan: [`Resume ${staleSentinel} as an active plan.`],
-		state: [`${duplicateSentinel} was repeated in state.`],
-		workingEdge: [`Resume ${staleSentinel} instead of the latest request.`],
+test("multiple anchor styles are all considered navigable", () => {
+	const parsed = parseHistoryArtifacts(envelope({
+		established: [
+			{ claim: "test anchor style", evidence: "tests/foo.ts:42", basis: "test", reopen: "none" },
+			{ claim: "user anchor style", evidence: "user@msg-abc123", basis: "user", reopen: "none" },
+			{ claim: "doc anchor style", evidence: "doc:https://example.com/spec#section-3", basis: "doc", reopen: "none" },
+			{ claim: "cmd anchor style", evidence: "cmd:pnpm test#exit-status", basis: "output", reopen: "none" },
+		],
 	}));
 	assert.ok(parsed);
-	const result = validateRenderedContinuationContract(parsed.continuation);
-	assert.equal(result.valid, false);
-	assert.deepEqual(result.failures, [
-		"stale await-direction state survived in Current Plan",
-		"stale await-direction state survived in Working Edge",
-		"duplicate semantic claim was not collapsed",
-	]);
+	const validation = validateAnchorContract(parsed.briefMarkdown);
+	assert.deepEqual(validation.failures, []);
+	assert.equal(validation.valid, true);
+});
+
+test("rendered brief surfaces forbid rules verbatim with source attribution", () => {
+	const parsed = parseHistoryArtifacts(envelope({
+		forbid: [
+			{ rule: "Do not delete vendor/.", source: "user@msg-vendor-lock" },
+			{ rule: "Do not introduce a v3 shim.", source: "design decision" },
+		],
+	}));
+	assert.ok(parsed);
+	const forbidBody = sectionBody(parsed.briefMarkdown, "Forbid");
+	assert.match(forbidBody, /Do not delete vendor\/\.\s+—\s+source:\s+user@msg-vendor-lock/);
+	assert.match(forbidBody, /Do not introduce a v3 shim\.\s+—\s+source:\s+design decision/);
+});
+
+test("rendered brief identifies next[0] as the immediate resume action", () => {
+	const parsed = parseHistoryArtifacts(envelope({
+		next: [
+			{ action: "Run pnpm run gate.", outcome: "Either exit 0 or a triage point." },
+			{ action: "Commit if gate passes.", outcome: "Working tree clean at SHA X." },
+		],
+	}));
+	assert.ok(parsed);
+	const nextBody = sectionBody(parsed.briefMarkdown, "Next").trim();
+	const firstLine = nextBody.split("\n")[0];
+	assert.match(firstLine, /^- Run pnpm run gate\.\s+→\s+Either exit 0 or a triage point\./);
+});
+
+test("anchor validator flags evidence that lacks a navigable token", () => {
+	const malformed = "## Established\n- placeholder claim — evidence: vague file note; basis: observed; reopen: none";
+	const validation = validateAnchorContract(malformed);
+	assert.equal(validation.valid, false);
+	assert.match(validation.failures[0], /lacks a navigable anchor token/);
+});
+
+test("anchor validator demands at least one established entry", () => {
+	const empty = "## Task\nx\n\n## Done When\ny";
+	const validation = validateAnchorContract(empty);
+	assert.equal(validation.valid, false);
+	assert.deepEqual(validation.failures, ["expected at least one established entry in the rendered brief"]);
 });

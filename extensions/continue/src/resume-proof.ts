@@ -16,7 +16,7 @@ export const PROMPT_DISPATCH_FAILURE = "Continuation resume request failed.";
 export const RESUME_START_TIMEOUT_FAILURE = "Continuation resume request failed before the next run started.";
 export const COMPACTION_PROOF_TIMEOUT_FAILURE = "Pi did not report a saved package-owned continuation handoff before resume.";
 export const NATIVE_COMPACTION_FALLBACK_FAILURE = "Pi saved a native compaction instead of a package-owned continuation handoff.";
-export const INVALID_COMPACTION_PROOF_FAILURE = "Pi saved a compaction without valid pi-continue/v3 handoff details.";
+export const INVALID_COMPACTION_PROOF_FAILURE = "Pi saved a compaction without valid pi-continue/v4 handoff details.";
 export const STALE_COMPACTION_PROOF_FAILURE = "Pi saved a continuation handoff for a different run; resume was stopped.";
 
 export interface PendingResumeDispatch {

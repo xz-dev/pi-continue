@@ -9,7 +9,6 @@ export type ContinuationReasoning =
 
 export type PromptOverridePolicy = "package-default" | "global-override" | "project-override";
 export type DocumentSyncMode = "always" | "off";
-export type LedgerDisplayMode = "overlay" | "off";
 export type ConfigScope = "global" | "project";
 export type HistoryScenario = "initial" | "update";
 
@@ -18,16 +17,16 @@ export interface ContinuationConfig {
 	summarizerModel: string;
 	reasoning: ContinuationReasoning;
 	historyMaxTokens: number | null;
-	splitPrefixMaxTokens: number | null;
 	continuationDocPath: string;
 	continuationDocSyncMode: DocumentSyncMode;
 	agentGuidePath: string;
 	agentGuideSyncMode: DocumentSyncMode;
 	midRunGuardEnabled: boolean;
 	appendCompactionMetadata: boolean;
-	appendFileTags: boolean;
+	appendReadFileTags: boolean;
+	appendModifiedFileTags: boolean;
 	promptOverridePolicy: PromptOverridePolicy;
-	ledgerDisplayMode: LedgerDisplayMode;
+	showAfterCompact: boolean;
 }
 
 export interface ResolvedProjectContext {
@@ -49,11 +48,6 @@ export interface HistoryPromptAssets {
 	scenarioUser: LoadedPromptAsset;
 }
 
-export interface SplitPromptAssets {
-	system: LoadedPromptAsset;
-	scenarioUser: LoadedPromptAsset;
-}
-
 export interface FileOpsSnapshot {
 	readFiles: string[];
 	modifiedFiles: string[];
@@ -68,15 +62,9 @@ export interface HistoryPromptInput {
 	existingAgentGuide: string | undefined;
 	previousSummary: string | undefined;
 	historyTranscript: string;
+	turnPrefixTranscript: string | undefined;
 	customInstructions: string | undefined;
 	fileOps: FileOpsSnapshot;
-}
-
-export interface SplitPromptInput {
-	projectRoot: string;
-	continuationDocPath: string;
-	splitPrefixTranscript: string;
-	customInstructions: string | undefined;
 }
 
 export interface CompiledPrompt {
@@ -90,8 +78,7 @@ export interface CompiledPrompt {
 }
 
 export interface ParsedHistoryArtifacts {
-	continuation: string;
-	continuationMd: string;
+	briefMarkdown: string;
 	agentGuideMd: string | undefined;
 	agentGuideChangeReason: string;
 }
@@ -102,7 +89,7 @@ export type ContinuationArtifactStatus = "pending" | "modeled" | "aborted";
 export type ContinuationPromptStatus = "pending" | "sent" | "not-requested" | "failed";
 export type ContinuationResumeStatus = "not-requested" | "pending" | "running" | "completed" | "failed" | "aborted";
 export type ContinuationCompactionProofStatus = "pending" | "verified" | "failed";
-export type ContinuationSynthesisFailureStage = "history-model" | "history-artifact" | "split-model" | "split-prefix" | "unknown";
+export type ContinuationSynthesisFailureStage = "history-model" | "history-artifact" | "unknown";
 export type ContinuationSyncStatus = "off" | "pending" | "updated" | "unchanged" | "failed" | "no-replacement";
 export type ContinuationDocumentSyncTarget = "continuation-doc" | "agent-guide";
 
@@ -184,7 +171,7 @@ export interface ContinuationEventStore {
 /** Persisted status for whether a compaction attempted a configured agent-guide replacement. */
 export type AgentGuideWriteStatus = "sync-off" | "no-replacement" | "replacement-pending";
 
-export type ContinuationCompactionDetailsKind = "pi-continue/v3";
+export type ContinuationCompactionDetailsKind = "pi-continue/v4";
 
 /** Package-owned details saved on Pi compaction entries for lifecycle bookkeeping. */
 export interface ContinuationCompactionDetails {
@@ -222,7 +209,6 @@ export interface PiCompactionSettings {
 
 export interface PreviewPayload {
 	history: CompiledPrompt;
-	split: CompiledPrompt | undefined;
 	scenario: HistoryScenario;
 	isSplitTurn: boolean;
 }

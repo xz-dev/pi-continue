@@ -2,6 +2,31 @@
 
 All notable changes to `pi-continue` are documented here.
 
+## 0.7.0 - 2026-05-20
+
+### Breaking changes
+
+- Retired `pi-continue-artifacts/v3`. The continuation envelope is now `pi-continue-artifacts/v4` with a seven-slot `brief` (`task`, `done_when`, `forbid`, `established`, `learned`, `open`, `next`). The prior 18-slot brief (`initiativeCharter`, `definitionOfDone`, `recencyLedger`, `currentPlan`, `progress`, `state`, `decisions`, `contextMap`, `workingEdge`, `validation`, `risks`, `dormantContext`, `retiredContext`, `antiRework`, `durableLearnings`, `durablePromotions`, `agentGuideUpdates`) is gone.
+- Compaction details kind is now `pi-continue/v4`. `pi-continue/v3` and `pi-continue/v2` details are rejected by the proof gate.
+- Top-level envelope keys are `version`, `brief`, `agentGuideUpdate`. The prior `document` field is gone — `CONTINUE.md` is now a deterministic render of `brief` produced by the extension, byte-identical to what the receiver gets as its first turn after compaction. The synthesizer no longer writes `document`; the `agentGuideUpdate: {content, reason}` shape stays.
+- New `learned` slot: derived insights from the cycle (cross-file patterns, confirmed human preferences, dead-end paths with their reason, successful approaches worth reusing). Entries are `{lesson, source}`; `source` may be a navigable anchor or a narrative reference. `learned` carries forward across cycles like `established`; entries retire only by replacement or explicit human retraction.
+- The synthesizer prompts (system and user) and the receiver prompt are rewritten from a Memento spine. The synthesizer's role is articulated as the agent's persistent memory across amnesia between cycles. The three principles are persistence (never silent-drop established or learned entries), continuity (refine the prior brief, do not rewrite from scratch), and single channel (the brief is the receiver's only durable memory). The receiver prompt mirrors the framing: the agent is told it is continuing its own work, the brief above is the tattoo it wrote for itself in the prior cycle, and other summaries in the turn must be ignored.
+- The synthesizer prompts disambiguate three parties explicitly: the synthesizer (reading these instructions), the agent (the model doing the work in the transcript), and the human (the person the agent is serving, whose messages appear with `role: user` inside transcript blocks — distinct from the `role: user` wrapper pi-continue uses to deliver instructions).
+- `session_before_compact` opts out when no extension-owned continuation event is active. Native `/compact` and Pi's automatic threshold trips now run the native Pi summarizer; pi-continue no longer produces a half-styled artifact it cannot resume from.
+- Renamed config knob: `ledgerDisplayMode: "overlay" | "off"` is now `showAfterCompact: boolean` (default `true`). When true, the rendered brief surfaces in a TUI overlay right after each successful extension-owned compaction. Same behavior, clearer name.
+- `ParsedHistoryArtifacts` renamed: `continuation` → `briefMarkdown`. The `documentMarkdown` field is gone with the retired `document` slot.
+- Removed the split-prefix synthesizer entirely. The history synthesizer now receives both completed-turn content (`<history-to-summarize>`) and in-progress turn-prefix content (`<turn-prefix-messages>`) in one pass and emits a single structured brief. The `<split-prefix>` block and `assets/{system,user}/split_prefix.md` are gone; the `splitPrefixMaxTokens` config key is removed.
+- Runtime filter strips pi-continue's own `CONTINUATION_PROMPT` from the transcript before the synthesizer sees it; the synthesizer is the agent's memory of the work, not of the harness. Parser-level `singleLineString` normalization collapses any accidental multi-line field values so round-trip rendering cannot explode entries on the next cycle.
+- Updated the package gallery image URL to the v0.7.0 source tag.
+
+### Migration
+
+Sessions compacted under `pi-continue-artifacts/v3` cannot resume under v4; `/continue status` reports invalid handoff proof and the resume fails closed. Restart any in-progress thread before installing 0.7.0. Operators with `continuationDocSyncMode: "always"` will see their CONTINUE.md replaced by the rendered brief on the first v4 compaction (no longer a freeform separate document). Operators with custom `ledgerDisplayMode` settings should switch to `showAfterCompact: true | false`. `appendFileTags` is replaced by `appendReadFileTags` and `appendModifiedFileTags`; modified-file tags default on and read-file tags default off. The brief remains the only required receiver memory channel.
+
+### Why the rewrite
+
+The v3 schema was a planning-document ontology: 18 fuzzy slots, prose-heavy prompts, and an Evidence Gate that told the synthesizer to drop the provenance anchors that would have prevented rework. v4 reshaped the brief as a research ledger with anchored evidence, but the synthesizer prompts still drifted across cycles — silent drops of established entries created amnesia in the amnesiac agent. The 0.7.0 pass reframes the synthesizer from a per-cycle summarizer into the agent's persistent memory: every slot, principle, and algorithm step flows from the Memento role articulation rather than from case-specific anti-failure rules. The new `learned` slot captures derived insights that anchored `established` entries cannot carry (cross-cutting lessons, confirmed preferences, failure-mode wisdom, reusable approaches). The receiver prompt mirrors the framing so the agent reads the brief as its own prior-cycle work, not as external instructions to second-guess.
+
 ## 0.6.7 - 2026-05-08
 
 ### Added
@@ -90,7 +115,7 @@ All notable changes to `pi-continue` are documented here.
 - `/continue status` now reports whether the Continuation Ledger is ready, waiting, or stopped; fallback status and fallback guidance were removed.
 - Failure reporting for synthesis, document sync, prompt dispatch, shutdown, and resume outcomes now uses explicit package-owned messages instead of parsing provider error text.
 - Prompt assets now produce denser ledgers with one current working edge, clearer stale-context handling, durable promotions, durable learnings, dormant context, and retired context.
-- Compaction metadata remains compact and path-free in the rendered summary, while explicit file tags are appended only when `appendFileTags` is enabled.
+- Compaction metadata remains compact and path-free in the rendered summary, while explicit read-file and modified-file tags are controlled separately by `appendReadFileTags` and `appendModifiedFileTags`.
 
 ### Added
 

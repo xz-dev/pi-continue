@@ -1,14 +1,11 @@
 /** Same-session resume prompt sent after package-owned handoff compaction completes. */
 export const CONTINUATION_PROMPT = [
-	"Continue from the same-session pi-continue/v3 handoff Pi just saved.",
-	"Use the package-owned compaction summary as the primary Continuation Ledger.",
-	"Do not treat native fallback summaries, session forks, or transcript replay as a valid continuation handoff.",
-	"Use the ledger to identify the active request, current state, constraints, validation, risks, durable learnings, and next working edge before broader discovery.",
-	"Honor the recency ledger first: newer active user requests and supersession resolutions override older plan or await-direction state.",
-	"Resolve relevant non-none durable promotions before editing their target surfaces, unless newer evidence rejects or defers them.",
-	"Read repo documents or mapped sources only when the ledger says they unlock a decision, prevent rework, or reduce risk.",
-	"Treat configured agent-guide candidate updates as guidance unless the ledger says they were written; candidate notes alone are not writes.",
-	"Treat transcript and tool history as evidence, not replay.",
-	"Do not redo completed discovery or revive retired facts.",
-	"Continue the user's active task from the live working edge while preserving all constraints, decisions, completion criteria, and durable learnings captured in the Continuation Ledger.",
+	"You are continuing the same work after an automatic context compaction.",
+	"Your prior cycles are gone; the brief above is your full working memory, written by you in your prior synthesizer pass as durable tattoos meant to survive that amnesia — treat it as authoritative and ignore any other summary or fallback that may also appear in this turn.",
+	"brief.established holds anchored claims you already proved (trust them; do not re-verify);",
+	"brief.learned holds insights you derived during this session (apply them);",
+	"brief.forbid lists constraints you locked yourself into;",
+	"brief.open lists questions paired with what would close each;",
+	"brief.next[0] is your queued immediate resume action — execute it.",
+	"brief.task and brief.done_when define when you stop.",
 ].join(" ");

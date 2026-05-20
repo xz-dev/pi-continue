@@ -65,20 +65,26 @@ function completeAndVerify(owner, ctx, runtime, eventId = "continue-1", compacti
 	acceptContinuationCompactionProof(ctx, runtime, eventId, compactionId);
 }
 
-test("continuation prompt prioritizes package-owned continuation ledger routing", () => {
-	assert.match(CONTINUATION_PROMPT, /same-session pi-continue\/v3 handoff/);
-	assert.match(CONTINUATION_PROMPT, /package-owned compaction summary as the primary Continuation Ledger/);
-	assert.match(CONTINUATION_PROMPT, /Do not treat native fallback summaries/);
-	assert.match(CONTINUATION_PROMPT, /active request, current state, constraints, validation, risks, durable learnings, and next working edge/);
-	assert.match(CONTINUATION_PROMPT, /Honor the recency ledger first/);
-	assert.match(CONTINUATION_PROMPT, /newer active user requests and supersession resolutions override older plan/);
-	assert.match(CONTINUATION_PROMPT, /Resolve relevant non-none durable promotions before editing their target surfaces/);
-	assert.match(CONTINUATION_PROMPT, /Read repo documents or mapped sources only when the ledger says they unlock a decision/);
-	assert.match(CONTINUATION_PROMPT, /Treat configured agent-guide candidate updates as guidance/);
-	assert.match(CONTINUATION_PROMPT, /Treat transcript and tool history as evidence, not replay/);
+test("receiver prompt frames the agent as its own amnesiac continuer reading durable tattoos", () => {
+	assert.match(CONTINUATION_PROMPT, /continuing the same work/i);
+	assert.match(CONTINUATION_PROMPT, /amnesi/i);
+	assert.match(CONTINUATION_PROMPT, /tattoo/i);
+	assert.match(CONTINUATION_PROMPT, /authoritative/i);
+	assert.match(CONTINUATION_PROMPT, /ignore any other summary or fallback/i);
+	assert.match(CONTINUATION_PROMPT, /brief\.established/);
+	assert.match(CONTINUATION_PROMPT, /brief\.learned/);
+	assert.match(CONTINUATION_PROMPT, /brief\.forbid/);
+	assert.match(CONTINUATION_PROMPT, /brief\.open/);
+	assert.match(CONTINUATION_PROMPT, /brief\.next\[0\]/);
+	assert.match(CONTINUATION_PROMPT, /brief\.task/);
+	assert.match(CONTINUATION_PROMPT, /brief\.done_when/);
+	assert.match(CONTINUATION_PROMPT, /do not re-verify/i);
+	assert.doesNotMatch(CONTINUATION_PROMPT, /pi-continue\/v3/);
+	assert.doesNotMatch(CONTINUATION_PROMPT, /\bdocument\b/);
+	assert.doesNotMatch(CONTINUATION_PROMPT, /recency ledger/i);
+	assert.doesNotMatch(CONTINUATION_PROMPT, /durable promotions/i);
 	assert.doesNotMatch(CONTINUATION_PROMPT, /Read Before Acting/);
 	assert.doesNotMatch(CONTINUATION_PROMPT, /Resume Now/);
-	assert.doesNotMatch(CONTINUATION_PROMPT, /repo CONTINUE\.md as the authoritative continuation context/);
 });
 
 test("parseContinuationRequest defaults to steer and preserves instructions", () => {

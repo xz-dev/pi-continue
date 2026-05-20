@@ -16,7 +16,7 @@ interface PromptPassMetadata {
 }
 
 interface ContinuationSummaryMetadata {
-	kind: "pi-continue/v3";
+	kind: "pi-continue/v4";
 	readFileCount: number;
 	modifiedFileCount: number;
 	documentSyncId?: string;
@@ -32,7 +32,7 @@ interface ContinuationSummaryMetadata {
 	};
 }
 
-const CONTINUATION_DETAILS_KIND_V3 = "pi-continue/v3";
+const CONTINUATION_DETAILS_KIND_V4 = "pi-continue/v4";
 const CONTINUATION_DETAILS_KEYS = new Set<string>([
 	"kind",
 	"readFiles",
@@ -180,7 +180,7 @@ export function buildContinuationSynthesisTelemetry(
 /** Parse the package-owned compaction-entry details payload used by session_compact. */
 export function parseContinuationDetails(value: unknown): ContinuationCompactionDetails | undefined {
 	if (!isRecord(value) || !hasOnlyKeys(value, CONTINUATION_DETAILS_KEYS)) return undefined;
-	if (value.kind !== CONTINUATION_DETAILS_KIND_V3) return undefined;
+	if (value.kind !== CONTINUATION_DETAILS_KIND_V4) return undefined;
 	if (!isStringArray(value.readFiles) || !isStringArray(value.modifiedFiles)) return undefined;
 	if (invalidOptionalString(value.documentSyncId) || invalidOptionalString(value.agentGuideSyncId) || invalidOptionalString(value.agentGuideChangeReason) || invalidOptionalString(value.continuationEventId)) return undefined;
 	if (value.agentGuideWriteStatus !== undefined && !asAgentGuideWriteStatus(value.agentGuideWriteStatus)) return undefined;
@@ -192,7 +192,7 @@ export function parseContinuationDetails(value: unknown): ContinuationCompaction
 	const synthesis = value.synthesis === undefined ? undefined : parseSynthesisTelemetry(value.synthesis);
 	if (value.synthesis !== undefined && !synthesis) return undefined;
 	const details: ContinuationCompactionDetails = {
-		kind: CONTINUATION_DETAILS_KIND_V3,
+		kind: CONTINUATION_DETAILS_KIND_V4,
 		readFiles: value.readFiles,
 		modifiedFiles: value.modifiedFiles,
 	};
@@ -217,7 +217,7 @@ export function buildContinuationDetails(
 ): ContinuationCompactionDetails {
 	const { readFiles, modifiedFiles } = snapshotFileOperations(fileOps);
 	const details: ContinuationCompactionDetails = {
-		kind: CONTINUATION_DETAILS_KIND_V3,
+		kind: CONTINUATION_DETAILS_KIND_V4,
 		readFiles,
 		modifiedFiles,
 	};
@@ -247,7 +247,7 @@ function renderPromptPassMetadata(telemetry: PromptPassTelemetry | undefined): P
 
 function buildSummaryMetadata(details: ContinuationCompactionDetails): ContinuationSummaryMetadata {
 	const metadata: ContinuationSummaryMetadata = {
-		kind: CONTINUATION_DETAILS_KIND_V3,
+		kind: CONTINUATION_DETAILS_KIND_V4,
 		readFileCount: details.readFiles.length,
 		modifiedFileCount: details.modifiedFiles.length,
 	};

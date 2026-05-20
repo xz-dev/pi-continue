@@ -1,240 +1,259 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseHistoryArtifacts, parseSplitPrefix } from "../extensions/continue/src/blocks.ts";
+import { parseHistoryArtifacts } from "../extensions/continue/src/blocks.ts";
 
-function structuredArtifact(overrides = {}) {
+function briefEnvelope(overrides: Record<string, unknown> = {}) {
 	return {
-		task: "Finish the approved continuation redesign.",
-		initiativeCharter: ["User wants long Pi runs to continue without losing the product story."],
-		definitionOfDone: ["Docs, runtime, prompts, and tests agree on the continuation ledger contract."],
-		recencyLedger: [{
-			status: "superseded",
-			subject: "Earlier await-direction state",
-			evidence: "A newer user request expanded the task to include adversarial review and release choreography.",
-			resolution: "Use the newer request as the active working edge before asking for irreversible release approval.",
-		}],
-		currentPlan: ["Update tests and docs, then run the gate."],
-		progress: ["Structured v2 artifacts replaced fixed read/do headings before this v3 ledger pass."],
-		state: ["Runtime contract changed."],
-		decisions: ["Single /continue command."],
-		contextMap: [{ source: "/repo/README.md", relevance: "operator package guide", use: "verify runtime boundaries" }],
-		workingEdge: ["Update tests and docs, then run the gate."],
-		validation: ["pnpm test is stale after edits."],
-		risks: ["Do not preserve mandatory read/do headings."],
-		dormantContext: ["Native Pi compaction changes matter if Pi core adds a mid-turn checkpoint primitive."],
-		retiredContext: ["Mandatory read/do headings are obsolete; use contextMap and workingEdge instead."],
-		antiRework: ["Do not re-run external research already summarized."],
-		durableLearnings: ["Avoid renaming weak constraints instead of redesigning the contract."],
-		durablePromotions: [{
-			status: "apply",
-			targetSurface: "README.md",
-			proposal: "Record continuation ledger conservation semantics for operators.",
-			evidence: "Prompt contract now preserves initiative spine and durable promotions.",
-			durability: "README owns the package-facing contract.",
-			risk: "Prompt/docs drift if left only in ignored local notes.",
-			nextAction: "Update README.md before delivery.",
-		}],
-		agentGuideUpdates: ["Capture durable prompt-contract rules if guide sync is enabled."],
+		task: "Finish the v4 continuation ledger cutover.",
+		done_when: "All gates pass and the README, CHANGELOG, and assets describe pi-continue-artifacts/v4 only.",
+		forbid: [
+			{ rule: "Do not introduce a v3 migration shim.", source: "user@msg-design-decision" },
+			{ rule: "Do not edit vendor/ paths.", source: "user@msg-vendor-lock" },
+		],
+		established: [
+			{
+				claim: "Finding 7 (duplicate channel) is invalid: delegation.test.ts covers it deterministically.",
+				evidence: "tests/delegation.test.ts:142",
+				basis: "test",
+				reopen: "if tests/delegation.test.ts changes around line 142",
+			},
+			{
+				claim: "Cross-service eventing uses queues, not pubsub.",
+				evidence: "user@msg-arch-decision: 'use queues; pubsub loses messages we cannot lose'",
+				basis: "user",
+				reopen: "none",
+			},
+		],
+		learned: [
+			{
+				lesson: "When a brief field is stuffed with embedded newlines, the next render cycle re-atomizes it into spurious entries.",
+				source: "session experience: L1047 explosion observed during v4 stabilization",
+			},
+		],
+		open: [
+			{
+				question: "Does the gate pass after the v4 schema rewrite?",
+				verifies: "Run pnpm run gate and observe exit 0.",
+			},
+		],
+		next: [
+			{
+				action: "Run pnpm run gate from the repo root.",
+				outcome: "Either exit 0 (close the open verifies) or a concrete failure to triage.",
+			},
+		],
 		...overrides,
 	};
 }
 
-const validArtifacts = JSON.stringify({
-	version: "pi-continue-artifacts/v3",
-	brief: structuredArtifact(),
-	document: structuredArtifact({ state: ["Document carries broader durable state."] }),
-	agentGuideMarkdown: null,
-	agentGuideChangeReason: "no durable guide change",
-});
+function envelope(overrides: Record<string, unknown> = {}) {
+	return {
+		version: "pi-continue-artifacts/v4",
+		brief: briefEnvelope(),
+		agentGuideUpdate: { content: null, reason: "no durable guide change this cycle" },
+		...overrides,
+	};
+}
 
-test("parseHistoryArtifacts requires the v3 structured JSON artifact contract", () => {
+const validArtifacts = JSON.stringify(envelope());
+
+test("parseHistoryArtifacts requires the v4 structured JSON artifact contract", () => {
 	assert.equal(parseHistoryArtifacts("<continuation>one</continuation>"), undefined);
-	assert.deepEqual(parseHistoryArtifacts(validArtifacts), {
-		continuation: [
-			"## Task\nFinish the approved continuation redesign.",
-			"## Initiative Charter\n- User wants long Pi runs to continue without losing the product story.",
-			"## Definition Of Done\n- Docs, runtime, prompts, and tests agree on the continuation ledger contract.",
-			"## Recency And Supersession\n- superseded: Earlier await-direction state — evidence: A newer user request expanded the task to include adversarial review and release choreography.; resolution: Use the newer request as the active working edge before asking for irreversible release approval.",
-			"## Current Plan\n- Update tests and docs, then run the gate.",
-			"## Progress And Milestone Trail\n- Structured v2 artifacts replaced fixed read/do headings before this v3 ledger pass.",
-			"## Current State\n- Runtime contract changed.",
-			"## Decisions and Constraints\n- Single /continue command.",
-			"## Context Map\n- /repo/README.md — operator package guide; use it to verify runtime boundaries.",
-			"## Working Edge\n- Update tests and docs, then run the gate.",
-			"## Validation\n- pnpm test is stale after edits.",
-			"## Risks\n- Do not preserve mandatory read/do headings.",
-			"## Dormant But Important\n- Native Pi compaction changes matter if Pi core adds a mid-turn checkpoint primitive.",
-			"## Retired Or Obsolete\n- Mandatory read/do headings are obsolete; use contextMap and workingEdge instead.",
-			"## Anti-Rework\n- Do not re-run external research already summarized.",
-			"## Durable Learnings\n- Avoid renaming weak constraints instead of redesigning the contract.",
-			"## Durable Promotions\n- apply: README.md — Record continuation ledger conservation semantics for operators.; evidence: Prompt contract now preserves initiative spine and durable promotions.; durability: README owns the package-facing contract.; risk: Prompt/docs drift if left only in ignored local notes.; next: Update README.md before delivery.",
-			"## Agent Guide Updates\n- Capture durable prompt-contract rules if guide sync is enabled.",
-		].join("\n\n"),
-		continuationMd: [
-			"# Continuation",
-			"## Task\nFinish the approved continuation redesign.",
-			"## Initiative Charter\n- User wants long Pi runs to continue without losing the product story.",
-			"## Definition Of Done\n- Docs, runtime, prompts, and tests agree on the continuation ledger contract.",
-			"## Recency And Supersession\n- superseded: Earlier await-direction state — evidence: A newer user request expanded the task to include adversarial review and release choreography.; resolution: Use the newer request as the active working edge before asking for irreversible release approval.",
-			"## Current Plan\n- Update tests and docs, then run the gate.",
-			"## Progress And Milestone Trail\n- Structured v2 artifacts replaced fixed read/do headings before this v3 ledger pass.",
-			"## Current State\n- Document carries broader durable state.",
-			"## Decisions and Constraints\n- Single /continue command.",
-			"## Context Map\n- /repo/README.md — operator package guide; use it to verify runtime boundaries.",
-			"## Working Edge\n- Update tests and docs, then run the gate.",
-			"## Validation\n- pnpm test is stale after edits.",
-			"## Risks\n- Do not preserve mandatory read/do headings.",
-			"## Dormant But Important\n- Native Pi compaction changes matter if Pi core adds a mid-turn checkpoint primitive.",
-			"## Retired Or Obsolete\n- Mandatory read/do headings are obsolete; use contextMap and workingEdge instead.",
-			"## Anti-Rework\n- Do not re-run external research already summarized.",
-			"## Durable Learnings\n- Avoid renaming weak constraints instead of redesigning the contract.",
-			"## Durable Promotions\n- apply: README.md — Record continuation ledger conservation semantics for operators.; evidence: Prompt contract now preserves initiative spine and durable promotions.; durability: README owns the package-facing contract.; risk: Prompt/docs drift if left only in ignored local notes.; next: Update README.md before delivery.",
-			"## Agent Guide Updates\n- Capture durable prompt-contract rules if guide sync is enabled.",
+	const parsed = parseHistoryArtifacts(validArtifacts);
+	assert.deepEqual(parsed, {
+		briefMarkdown: [
+			"## Task\nFinish the v4 continuation ledger cutover.",
+			"## Done When\nAll gates pass and the README, CHANGELOG, and assets describe pi-continue-artifacts/v4 only.",
+			"## Forbid\n- Do not introduce a v3 migration shim. — source: user@msg-design-decision\n- Do not edit vendor/ paths. — source: user@msg-vendor-lock",
+			"## Established\n- Finding 7 (duplicate channel) is invalid: delegation.test.ts covers it deterministically. — evidence: tests/delegation.test.ts:142; basis: test; reopen: if tests/delegation.test.ts changes around line 142\n- Cross-service eventing uses queues, not pubsub. — evidence: user@msg-arch-decision: 'use queues; pubsub loses messages we cannot lose'; basis: user; reopen: none",
+			"## Learned\n- When a brief field is stuffed with embedded newlines, the next render cycle re-atomizes it into spurious entries. — source: session experience: L1047 explosion observed during v4 stabilization",
+			"## Open\n- Does the gate pass after the v4 schema rewrite? — verifies: Run pnpm run gate and observe exit 0.",
+			"## Next\n- Run pnpm run gate from the repo root. → Either exit 0 (close the open verifies) or a concrete failure to triage.",
 		].join("\n\n"),
 		agentGuideMd: undefined,
-		agentGuideChangeReason: "no durable guide change",
+		agentGuideChangeReason: "no durable guide change this cycle",
 	});
 });
 
+test("parseHistoryArtifacts renders only populated brief sections (empty arrays accepted)", () => {
+	const parsed = parseHistoryArtifacts(JSON.stringify(envelope({
+		brief: briefEnvelope({ forbid: [], established: [], learned: [], open: [], next: [] }),
+	})));
+	assert.equal(parsed?.briefMarkdown, [
+		"## Task\nFinish the v4 continuation ledger cutover.",
+		"## Done When\nAll gates pass and the README, CHANGELOG, and assets describe pi-continue-artifacts/v4 only.",
+	].join("\n\n"));
+});
+
 test("parseHistoryArtifacts accepts a full agent guide replacement", () => {
-	const parsed = parseHistoryArtifacts(JSON.stringify({
-		version: "pi-continue-artifacts/v3",
-		brief: structuredArtifact(),
-		document: structuredArtifact(),
-		agentGuideMarkdown: "# AGENTS\n",
-		agentGuideChangeReason: "capture corrected command truth",
-	}));
+	const parsed = parseHistoryArtifacts(JSON.stringify(envelope({
+		agentGuideUpdate: { content: "# AGENTS\n", reason: "capture corrected command truth" },
+	})));
 	assert.equal(parsed?.agentGuideMd, "# AGENTS");
 	assert.equal(parsed?.agentGuideChangeReason, "capture corrected command truth");
 });
 
-test("parseHistoryArtifacts rejects missing structured fields", () => {
+test("parseHistoryArtifacts rejects the retired v3 envelope", () => {
 	assert.equal(parseHistoryArtifacts(JSON.stringify({
 		version: "pi-continue-artifacts/v3",
-		brief: { task: "missing fields" },
-		document: structuredArtifact(),
+		brief: briefEnvelope(),
+		document: "doc",
 		agentGuideMarkdown: null,
-		agentGuideChangeReason: "missing fields rejected",
+		agentGuideChangeReason: "v3 shape",
 	})), undefined);
 });
 
-test("parseHistoryArtifacts rejects invalid durable promotion statuses", () => {
+test("parseHistoryArtifacts rejects envelopes with a retired document field", () => {
 	assert.equal(parseHistoryArtifacts(JSON.stringify({
-		version: "pi-continue-artifacts/v3",
-		brief: structuredArtifact({ durablePromotions: [{
-			status: "later",
-			targetSurface: "README.md",
-			proposal: "bad status",
-			evidence: "test",
-			durability: "test",
-			risk: "test",
-			nextAction: "test",
-		}] }),
-		document: structuredArtifact(),
-		agentGuideMarkdown: null,
-		agentGuideChangeReason: "invalid status rejected",
+		version: "pi-continue-artifacts/v4",
+		brief: briefEnvelope(),
+		document: "# Continuation\n\nresidual document from prior schema.",
+		agentGuideUpdate: { content: null, reason: "ok" },
 	})), undefined);
 });
 
-test("parseHistoryArtifacts rejects invalid recency ledger statuses", () => {
+test("parseHistoryArtifacts rejects wrong top-level keys", () => {
 	assert.equal(parseHistoryArtifacts(JSON.stringify({
-		version: "pi-continue-artifacts/v3",
-		brief: structuredArtifact({ recencyLedger: [{
-			status: "newer",
-			subject: "bad status",
-			evidence: "test",
-			resolution: "test",
-		}] }),
-		document: structuredArtifact(),
-		agentGuideMarkdown: null,
-		agentGuideChangeReason: "invalid status rejected",
+		version: "pi-continue-artifacts/v4",
+		brief: briefEnvelope(),
+		agentGuideUpdate: { content: null, reason: "ok" },
+		extra: "noise",
 	})), undefined);
 });
 
-test("parseHistoryArtifacts requires at least one recency ledger entry", () => {
-	assert.equal(parseHistoryArtifacts(JSON.stringify({
-		version: "pi-continue-artifacts/v3",
-		brief: structuredArtifact({ recencyLedger: [] }),
-		document: structuredArtifact(),
-		agentGuideMarkdown: null,
-		agentGuideChangeReason: "empty recency ledger rejected",
-	})), undefined);
+test("parseHistoryArtifacts rejects wrong brief keys", () => {
+	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+		brief: { ...briefEnvelope(), extraSlot: ["nope"] },
+	}))), undefined);
 });
 
-test("parseHistoryArtifacts requires an agent guide decision reason", () => {
-	assert.equal(parseHistoryArtifacts(JSON.stringify({
-		version: "pi-continue-artifacts/v3",
-		brief: structuredArtifact(),
-		document: structuredArtifact(),
-		agentGuideMarkdown: null,
-		agentGuideChangeReason: null,
-	})), undefined);
+test("parseHistoryArtifacts rejects brief missing the learned slot", () => {
+	const noLearned = briefEnvelope();
+	delete (noLearned as Record<string, unknown>).learned;
+	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({ brief: noLearned }))), undefined);
 });
 
-test("parseHistoryArtifacts rejects extra or retired contract keys", () => {
-	assert.equal(parseHistoryArtifacts(JSON.stringify({
-		version: "pi-continue-artifacts/v3",
-		brief: structuredArtifact(),
-		document: structuredArtifact(),
-		agentGuideMarkdown: null,
-		agentGuideChangeReason: "extra top-level key rejected",
-		fallbackMode: "deterministic-summary",
-	})), undefined);
-	assert.equal(parseHistoryArtifacts(JSON.stringify({
-		version: "pi-continue-artifacts/v3",
-		brief: structuredArtifact({ fallbackMode: "deterministic-summary" }),
-		document: structuredArtifact(),
-		agentGuideMarkdown: null,
-		agentGuideChangeReason: "extra structured key rejected",
-	})), undefined);
-	assert.equal(parseHistoryArtifacts(JSON.stringify({
-		version: "pi-continue-artifacts/v3",
-		brief: structuredArtifact({ contextMap: [{ source: "/repo/README.md", relevance: "operator guide", use: "verify docs", priority: "now" }] }),
-		document: structuredArtifact(),
-		agentGuideMarkdown: null,
-		agentGuideChangeReason: "extra context map key rejected",
-	})), undefined);
-	assert.equal(parseHistoryArtifacts(JSON.stringify({
-		version: "pi-continue-artifacts/v3",
-		brief: structuredArtifact({ durablePromotions: [{
-			status: "apply",
-			targetSurface: "README.md",
-			proposal: "bad extra key",
-			evidence: "test",
-			durability: "test",
-			risk: "test",
-			nextAction: "test",
-			compatAlias: "fallbackMode",
-		}] }),
-		document: structuredArtifact(),
-		agentGuideMarkdown: null,
-		agentGuideChangeReason: "extra durable promotion key rejected",
-	})), undefined);
-	assert.equal(parseHistoryArtifacts(JSON.stringify({
-		version: "pi-continue-artifacts/v3",
-		brief: structuredArtifact({ recencyLedger: [{
-			status: "active",
-			subject: "new request",
-			evidence: "test",
-			resolution: "test",
-			order: "latest",
-		}] }),
-		document: structuredArtifact(),
-		agentGuideMarkdown: null,
-		agentGuideChangeReason: "extra recency key rejected",
-	})), undefined);
+test("parseHistoryArtifacts rejects empty task or done_when", () => {
+	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+		brief: briefEnvelope({ task: "" }),
+	}))), undefined);
+	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+		brief: briefEnvelope({ done_when: "   " }),
+	}))), undefined);
 });
 
-test("parseSplitPrefix accepts raw summary text", () => {
-	assert.equal(parseSplitPrefix("prefix"), "prefix");
-	assert.equal(parseSplitPrefix("\n\tprefix\n"), "prefix");
+test("parseHistoryArtifacts rejects forbid entries missing fields", () => {
+	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+		brief: briefEnvelope({ forbid: [{ rule: "no source attribution" }] }),
+	}))), undefined);
+	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+		brief: briefEnvelope({ forbid: [{ rule: "ok", source: "" }] }),
+	}))), undefined);
 });
 
-test("parseSplitPrefix rejects wrapper tags and Markdown fences", () => {
-	assert.equal(parseSplitPrefix("<split-prefix>prefix</split-prefix>"), undefined);
-	assert.equal(parseSplitPrefix("<split-prefix></split-prefix>"), undefined);
-	assert.equal(parseSplitPrefix("<split-prefix>prefix"), undefined);
-	assert.equal(parseSplitPrefix("prefix</split-prefix>"), undefined);
-	assert.equal(parseSplitPrefix("```md\nprefix\n```"), undefined);
-	assert.equal(parseSplitPrefix("~~~md\nprefix\n~~~"), undefined);
+test("parseHistoryArtifacts rejects established basis not in enum", () => {
+	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+		brief: briefEnvelope({
+			established: [{
+				claim: "ok",
+				evidence: "path:1",
+				basis: "hearsay",
+				reopen: "none",
+			}],
+		}),
+	}))), undefined);
+});
+
+test("parseHistoryArtifacts rejects established entries missing fields", () => {
+	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+		brief: briefEnvelope({
+			established: [{ claim: "ok", evidence: "path:1", basis: "test" }],
+		}),
+	}))), undefined);
+	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+		brief: briefEnvelope({
+			established: [{ claim: "ok", evidence: "", basis: "test", reopen: "none" }],
+		}),
+	}))), undefined);
+});
+
+test("parseHistoryArtifacts rejects learned entries missing fields", () => {
+	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+		brief: briefEnvelope({ learned: [{ lesson: "no source" }] }),
+	}))), undefined);
+	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+		brief: briefEnvelope({ learned: [{ lesson: "ok", source: "" }] }),
+	}))), undefined);
+});
+
+test("parseHistoryArtifacts rejects learned entries with extra keys", () => {
+	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+		brief: briefEnvelope({ learned: [{ lesson: "ok", source: "user@msg-1", evidence: "noise" }] }),
+	}))), undefined);
+});
+
+test("parseHistoryArtifacts rejects open entries missing fields", () => {
+	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+		brief: briefEnvelope({ open: [{ question: "ok" }] }),
+	}))), undefined);
+	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+		brief: briefEnvelope({ open: [{ question: "ok", verifies: "" }] }),
+	}))), undefined);
+});
+
+test("parseHistoryArtifacts rejects next entries missing fields", () => {
+	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+		brief: briefEnvelope({ next: [{ action: "ok" }] }),
+	}))), undefined);
+	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+		brief: briefEnvelope({ next: [{ action: "ok", outcome: "" }] }),
+	}))), undefined);
+});
+
+test("parseHistoryArtifacts rejects agentGuideUpdate with wrong keys", () => {
+	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+		agentGuideUpdate: { content: null, reason: "ok", extra: true },
+	}))), undefined);
+	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+		agentGuideUpdate: { reason: "missing content" },
+	}))), undefined);
+});
+
+test("parseHistoryArtifacts rejects agentGuideUpdate.content empty string (must be null or non-empty)", () => {
+	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+		agentGuideUpdate: { content: "   ", reason: "empty content rejected" },
+	}))), undefined);
+});
+
+test("parseHistoryArtifacts rejects empty agentGuideUpdate.reason", () => {
+	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+		agentGuideUpdate: { content: null, reason: "" },
+	}))), undefined);
+	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+		agentGuideUpdate: { content: null, reason: null },
+	}))), undefined);
+});
+
+test("parseHistoryArtifacts collapses multi-line/embedded-bullet field values to single lines", () => {
+	// Simulates a synthesizer that stuffed a multi-line finding into an `open.question`.
+	// Round-trip rendering must NOT produce nested markdown bullets that the next
+	// cycle parses as separate entries (the L1047 explosion mode).
+	const pathological = JSON.stringify(envelope({
+		brief: briefEnvelope({
+			open: [{
+				question: "Finding 1: RPC child success ignores non-success stopReason\n  - rpc-child-controller.ts:234\n  - rpc-record-utils.ts:12\n  - Fix: parse stopReason",
+				verifies: "Read both files\nand add tests",
+			}],
+		}),
+	}));
+	const parsed = parseHistoryArtifacts(pathological);
+	assert.equal(
+		parsed?.briefMarkdown.includes("\n  - "),
+		false,
+		"rendered brief must not contain nested bullet markers that the next synthesizer would re-atomize",
+	);
+	assert.match(
+		parsed?.briefMarkdown ?? "",
+		/## Open\n- Finding 1: RPC child success ignores non-success stopReason rpc-child-controller\.ts:234 rpc-record-utils\.ts:12 Fix: parse stopReason — verifies: Read both files and add tests/,
+	);
 });

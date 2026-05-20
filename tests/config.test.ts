@@ -38,18 +38,20 @@ test("loadContinuationConfig uses current-session model, reasoning, guard, and s
 		assert.equal(config.agentGuideSyncMode, "off");
 		assert.equal(config.midRunGuardEnabled, true);
 		assert.equal(config.appendCompactionMetadata, false);
-		assert.equal(config.appendFileTags, false);
-		assert.equal(config.ledgerDisplayMode, "overlay");
+		assert.equal(config.appendReadFileTags, false);
+		assert.equal(config.appendModifiedFileTags, true);
+		assert.equal(Object.hasOwn(config, "appendFileTags"), false);
+		assert.equal(config.showAfterCompact, true);
 	});
 });
 
-test("loadContinuationConfig falls back for invalid ledger display mode", async () => {
+test("loadContinuationConfig ignores non-boolean showAfterCompact", async () => {
 	await withTempAgent(async (root) => {
 		const configDir = join(root, ".pi", "extensions");
 		mkdirSync(configDir, { recursive: true });
-		writeFileSync(join(configDir, "pi-continue.json"), JSON.stringify({ ledgerDisplayMode: "modal" }), "utf8");
+		writeFileSync(join(configDir, "pi-continue.json"), JSON.stringify({ showAfterCompact: "yes" }), "utf8");
 		const config = loadContinuationConfig(root);
-		assert.equal(config.ledgerDisplayMode, "overlay");
+		assert.equal(config.showAfterCompact, true);
 	});
 });
 
@@ -57,10 +59,10 @@ test("loadContinuationConfig preserves explicit mid-run guard false", async () =
 	await withTempAgent(async (root) => {
 		const configDir = join(root, ".pi", "extensions");
 		mkdirSync(configDir, { recursive: true });
-		writeFileSync(join(configDir, "pi-continue.json"), JSON.stringify({ midRunGuardEnabled: false, ledgerDisplayMode: "off" }), "utf8");
+		writeFileSync(join(configDir, "pi-continue.json"), JSON.stringify({ midRunGuardEnabled: false, showAfterCompact: false }), "utf8");
 		const config = loadContinuationConfig(root);
 		assert.equal(config.midRunGuardEnabled, false);
-		assert.equal(config.ledgerDisplayMode, "off");
+		assert.equal(config.showAfterCompact, false);
 	});
 });
 
@@ -112,10 +114,10 @@ test("patchContinuationConfig preserves inherited global settings", async () => 
 			...DEFAULT_CONTINUE_CONFIG,
 			enabled: false,
 		});
-		await patchContinuationConfig("project", root, { ledgerDisplayMode: "off" });
+		await patchContinuationConfig("project", root, { showAfterCompact: false });
 		const effective = loadContinuationConfig(root);
 		assert.equal(effective.enabled, false);
-		assert.equal(effective.ledgerDisplayMode, "off");
+		assert.equal(effective.showAfterCompact, false);
 	});
 });
 

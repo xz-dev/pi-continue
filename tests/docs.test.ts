@@ -48,6 +48,19 @@ test("documented default config matches runtime and public example", () => {
 
 test("CHANGELOG documents the release contract", () => {
 	const changelog = readText("CHANGELOG.md");
+	assert.match(changelog, /## 0\.7\.0 - 2026-05-20/);
+	assert.match(changelog, /Breaking changes/);
+	assert.match(changelog, /pi-continue-artifacts\/v4/);
+	assert.match(changelog, /seven-slot|7-slot/);
+	assert.match(changelog, /Retired.*pi-continue-artifacts\/v3|pi-continue-artifacts\/v3.*retired/i);
+	assert.match(changelog, /Memento|tattoo/i);
+	assert.match(changelog, /\blearned\b/);
+	assert.match(changelog, /showAfterCompact/);
+	assert.match(changelog, /Migration/);
+	assert.match(changelog, /sessions compacted under.*v3/i);
+	assert.match(changelog, /Why the rewrite/);
+	assert.match(changelog, /anti-rework|anchor discipline|research[- ]ledger/i);
+	assert.match(changelog, /v0\.7\.0 source tag/);
 	assert.match(changelog, /## 0\.6\.7 - 2026-05-08/);
 	assert.match(changelog, /human-facing handoff trigger/);
 	assert.match(changelog, /compaction\.reserveTokens/);
@@ -115,7 +128,7 @@ test("npm dry-run package contents align with the public contract", () => {
 test("package metadata and package contents align with the public contract", () => {
 	const packageJson = JSON.parse(readText("package.json"));
 	assert.equal(packageJson.name, "pi-continue");
-	assert.equal(packageJson.version, "0.6.7");
+	assert.equal(packageJson.version, "0.7.0");
 	assert.match(packageJson.description, /Mid-turn continuation/);
 	assert.match(packageJson.description, /long Pi tool runs/);
 	assert.match(packageJson.description, /context overflow/);
@@ -148,6 +161,6 @@ test("package metadata and package contents align with the public contract", () 
 	assert.equal(packageJson.peerDependencies["@earendil-works/pi-ai"], ">=0.74.0");
 	assert.equal(packageJson.peerDependencies["@earendil-works/pi-coding-agent"], ">=0.74.0");
 	assert.deepEqual(packageJson.pi.extensions, ["./extensions/continue/index.ts"]);
-	assert.equal(packageJson.pi.image, "https://raw.githubusercontent.com/Tiziano-AI/pi-continue/v0.6.7/assets/gallery/pi-continue-gallery.webp");
+	assert.equal(packageJson.pi.image, "https://raw.githubusercontent.com/Tiziano-AI/pi-continue/v0.7.0/assets/gallery/pi-continue-gallery.webp");
 	assert.equal(existsSync("assets/gallery/pi-continue-gallery.webp"), true);
 });
