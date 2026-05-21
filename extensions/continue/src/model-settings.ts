@@ -1,6 +1,6 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { ContinuationConfig } from "./types.ts";
+import type { ContinuationConfig, HistoryOutputBudget } from "./types.ts";
 
 /** Resolve the effective summarizer model from config or the current session model. */
 export function resolveSummarizerModel(
@@ -15,12 +15,25 @@ export function resolveSummarizerModel(
 	return ctx.modelRegistry.find(provider, modelId);
 }
 
-/** Match Pi default branch token formulas when no package override is configured. */
-export function resolveTokenBudget(
+function positiveFiniteInteger(value: unknown): number | undefined {
+	if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return undefined;
+	return Math.floor(value);
+}
+
+/** Match Pi native compaction's history budget formula and clamp to the model max-output cap when known. */
+export function resolveHistoryOutputBudget(
+	model: Pick<Model<Api>, "maxTokens"> | undefined,
 	reserveTokens: number,
 	override: number | null,
-	kind: "history" | "split",
-): number {
-	if (override !== null) return override;
-	return kind === "history" ? Math.floor(0.8 * reserveTokens) : Math.floor(0.5 * reserveTokens);
+): HistoryOutputBudget {
+	const requestedTokens = override ?? Math.floor(0.8 * reserveTokens);
+	const modelMaxTokens = positiveFiniteInteger(model?.maxTokens);
+	const effectiveTokens = modelMaxTokens === undefined ? requestedTokens : Math.min(requestedTokens, modelMaxTokens);
+	return {
+		source: override === null ? "pi-default" : "config",
+		requestedTokens,
+		effectiveTokens,
+		modelMaxTokens,
+		clampedByModel: effectiveTokens !== requestedTokens,
+	};
 }

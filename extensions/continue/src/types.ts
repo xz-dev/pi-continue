@@ -89,9 +89,32 @@ export type ContinuationArtifactStatus = "pending" | "modeled" | "aborted";
 export type ContinuationPromptStatus = "pending" | "sent" | "not-requested" | "failed";
 export type ContinuationResumeStatus = "not-requested" | "pending" | "running" | "completed" | "failed" | "aborted";
 export type ContinuationCompactionProofStatus = "pending" | "verified" | "failed";
-export type ContinuationSynthesisFailureStage = "history-model" | "history-artifact" | "unknown";
+export type ContinuationSynthesisFailureKind = "model-provider-call" | "artifact-parse-validation" | "internal";
+export type ContinuationSynthesisFailureCode =
+	| "model-unresolved"
+	| "auth-unavailable"
+	| "provider-error"
+	| "provider-aborted"
+	| "artifact-empty"
+	| "artifact-invalid-json"
+	| "artifact-invalid-shape"
+	| "internal-error";
 export type ContinuationSyncStatus = "off" | "pending" | "updated" | "unchanged" | "failed" | "no-replacement";
 export type ContinuationDocumentSyncTarget = "continuation-doc" | "agent-guide";
+
+export interface HistoryOutputBudget {
+	source: "pi-default" | "config";
+	requestedTokens: number;
+	effectiveTokens: number;
+	modelMaxTokens?: number;
+	clampedByModel: boolean;
+}
+
+export type HistoryArtifactParseFailureCode = "artifact-empty" | "artifact-invalid-json" | "artifact-invalid-shape";
+
+export type HistoryArtifactParseResult =
+	| { ok: true; artifacts: ParsedHistoryArtifacts }
+	| { ok: false; code: HistoryArtifactParseFailureCode };
 
 export interface PromptPassUsageTelemetry {
 	input: number;
@@ -108,18 +131,21 @@ export interface PromptPassTelemetry {
 	responseId?: string;
 	usage: PromptPassUsageTelemetry;
 	httpStatus?: number;
+	outputBudget?: HistoryOutputBudget;
 }
 
 export interface ContinuationSynthesisTelemetry {
 	history?: PromptPassTelemetry;
-	split?: PromptPassTelemetry;
 	totalCost?: number;
 	totalTokens?: number;
 }
 
 export interface ContinuationSynthesisFailure {
-	stage: ContinuationSynthesisFailureStage;
-	reason: string;
+	kind: ContinuationSynthesisFailureKind;
+	code: ContinuationSynthesisFailureCode;
+	pass: "history";
+	requestedModel?: string;
+	httpStatus?: number;
 }
 
 export interface ContinuationCompactionProof {

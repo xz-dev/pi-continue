@@ -75,15 +75,21 @@ function envelope(overrides: Record<string, unknown> = {}) {
 	});
 }
 
+function parseBrief(text: string): string {
+	const parsed = parseHistoryArtifacts(text);
+	assert.equal(parsed.ok, true);
+	if (!parsed.ok) throw new Error(`expected parsed brief, got ${parsed.code}`);
+	return parsed.artifacts.briefMarkdown;
+}
+
 test("rendered brief preserves anchored established evidence", () => {
-	const parsed = parseHistoryArtifacts(envelope());
-	assert.ok(parsed);
-	const validation = validateAnchorContract(parsed.briefMarkdown);
+	const brief = parseBrief(envelope());
+	const validation = validateAnchorContract(brief);
 	assert.deepEqual(validation, { valid: true, failures: [] });
 });
 
 test("multiple anchor styles are all considered navigable", () => {
-	const parsed = parseHistoryArtifacts(envelope({
+	const brief = parseBrief(envelope({
 		established: [
 			{ claim: "test anchor style", evidence: "tests/foo.ts:42", basis: "test", reopen: "none" },
 			{ claim: "user anchor style", evidence: "user@msg-abc123", basis: "user", reopen: "none" },
@@ -91,34 +97,31 @@ test("multiple anchor styles are all considered navigable", () => {
 			{ claim: "cmd anchor style", evidence: "cmd:pnpm test#exit-status", basis: "output", reopen: "none" },
 		],
 	}));
-	assert.ok(parsed);
-	const validation = validateAnchorContract(parsed.briefMarkdown);
+	const validation = validateAnchorContract(brief);
 	assert.deepEqual(validation.failures, []);
 	assert.equal(validation.valid, true);
 });
 
 test("rendered brief surfaces forbid rules verbatim with source attribution", () => {
-	const parsed = parseHistoryArtifacts(envelope({
+	const brief = parseBrief(envelope({
 		forbid: [
 			{ rule: "Do not delete vendor/.", source: "user@msg-vendor-lock" },
-			{ rule: "Do not introduce a v3 shim.", source: "design decision" },
+			{ rule: "Do not add another artifact contract.", source: "design decision" },
 		],
 	}));
-	assert.ok(parsed);
-	const forbidBody = sectionBody(parsed.briefMarkdown, "Forbid");
+	const forbidBody = sectionBody(brief, "Forbid");
 	assert.match(forbidBody, /Do not delete vendor\/\.\s+—\s+source:\s+user@msg-vendor-lock/);
-	assert.match(forbidBody, /Do not introduce a v3 shim\.\s+—\s+source:\s+design decision/);
+	assert.match(forbidBody, /Do not add another artifact contract\.\s+—\s+source:\s+design decision/);
 });
 
 test("rendered brief identifies next[0] as the immediate resume action", () => {
-	const parsed = parseHistoryArtifacts(envelope({
+	const brief = parseBrief(envelope({
 		next: [
 			{ action: "Run pnpm run gate.", outcome: "Either exit 0 or a triage point." },
 			{ action: "Commit if gate passes.", outcome: "Working tree clean at SHA X." },
 		],
 	}));
-	assert.ok(parsed);
-	const nextBody = sectionBody(parsed.briefMarkdown, "Next").trim();
+	const nextBody = sectionBody(brief, "Next").trim();
 	const firstLine = nextBody.split("\n")[0];
 	assert.match(firstLine, /^- Run pnpm run gate\.\s+→\s+Either exit 0 or a triage point\./);
 });

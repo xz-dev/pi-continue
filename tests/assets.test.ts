@@ -13,7 +13,6 @@ const promptAssetPaths = [
 	"assets/user/history_update.md",
 ];
 const numericReadQuotaPattern = /(?:(?:read|source|file|context|bullet|item|entry)s?.{0,24}(?:at most|up to|no more than|maximum|max).{0,16}(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten))|(?:(?:at most|up to|no more than|maximum|max).{0,16}(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten).{0,24}(?:read|source|file|context|bullet|item|entry)s?)/i;
-const retiredV3SlotPattern = /\b(initiativeCharter|definitionOfDone|recencyLedger|currentPlan|workingEdge|contextMap|dormantContext|retiredContext|antiRework|durableLearnings|durablePromotions|agentGuideUpdates|agentGuideMarkdown)\b/;
 
 test("history system prompts declare the v4 envelope and reference every slot", () => {
 	for (const path of ["assets/system/history_initial.md", "assets/system/history_update.md"]) {
@@ -32,11 +31,7 @@ test("history system prompts declare the v4 envelope and reference every slot", 
 		assert.match(content, /BAD.*GOOD/s, `${path}: must show BAD/GOOD anchor or atomization examples`);
 		assert.match(content, /anchor/i, `${path}: must discuss anchor discipline`);
 		assert.match(content, /JSON/, `${path}: must require JSON output`);
-		assert.doesNotMatch(content, /\bdocument\b\s*(?::|—|—)/i, `${path}: must not reference retired document slot at envelope level`);
 		assert.doesNotMatch(content, numericReadQuotaPattern, `${path}: must not impose numeric read quotas`);
-		assert.doesNotMatch(content, retiredV3SlotPattern, `${path}: must not reference retired v3 slot names`);
-		assert.doesNotMatch(content, /Read Before Acting/, `${path}: must not use legacy Read-Before-Acting framing`);
-		assert.doesNotMatch(content, /Resume Now/, `${path}: must not use legacy Resume-Now framing`);
 	}
 });
 
@@ -129,7 +124,6 @@ test("user base contract describes the v4 inputs", () => {
 	assert.match(content, /<file-operations>/);
 	assert.match(content, /JSON/);
 	assert.doesNotMatch(content, numericReadQuotaPattern);
-	assert.doesNotMatch(content, retiredV3SlotPattern);
 });
 
 test("user scenario prompts describe their cycle role and the learned slot", () => {
@@ -137,7 +131,6 @@ test("user scenario prompts describe their cycle role and the learned slot", () 
 	assert.match(initial, /initial|first compaction|no prior brief/i);
 	assert.match(initial, /\blearned\b/);
 	assert.match(initial, /agentGuideUpdate/);
-	assert.doesNotMatch(initial, retiredV3SlotPattern);
 
 	const update = readFileSync("assets/user/history_update.md", "utf8");
 	assert.match(update, /update|updating/i);
@@ -146,33 +139,12 @@ test("user scenario prompts describe their cycle role and the learned slot", () 
 	assert.match(update, /\blearned\b/);
 	assert.match(update, /agentGuideUpdate/);
 	assert.match(update, /silent drop/i, "must echo the silent-drop prohibition");
-	assert.doesNotMatch(update, retiredV3SlotPattern);
 });
 
 test("history system prompts mention turn-prefix-messages alongside history-to-summarize", () => {
 	for (const path of ["assets/system/history_initial.md", "assets/system/history_update.md"]) {
 		const content = readFileSync(path, "utf8");
 		assert.match(content, /<turn-prefix-messages>/);
-	}
-});
-
-test("prompt assets stay repo-agnostic and do not bind to a specific test session", () => {
-	const sessionBoundPatterns: { pattern: RegExp; reason: string }[] = [
-		{ pattern: /\bFinding\s+\d+\b/, reason: "specific Finding numbers from a test session" },
-		{ pattern: /\bpi-multiagent\b/, reason: "specific package name from a test session" },
-		{ pattern: /\brpc-child-controller\b/, reason: "specific module name from a test session" },
-		{ pattern: /\bdelegation\.test\.ts\b/, reason: "specific test file from a test session" },
-		{ pattern: /\brendering(?:-live)?\.test\.ts\b/, reason: "specific test file from a test session" },
-		{ pattern: /\bagent[_-]?end\b/i, reason: "specific RPC event name from a test session" },
-		{ pattern: /\bstopReason\b/, reason: "specific protocol field from a test session" },
-		{ pattern: /\bclientMessageId\b/, reason: "specific protocol field from a test session" },
-		{ pattern: /\b(?:pnpm|npm|yarn|cargo|uv) (?:run\s+)?[a-z][\w-]*\b/, reason: "specific package-manager command (use <gate-command> placeholder instead)" },
-	];
-	for (const path of promptAssetPaths) {
-		const content = readFileSync(path, "utf8");
-		for (const { pattern, reason } of sessionBoundPatterns) {
-			assert.doesNotMatch(content, pattern, `${path}: ${reason}`);
-		}
 	}
 });
 

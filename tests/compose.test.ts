@@ -11,14 +11,13 @@ const details: ContinuationCompactionDetails = {
 	agentGuideSyncId: "guide-1",
 };
 
-test("composeCompactionSummary wraps the brief in <continuation> with no fallback paths", () => {
+test("composeCompactionSummary wraps the brief in <continuation>", () => {
 	const summary = composeCompactionSummary("continue", details, {
 		appendCompactionMetadata: false,
 		appendReadFileTags: false,
 		appendModifiedFileTags: false,
 	});
 	assert.match(summary, /<continuation>\ncontinue\n<\/continuation>/);
-	assert.doesNotMatch(summary, /<split-prefix>/);
 	assert.doesNotMatch(summary, /<read-files>/);
 	assert.doesNotMatch(summary, /readFileCount/);
 });

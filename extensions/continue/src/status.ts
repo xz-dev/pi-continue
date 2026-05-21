@@ -1,11 +1,13 @@
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { resolveTokenBudget, resolveSummarizerModel } from "./model-settings.ts";
+import { resolveHistoryOutputBudget, resolveSummarizerModel } from "./model-settings.ts";
 import { readEffectivePiCompactionSettings } from "./pi-settings.ts";
 import type {
 	ContinuationConfig,
 	ContinuationLatestEvent,
 	ContinuationResumeOutcome,
+	ContinuationSynthesisFailure,
 	ContinuationSyncStatus,
+	HistoryOutputBudget,
 	PreviewPayload,
 	PromptPassTelemetry,
 } from "./types.ts";
@@ -14,6 +16,32 @@ function describeModel(config: ContinuationConfig, ctx: ExtensionCommandContext)
 	const resolved = resolveSummarizerModel(ctx, config);
 	if (!resolved) return `unresolved (${config.summarizerModel})`;
 	return `${resolved.provider}/${resolved.id}`;
+}
+
+function formatTokens(value: number): string {
+	return value.toLocaleString();
+}
+
+function outputBudgetSourceLabel(budget: Pick<HistoryOutputBudget, "source">): string {
+	return budget.source === "config" ? "configured" : "Pi default";
+}
+
+function renderResolvedOutputBudget(budget: HistoryOutputBudget): string {
+	const source = outputBudgetSourceLabel(budget);
+	const cap = budget.modelMaxTokens === undefined ? "model max unavailable" : `model max ${formatTokens(budget.modelMaxTokens)}`;
+	if (budget.clampedByModel) {
+		return `${source} requested ${formatTokens(budget.requestedTokens)}; effective ${formatTokens(budget.effectiveTokens)}; clamped by ${cap}.`;
+	}
+	return `${source} requested ${formatTokens(budget.requestedTokens)}; effective ${formatTokens(budget.effectiveTokens)}; ${cap}.`;
+}
+
+function renderConfiguredOutputBudget(config: ContinuationConfig, ctx: ExtensionCommandContext, reserveTokens: number): string {
+	const model = resolveSummarizerModel(ctx, config);
+	const budget = resolveHistoryOutputBudget(model, reserveTokens, config.historyMaxTokens);
+	if (!model) {
+		return `${outputBudgetSourceLabel(budget)} requested ${formatTokens(budget.requestedTokens)}; effective unavailable until the handoff model resolves.`;
+	}
+	return renderResolvedOutputBudget(budget);
 }
 
 function renderSharedCompactionThreshold(ctx: ExtensionCommandContext, reserveTokens: number): string {
@@ -131,7 +159,30 @@ function renderPassTelemetry(label: string, telemetry: PromptPassTelemetry | und
 	if (!telemetry) return undefined;
 	const routed = telemetry.responseModel ? `; routed ${telemetry.responseModel}` : "";
 	const http = telemetry.httpStatus !== undefined ? `; HTTP ${telemetry.httpStatus}` : "";
-	return `- ${label}: requested ${telemetry.requestedModel}${routed}; ${telemetry.usage.totalTokens.toLocaleString()} tokens; ${formatCost(telemetry.usage.costTotal)}${http}.`;
+	const outputBudget = telemetry.outputBudget ? `; output budget ${renderResolvedOutputBudget(telemetry.outputBudget)}` : ".";
+	return `- ${label}: requested ${telemetry.requestedModel}${routed}; ${telemetry.usage.totalTokens.toLocaleString()} tokens; ${formatCost(telemetry.usage.costTotal)}${http}${outputBudget}`;
+}
+
+function failureCodeLabel(failure: ContinuationSynthesisFailure): string {
+	if (failure.code === "model-unresolved") return "model unresolved";
+	if (failure.code === "auth-unavailable") return "auth unavailable";
+	if (failure.code === "provider-error") return "provider error";
+	if (failure.code === "provider-aborted") return "provider aborted";
+	if (failure.code === "artifact-empty") return "empty artifact";
+	if (failure.code === "artifact-invalid-json") return "invalid JSON";
+	if (failure.code === "artifact-invalid-shape") return "artifact did not match the current v4 JSON contract";
+	return "internal error";
+}
+
+function renderSynthesisFailure(failure: ContinuationSynthesisFailure): string {
+	const kind = failure.kind === "model-provider-call"
+		? "model/provider call failed"
+		: failure.kind === "artifact-parse-validation"
+			? "current artifact parse/validation failed"
+			: "internal synthesis failure";
+	const requested = failure.requestedModel ? `; requested ${failure.requestedModel}` : "";
+	const http = failure.httpStatus !== undefined ? `; HTTP ${failure.httpStatus}` : "";
+	return `- Synthesis failure: ${kind} during ${failure.pass} pass (${failureCodeLabel(failure)})${requested}${http}.`;
 }
 
 function renderSynthesisSummary(event: ContinuationLatestEvent): string[] {
@@ -140,11 +191,10 @@ function renderSynthesisSummary(event: ContinuationLatestEvent): string[] {
 		? [
 			`- Synthesis total: ${synthesis.totalTokens?.toLocaleString() ?? "unavailable"} tokens; ${formatCost(synthesis.totalCost)}.`,
 			renderPassTelemetry("History pass", synthesis.history),
-			renderPassTelemetry("Split-prefix pass", synthesis.split),
 		]
 		: [`- Synthesis: no model-run details recorded for this continuation.`];
 	if (event.synthesisFailure) {
-		lines.push(`- Synthesis failure: ${event.synthesisFailure.stage}; ${event.synthesisFailure.reason}`);
+		lines.push(renderSynthesisFailure(event.synthesisFailure));
 	}
 	return lines.filter((line): line is string => line !== undefined);
 }
@@ -205,7 +255,7 @@ export function renderStatus(
 ): string {
 	const piCompactionSettings = readEffectivePiCompactionSettings(projectRoot);
 	const modelDescription = describeModel(config, ctx);
-	const historyBudget = resolveTokenBudget(piCompactionSettings.reserveTokens, config.historyMaxTokens, "history");
+	const historyBudget = renderConfiguredOutputBudget(config, ctx, piCompactionSettings.reserveTokens);
 	const lines = [
 		`# Continuation Status`,
 		``,
@@ -215,7 +265,7 @@ export function renderStatus(
 		`- Enabled: ${config.enabled ? "yes" : "no"}`,
 		`- Handoff model: ${config.summarizerModel} -> ${modelDescription}`,
 		`- Reasoning: ${config.reasoning}`,
-		`- History budget: ${config.historyMaxTokens ?? `Pi default (${historyBudget})`}`,
+		`- History output budget: ${historyBudget}`,
 		`- Continuation file: ${continuationDocPath}`,
 		`- Save continuation file: ${config.continuationDocSyncMode}`,
 		`- Agent guide: ${agentGuidePath}`,

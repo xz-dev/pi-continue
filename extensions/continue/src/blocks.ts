@@ -1,4 +1,4 @@
-import type { ParsedHistoryArtifacts } from "./types.ts";
+import type { HistoryArtifactParseResult, ParsedHistoryArtifacts } from "./types.ts";
 
 const HISTORY_ARTIFACT_VERSION = "pi-continue-artifacts/v4";
 
@@ -211,27 +211,32 @@ export function extractTaggedBlock(text: string, tag: string): string | undefine
 }
 
 /** Parse the strict provider-portable JSON history artifact response. */
-export function parseHistoryArtifacts(text: string): ParsedHistoryArtifacts | undefined {
+export function parseHistoryArtifacts(text: string): HistoryArtifactParseResult {
+	const trimmed = text.trim();
+	if (trimmed.length === 0) return { ok: false, code: "artifact-empty" };
 	let parsed: unknown;
 	try {
-		parsed = JSON.parse(text.trim());
+		parsed = JSON.parse(trimmed);
 	} catch (error) {
-		if (error instanceof SyntaxError) return undefined;
+		if (error instanceof SyntaxError) return { ok: false, code: "artifact-invalid-json" };
 		throw error;
 	}
-	if (!isRecord(parsed) || !hasExactKeys(parsed, HISTORY_ARTIFACT_KEYS)) return undefined;
-	if (parsed.version !== HISTORY_ARTIFACT_VERSION) return undefined;
+	if (!isRecord(parsed) || !hasExactKeys(parsed, HISTORY_ARTIFACT_KEYS)) return { ok: false, code: "artifact-invalid-shape" };
+	if (parsed.version !== HISTORY_ARTIFACT_VERSION) return { ok: false, code: "artifact-invalid-shape" };
 	const brief = parseBriefEnvelope(parsed.brief);
-	if (!brief) return undefined;
-	if (!isRecord(parsed.agentGuideUpdate) || !hasExactKeys(parsed.agentGuideUpdate, AGENT_GUIDE_UPDATE_KEYS)) return undefined;
+	if (!brief) return { ok: false, code: "artifact-invalid-shape" };
+	if (!isRecord(parsed.agentGuideUpdate) || !hasExactKeys(parsed.agentGuideUpdate, AGENT_GUIDE_UPDATE_KEYS)) return { ok: false, code: "artifact-invalid-shape" };
 	const rawContent = parsed.agentGuideUpdate.content;
-	if (rawContent !== null && nonEmptyString(rawContent) === undefined) return undefined;
+	if (rawContent !== null && nonEmptyString(rawContent) === undefined) return { ok: false, code: "artifact-invalid-shape" };
 	const agentGuideMd = rawContent === null ? undefined : nullableString(rawContent);
 	const agentGuideChangeReason = nonEmptyString(parsed.agentGuideUpdate.reason);
-	if (!agentGuideChangeReason) return undefined;
+	if (!agentGuideChangeReason) return { ok: false, code: "artifact-invalid-shape" };
 	return {
-		briefMarkdown: renderBriefEnvelope(brief),
-		agentGuideMd,
-		agentGuideChangeReason,
+		ok: true,
+		artifacts: {
+			briefMarkdown: renderBriefEnvelope(brief),
+			agentGuideMd,
+			agentGuideChangeReason,
+		},
 	};
 }

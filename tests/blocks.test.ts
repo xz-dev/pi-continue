@@ -1,21 +1,22 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { parseHistoryArtifacts } from "../extensions/continue/src/blocks.ts";
+import type { HistoryArtifactParseFailureCode, ParsedHistoryArtifacts } from "../extensions/continue/src/types.ts";
 
 function briefEnvelope(overrides: Record<string, unknown> = {}) {
 	return {
-		task: "Finish the v4 continuation ledger cutover.",
-		done_when: "All gates pass and the README, CHANGELOG, and assets describe pi-continue-artifacts/v4 only.",
+		task: "Finish the current continuation ledger update.",
+		done_when: "All gates pass and the current v4 contract is documented.",
 		forbid: [
-			{ rule: "Do not introduce a v3 migration shim.", source: "user@msg-design-decision" },
+			{ rule: "Do not add parallel artifact shapes.", source: "user@msg-design-decision" },
 			{ rule: "Do not edit vendor/ paths.", source: "user@msg-vendor-lock" },
 		],
 		established: [
 			{
-				claim: "Finding 7 (duplicate channel) is invalid: delegation.test.ts covers it deterministically.",
-				evidence: "tests/delegation.test.ts:142",
+				claim: "The current parser accepts the seven-slot brief envelope.",
+				evidence: "tests/blocks.test.ts:valid fixture",
 				basis: "test",
-				reopen: "if tests/delegation.test.ts changes around line 142",
+				reopen: "if the brief keys change",
 			},
 			{
 				claim: "Cross-service eventing uses queues, not pubsub.",
@@ -26,20 +27,20 @@ function briefEnvelope(overrides: Record<string, unknown> = {}) {
 		],
 		learned: [
 			{
-				lesson: "When a brief field is stuffed with embedded newlines, the next render cycle re-atomizes it into spurious entries.",
-				source: "session experience: L1047 explosion observed during v4 stabilization",
+				lesson: "Embedded newlines inside a field should render as one bullet entry.",
+				source: "parser normalization fixture",
 			},
 		],
 		open: [
 			{
-				question: "Does the gate pass after the v4 schema rewrite?",
+				question: "Does the gate pass after the parser update?",
 				verifies: "Run pnpm run gate and observe exit 0.",
 			},
 		],
 		next: [
 			{
-				action: "Run pnpm run gate from the repo root.",
-				outcome: "Either exit 0 (close the open verifies) or a concrete failure to triage.",
+				action: "Run the next validation step.",
+				outcome: "A new established entry covers the validation result.",
 			},
 		],
 		...overrides,
@@ -55,104 +56,101 @@ function envelope(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+function parseOk(text: string): ParsedHistoryArtifacts {
+	const result = parseHistoryArtifacts(text);
+	assert.equal(result.ok, true);
+	if (!result.ok) throw new Error(`expected parse success, got ${result.code}`);
+	return result.artifacts;
+}
+
+function parseFail(text: string, code: HistoryArtifactParseFailureCode = "artifact-invalid-shape"): void {
+	assert.deepEqual(parseHistoryArtifacts(text), { ok: false, code });
+}
+
 const validArtifacts = JSON.stringify(envelope());
 
-test("parseHistoryArtifacts requires the v4 structured JSON artifact contract", () => {
-	assert.equal(parseHistoryArtifacts("<continuation>one</continuation>"), undefined);
-	const parsed = parseHistoryArtifacts(validArtifacts);
+test("parseHistoryArtifacts returns diagnostics for empty, non-JSON, and wrong-shape artifacts", () => {
+	parseFail("", "artifact-empty");
+	parseFail("<continuation>one</continuation>", "artifact-invalid-json");
+	parseFail(JSON.stringify({ version: "wrong", brief: briefEnvelope(), agentGuideUpdate: { content: null, reason: "ok" } }));
+});
+
+test("parseHistoryArtifacts accepts the current v4 structured JSON artifact contract", () => {
+	const parsed = parseOk(validArtifacts);
 	assert.deepEqual(parsed, {
 		briefMarkdown: [
-			"## Task\nFinish the v4 continuation ledger cutover.",
-			"## Done When\nAll gates pass and the README, CHANGELOG, and assets describe pi-continue-artifacts/v4 only.",
-			"## Forbid\n- Do not introduce a v3 migration shim. — source: user@msg-design-decision\n- Do not edit vendor/ paths. — source: user@msg-vendor-lock",
-			"## Established\n- Finding 7 (duplicate channel) is invalid: delegation.test.ts covers it deterministically. — evidence: tests/delegation.test.ts:142; basis: test; reopen: if tests/delegation.test.ts changes around line 142\n- Cross-service eventing uses queues, not pubsub. — evidence: user@msg-arch-decision: 'use queues; pubsub loses messages we cannot lose'; basis: user; reopen: none",
-			"## Learned\n- When a brief field is stuffed with embedded newlines, the next render cycle re-atomizes it into spurious entries. — source: session experience: L1047 explosion observed during v4 stabilization",
-			"## Open\n- Does the gate pass after the v4 schema rewrite? — verifies: Run pnpm run gate and observe exit 0.",
-			"## Next\n- Run pnpm run gate from the repo root. → Either exit 0 (close the open verifies) or a concrete failure to triage.",
+			"## Task\nFinish the current continuation ledger update.",
+			"## Done When\nAll gates pass and the current v4 contract is documented.",
+			"## Forbid\n- Do not add parallel artifact shapes. — source: user@msg-design-decision\n- Do not edit vendor/ paths. — source: user@msg-vendor-lock",
+			"## Established\n- The current parser accepts the seven-slot brief envelope. — evidence: tests/blocks.test.ts:valid fixture; basis: test; reopen: if the brief keys change\n- Cross-service eventing uses queues, not pubsub. — evidence: user@msg-arch-decision: 'use queues; pubsub loses messages we cannot lose'; basis: user; reopen: none",
+			"## Learned\n- Embedded newlines inside a field should render as one bullet entry. — source: parser normalization fixture",
+			"## Open\n- Does the gate pass after the parser update? — verifies: Run pnpm run gate and observe exit 0.",
+			"## Next\n- Run the next validation step. → A new established entry covers the validation result.",
 		].join("\n\n"),
 		agentGuideMd: undefined,
 		agentGuideChangeReason: "no durable guide change this cycle",
 	});
 });
 
-test("parseHistoryArtifacts renders only populated brief sections (empty arrays accepted)", () => {
-	const parsed = parseHistoryArtifacts(JSON.stringify(envelope({
+test("parseHistoryArtifacts renders only populated brief sections", () => {
+	const parsed = parseOk(JSON.stringify(envelope({
 		brief: briefEnvelope({ forbid: [], established: [], learned: [], open: [], next: [] }),
 	})));
-	assert.equal(parsed?.briefMarkdown, [
-		"## Task\nFinish the v4 continuation ledger cutover.",
-		"## Done When\nAll gates pass and the README, CHANGELOG, and assets describe pi-continue-artifacts/v4 only.",
+	assert.equal(parsed.briefMarkdown, [
+		"## Task\nFinish the current continuation ledger update.",
+		"## Done When\nAll gates pass and the current v4 contract is documented.",
 	].join("\n\n"));
 });
 
 test("parseHistoryArtifacts accepts a full agent guide replacement", () => {
-	const parsed = parseHistoryArtifacts(JSON.stringify(envelope({
+	const parsed = parseOk(JSON.stringify(envelope({
 		agentGuideUpdate: { content: "# AGENTS\n", reason: "capture corrected command truth" },
 	})));
-	assert.equal(parsed?.agentGuideMd, "# AGENTS");
-	assert.equal(parsed?.agentGuideChangeReason, "capture corrected command truth");
-});
-
-test("parseHistoryArtifacts rejects the retired v3 envelope", () => {
-	assert.equal(parseHistoryArtifacts(JSON.stringify({
-		version: "pi-continue-artifacts/v3",
-		brief: briefEnvelope(),
-		document: "doc",
-		agentGuideMarkdown: null,
-		agentGuideChangeReason: "v3 shape",
-	})), undefined);
-});
-
-test("parseHistoryArtifacts rejects envelopes with a retired document field", () => {
-	assert.equal(parseHistoryArtifacts(JSON.stringify({
-		version: "pi-continue-artifacts/v4",
-		brief: briefEnvelope(),
-		document: "# Continuation\n\nresidual document from prior schema.",
-		agentGuideUpdate: { content: null, reason: "ok" },
-	})), undefined);
+	assert.equal(parsed.agentGuideMd, "# AGENTS");
+	assert.equal(parsed.agentGuideChangeReason, "capture corrected command truth");
 });
 
 test("parseHistoryArtifacts rejects wrong top-level keys", () => {
-	assert.equal(parseHistoryArtifacts(JSON.stringify({
+	parseFail(JSON.stringify({
 		version: "pi-continue-artifacts/v4",
 		brief: briefEnvelope(),
 		agentGuideUpdate: { content: null, reason: "ok" },
 		extra: "noise",
-	})), undefined);
+	}));
 });
 
 test("parseHistoryArtifacts rejects wrong brief keys", () => {
-	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+	parseFail(JSON.stringify(envelope({
 		brief: { ...briefEnvelope(), extraSlot: ["nope"] },
-	}))), undefined);
+	})));
 });
 
-test("parseHistoryArtifacts rejects brief missing the learned slot", () => {
+test("parseHistoryArtifacts rejects a brief missing the learned slot", () => {
 	const noLearned = briefEnvelope();
 	delete (noLearned as Record<string, unknown>).learned;
-	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({ brief: noLearned }))), undefined);
+	parseFail(JSON.stringify(envelope({ brief: noLearned })));
 });
 
 test("parseHistoryArtifacts rejects empty task or done_when", () => {
-	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+	parseFail(JSON.stringify(envelope({
 		brief: briefEnvelope({ task: "" }),
-	}))), undefined);
-	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+	})));
+	parseFail(JSON.stringify(envelope({
 		brief: briefEnvelope({ done_when: "   " }),
-	}))), undefined);
+	})));
 });
 
 test("parseHistoryArtifacts rejects forbid entries missing fields", () => {
-	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+	parseFail(JSON.stringify(envelope({
 		brief: briefEnvelope({ forbid: [{ rule: "no source attribution" }] }),
-	}))), undefined);
-	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+	})));
+	parseFail(JSON.stringify(envelope({
 		brief: briefEnvelope({ forbid: [{ rule: "ok", source: "" }] }),
-	}))), undefined);
+	})));
 });
 
-test("parseHistoryArtifacts rejects established basis not in enum", () => {
-	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+test("parseHistoryArtifacts rejects established basis outside the current enum", () => {
+	parseFail(JSON.stringify(envelope({
 		brief: briefEnvelope({
 			established: [{
 				claim: "ok",
@@ -161,99 +159,96 @@ test("parseHistoryArtifacts rejects established basis not in enum", () => {
 				reopen: "none",
 			}],
 		}),
-	}))), undefined);
+	})));
 });
 
 test("parseHistoryArtifacts rejects established entries missing fields", () => {
-	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+	parseFail(JSON.stringify(envelope({
 		brief: briefEnvelope({
 			established: [{ claim: "ok", evidence: "path:1", basis: "test" }],
 		}),
-	}))), undefined);
-	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+	})));
+	parseFail(JSON.stringify(envelope({
 		brief: briefEnvelope({
 			established: [{ claim: "ok", evidence: "", basis: "test", reopen: "none" }],
 		}),
-	}))), undefined);
+	})));
 });
 
 test("parseHistoryArtifacts rejects learned entries missing fields", () => {
-	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+	parseFail(JSON.stringify(envelope({
 		brief: briefEnvelope({ learned: [{ lesson: "no source" }] }),
-	}))), undefined);
-	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+	})));
+	parseFail(JSON.stringify(envelope({
 		brief: briefEnvelope({ learned: [{ lesson: "ok", source: "" }] }),
-	}))), undefined);
+	})));
 });
 
 test("parseHistoryArtifacts rejects learned entries with extra keys", () => {
-	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+	parseFail(JSON.stringify(envelope({
 		brief: briefEnvelope({ learned: [{ lesson: "ok", source: "user@msg-1", evidence: "noise" }] }),
-	}))), undefined);
+	})));
 });
 
 test("parseHistoryArtifacts rejects open entries missing fields", () => {
-	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+	parseFail(JSON.stringify(envelope({
 		brief: briefEnvelope({ open: [{ question: "ok" }] }),
-	}))), undefined);
-	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+	})));
+	parseFail(JSON.stringify(envelope({
 		brief: briefEnvelope({ open: [{ question: "ok", verifies: "" }] }),
-	}))), undefined);
+	})));
 });
 
 test("parseHistoryArtifacts rejects next entries missing fields", () => {
-	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+	parseFail(JSON.stringify(envelope({
 		brief: briefEnvelope({ next: [{ action: "ok" }] }),
-	}))), undefined);
-	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+	})));
+	parseFail(JSON.stringify(envelope({
 		brief: briefEnvelope({ next: [{ action: "ok", outcome: "" }] }),
-	}))), undefined);
+	})));
 });
 
 test("parseHistoryArtifacts rejects agentGuideUpdate with wrong keys", () => {
-	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+	parseFail(JSON.stringify(envelope({
 		agentGuideUpdate: { content: null, reason: "ok", extra: true },
-	}))), undefined);
-	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+	})));
+	parseFail(JSON.stringify(envelope({
 		agentGuideUpdate: { reason: "missing content" },
-	}))), undefined);
+	})));
 });
 
-test("parseHistoryArtifacts rejects agentGuideUpdate.content empty string (must be null or non-empty)", () => {
-	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+test("parseHistoryArtifacts rejects agentGuideUpdate.content empty string", () => {
+	parseFail(JSON.stringify(envelope({
 		agentGuideUpdate: { content: "   ", reason: "empty content rejected" },
-	}))), undefined);
+	})));
 });
 
 test("parseHistoryArtifacts rejects empty agentGuideUpdate.reason", () => {
-	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+	parseFail(JSON.stringify(envelope({
 		agentGuideUpdate: { content: null, reason: "" },
-	}))), undefined);
-	assert.equal(parseHistoryArtifacts(JSON.stringify(envelope({
+	})));
+	parseFail(JSON.stringify(envelope({
 		agentGuideUpdate: { content: null, reason: null },
-	}))), undefined);
+	})));
 });
 
-test("parseHistoryArtifacts collapses multi-line/embedded-bullet field values to single lines", () => {
-	// Simulates a synthesizer that stuffed a multi-line finding into an `open.question`.
-	// Round-trip rendering must NOT produce nested markdown bullets that the next
-	// cycle parses as separate entries (the L1047 explosion mode).
+test("parseHistoryArtifacts collapses multi-line and embedded-bullet field values to single lines", () => {
 	const pathological = JSON.stringify(envelope({
 		brief: briefEnvelope({
 			open: [{
-				question: "Finding 1: RPC child success ignores non-success stopReason\n  - rpc-child-controller.ts:234\n  - rpc-record-utils.ts:12\n  - Fix: parse stopReason",
+				question: "Finding 1: current artifact shape failed\n  - blocks.ts:214\n  - status.ts:130\n  - Fix: parse current shape",
 				verifies: "Read both files\nand add tests",
 			}],
 		}),
 	}));
-	const parsed = parseHistoryArtifacts(pathological);
+	const parsed = parseOk(pathological);
 	assert.equal(
-		parsed?.briefMarkdown.includes("\n  - "),
+		parsed.briefMarkdown.includes("\n  - "),
 		false,
 		"rendered brief must not contain nested bullet markers that the next synthesizer would re-atomize",
 	);
 	assert.match(
-		parsed?.briefMarkdown ?? "",
-		/## Open\n- Finding 1: RPC child success ignores non-success stopReason rpc-child-controller\.ts:234 rpc-record-utils\.ts:12 Fix: parse stopReason — verifies: Read both files and add tests/,
+		parsed.briefMarkdown,
+		/## Open\n- Finding 1: current artifact shape failed blocks\.ts:214 status\.ts:130 Fix: parse current shape — verifies: Read both files and add tests/,
 	);
 });

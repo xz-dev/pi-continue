@@ -14,11 +14,11 @@ const theme = {
 test("extractContinuationLedger reads only the continuation block", () => {
 	const summary = [
 		"<continuation>",
-		"task: finish runtime proof",
-		"workingEdge: tests",
+		"## Task",
+		"finish runtime proof",
 		"</continuation>",
 	].join("\n");
-	assert.equal(extractContinuationLedger(summary), "task: finish runtime proof\nworkingEdge: tests");
+	assert.equal(extractContinuationLedger(summary), "## Task\nfinish runtime proof");
 });
 
 test("buildLedgerSnapshot stores transient overlay content without session mutation fields", () => {

@@ -1,13 +1,26 @@
 import type { Api, Model, ModelThinkingLevel, ThinkingLevel } from "@earendil-works/pi-ai";
 import { clampThinkingLevel, completeSimple } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { resolveSummarizerModel } from "./model-settings.ts";
-import type { ContinuationConfig, PromptPassTelemetry } from "./types.ts";
+import { resolveHistoryOutputBudget, resolveSummarizerModel } from "./model-settings.ts";
+import type { ContinuationConfig, ContinuationSynthesisFailureCode, PromptPassTelemetry } from "./types.ts";
 
-export { resolveSummarizerModel, resolveTokenBudget } from "./model-settings.ts";
+export { resolveHistoryOutputBudget, resolveSummarizerModel } from "./model-settings.ts";
 
 export interface PromptPassResult extends PromptPassTelemetry {
 	text: string;
+}
+
+export class PromptPassError extends Error {
+	readonly code: ContinuationSynthesisFailureCode;
+	readonly requestedModel?: string;
+	readonly httpStatus?: number;
+
+	constructor(code: ContinuationSynthesisFailureCode, options: { requestedModel?: string; httpStatus?: number } = {}) {
+		super(code);
+		this.code = code;
+		this.requestedModel = options.requestedModel;
+		this.httpStatus = options.httpStatus;
+	}
 }
 
 function requestedThinkingLevel(pi: Pick<ExtensionAPI, "getThinkingLevel">, config: ContinuationConfig): ModelThinkingLevel {
@@ -21,63 +34,75 @@ export function resolveReasoningLevel(pi: Pick<ExtensionAPI, "getThinkingLevel">
 	return level === "off" ? undefined : level;
 }
 
-/** Execute a summarization pass against the resolved model and auth. */
+/** Execute a history summarization pass against the resolved model and auth. */
 export async function runPromptPass(
 	pi: ExtensionAPI,
 	ctx: ExtensionContext,
 	config: ContinuationConfig,
 	prompt: { systemPrompt: string; userPrompt: string },
-	maxTokens: number,
+	reserveTokens: number,
 	signal: AbortSignal,
 ): Promise<PromptPassResult> {
 	const model = resolveSummarizerModel(ctx, config);
 	if (!model) {
-		throw new Error(`Unable to resolve summarizer model from setting ${config.summarizerModel}`);
+		throw new PromptPassError("model-unresolved", { requestedModel: config.summarizerModel });
 	}
-	const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+	const requestedModel = `${model.provider}/${model.id}`;
+	const outputBudget = resolveHistoryOutputBudget(model, reserveTokens, config.historyMaxTokens);
+	let auth: Awaited<ReturnType<ExtensionContext["modelRegistry"]["getApiKeyAndHeaders"]>>;
+	try {
+		auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+	} catch {
+		throw new PromptPassError("auth-unavailable", { requestedModel });
+	}
 	if (!auth.ok) {
-		throw new Error(auth.error);
+		throw new PromptPassError("auth-unavailable", { requestedModel });
 	}
 	const reasoning = resolveReasoningLevel(pi, model, config);
 	let httpStatus: number | undefined;
-	const response = await completeSimple(
-		model,
-		{
-			systemPrompt: prompt.systemPrompt,
-			messages: [
-				{
-					role: "user",
-					content: [{ type: "text", text: prompt.userPrompt }],
-					timestamp: Date.now(),
-				},
-			],
-		},
-		reasoning
-			? {
-					apiKey: auth.apiKey,
-					headers: auth.headers,
-					maxTokens,
-					reasoning,
-					signal,
-					onResponse: (providerResponse) => {
-						httpStatus = providerResponse.status;
+	let response: Awaited<ReturnType<typeof completeSimple>>;
+	try {
+		response = await completeSimple(
+			model,
+			{
+				systemPrompt: prompt.systemPrompt,
+				messages: [
+					{
+						role: "user",
+						content: [{ type: "text", text: prompt.userPrompt }],
+						timestamp: Date.now(),
 					},
-				}
-			: {
-					apiKey: auth.apiKey,
-					headers: auth.headers,
-					maxTokens,
-					signal,
-					onResponse: (providerResponse) => {
-						httpStatus = providerResponse.status;
+				],
+			},
+			reasoning
+				? {
+						apiKey: auth.apiKey,
+						headers: auth.headers,
+						maxTokens: outputBudget.effectiveTokens,
+						reasoning,
+						signal,
+						onResponse: (providerResponse) => {
+							httpStatus = providerResponse.status;
+						},
+					}
+				: {
+						apiKey: auth.apiKey,
+						headers: auth.headers,
+						maxTokens: outputBudget.effectiveTokens,
+						signal,
+						onResponse: (providerResponse) => {
+							httpStatus = providerResponse.status;
+						},
 					},
-				},
-	);
+		);
+	} catch {
+		throw new PromptPassError(signal.aborted ? "provider-aborted" : "provider-error", { requestedModel, httpStatus });
+	}
 	if (response.stopReason === "error") {
-		throw new Error(response.errorMessage || "Unknown compaction synthesis error");
+		throw new PromptPassError("provider-error", { requestedModel, httpStatus });
 	}
 	if (response.stopReason === "aborted") {
-		throw new Error("Compaction synthesis was aborted");
+		throw new PromptPassError("provider-aborted", { requestedModel, httpStatus });
 	}
 	const text = response.content
 		.filter((block): block is { type: "text"; text: string } => block.type === "text")
@@ -86,7 +111,7 @@ export async function runPromptPass(
 		.trim();
 	return {
 		text,
-		requestedModel: `${model.provider}/${model.id}`,
+		requestedModel,
 		responseModel: response.responseModel,
 		responseId: response.responseId,
 		usage: {
@@ -98,5 +123,6 @@ export async function runPromptPass(
 			costTotal: response.usage.cost.total,
 		},
 		httpStatus,
+		outputBudget,
 	};
 }

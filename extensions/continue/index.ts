@@ -25,7 +25,7 @@ import { buildContinuationDetails, buildContinuationSynthesisTelemetry, parseCon
 import { SYNTHESIS_ABORT_MESSAGE } from "./src/synthesis-error.ts";
 import { buildLedgerSnapshot, showContinuationLedgerOverlaySoon } from "./src/ledger-viewer.ts";
 import { runMidRunGuard } from "./src/mid-run-guard.ts";
-import { resolveTokenBudget, runPromptPass } from "./src/model.ts";
+import { PromptPassError, runPromptPass } from "./src/model.ts";
 import { loadPiInternals } from "./src/pi-internals.ts";
 import { compileHistoryPrompt } from "./src/prompt.ts";
 import { resolveProjectContext, writeRepoDocument } from "./src/project.ts";
@@ -50,7 +50,7 @@ import {
 	STALE_COMPACTION_PROOF_FAILURE,
 	clearPendingResumeDispatch,
 } from "./src/resume-proof.ts";
-import type { AgentGuideWriteStatus, ContinuationSynthesisFailureStage, ContinuationSynthesisTelemetry, DocumentSyncMode, ParsedHistoryArtifacts, PendingDocumentWrite } from "./src/types.ts";
+import type { AgentGuideWriteStatus, ContinuationSynthesisFailure, ContinuationSynthesisTelemetry, DocumentSyncMode, ParsedHistoryArtifacts, PendingDocumentWrite } from "./src/types.ts";
 import {
 	clearWorkingVisuals,
 	settleWorkingVisuals,
@@ -68,18 +68,27 @@ function isAssistantMessage(message: unknown): message is AssistantMessage {
 const DOCUMENT_SYNC_FAILURE = "Document sync failed; check the configured path and permissions.";
 const PENDING_DOCUMENT_SYNC_FAILURE = "Document sync did not complete before continuation failed.";
 
-class SynthesisStageError extends Error {
-	readonly stage: ContinuationSynthesisFailureStage;
+class ArtifactParseError extends Error {
+	readonly failure: ContinuationSynthesisFailure;
 
-	constructor(stage: ContinuationSynthesisFailureStage, reason: string) {
-		super(reason);
-		this.stage = stage;
+	constructor(failure: ContinuationSynthesisFailure) {
+		super(failure.code);
+		this.failure = failure;
 	}
 }
 
-function normalizeSynthesisFailure(error: unknown): { stage: ContinuationSynthesisFailureStage; reason: string } {
-	if (error instanceof SynthesisStageError) return { stage: error.stage, reason: error.message };
-	return { stage: "unknown", reason: "Continuation synthesis failed before a usable artifact was created." };
+function normalizeSynthesisFailure(error: unknown): ContinuationSynthesisFailure {
+	if (error instanceof PromptPassError) {
+		return {
+			kind: "model-provider-call",
+			code: error.code,
+			pass: "history",
+			requestedModel: error.requestedModel,
+			httpStatus: error.httpStatus,
+		};
+	}
+	if (error instanceof ArtifactParseError) return error.failure;
+	return { kind: "internal", code: "internal-error", pass: "history" };
 }
 
 function setRuntimeStatus(ctx: ExtensionContext, value: string | undefined): void {
@@ -234,30 +243,23 @@ export default function (pi: ExtensionAPI) {
 				fileOps: fileOpsSnapshot,
 			},
 		);
-		const historyBudget = resolveTokenBudget(
-			preparation.settings.reserveTokens,
-			config.historyMaxTokens,
-			"history",
-		);
 		let historyArtifacts: ParsedHistoryArtifacts;
 		let synthesis: ContinuationSynthesisTelemetry | undefined;
 		try {
-			let historyOutput: Awaited<ReturnType<typeof runPromptPass>> | undefined;
-			try {
-				historyOutput = await runPromptPass(pi, ctx, config, historyPrompt, historyBudget, event.signal);
-			} catch {
-				synthesis = buildContinuationSynthesisTelemetry(undefined, undefined);
-				recordActiveSynthesisTelemetry(runtime, synthesis);
-				throw new SynthesisStageError("history-model", "History summarizer pass failed.");
-			}
-			synthesis = buildContinuationSynthesisTelemetry(historyOutput, undefined);
+			const historyOutput = await runPromptPass(pi, ctx, config, historyPrompt, preparation.settings.reserveTokens, event.signal);
+			synthesis = buildContinuationSynthesisTelemetry(historyOutput);
 			recordActiveSynthesisTelemetry(runtime, synthesis);
-			if (!historyOutput) throw new SynthesisStageError("history-model", "History summarizer pass omitted a response.");
 			const parsedHistoryArtifacts = parseHistoryArtifacts(historyOutput.text);
-			if (!parsedHistoryArtifacts) {
-				throw new SynthesisStageError("history-artifact", "History pass omitted required pi-continue JSON artifacts.");
+			if (!parsedHistoryArtifacts.ok) {
+				throw new ArtifactParseError({
+					kind: "artifact-parse-validation",
+					code: parsedHistoryArtifacts.code,
+					pass: "history",
+					requestedModel: historyOutput.requestedModel,
+					httpStatus: historyOutput.httpStatus,
+				});
 			}
-			historyArtifacts = parsedHistoryArtifacts;
+			historyArtifacts = parsedHistoryArtifacts.artifacts;
 			markActiveContinuationArtifact(runtime, "modeled", undefined);
 		} catch (error) {
 			recordActiveSynthesisFailure(runtime, normalizeSynthesisFailure(error));

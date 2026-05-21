@@ -32,7 +32,7 @@ test("readEffectivePiCompactionSettings defaults to Pi core compaction settings"
 	await withTempAgent(async (root) => {
 		assert.deepEqual(readEffectivePiCompactionSettings(root), {
 			enabled: true,
-			reserveTokens: 68000,
+			reserveTokens: 16384,
 			keepRecentTokens: 20000,
 		});
 	});

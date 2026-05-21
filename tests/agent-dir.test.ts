@@ -33,12 +33,9 @@ async function withAgentEnv(env, work) {
 	}
 }
 
-test("resolveAgentDir uses PI_CODING_AGENT_DIR and ignores retired PI_AGENT_DIR", async () => {
-	await withAgentEnv({ PI_CODING_AGENT_DIR: "/tmp/new-agent", PI_AGENT_DIR: "/tmp/legacy-agent" }, async () => {
-		assert.equal(resolveAgentDir(), "/tmp/new-agent");
-	});
-	await withAgentEnv({ PI_CODING_AGENT_DIR: undefined, PI_AGENT_DIR: "/tmp/legacy-agent" }, async () => {
-		assert.equal(resolveAgentDir(), join(homedir(), ".pi", "agent"));
+test("resolveAgentDir uses PI_CODING_AGENT_DIR", async () => {
+	await withAgentEnv({ PI_CODING_AGENT_DIR: "/tmp/pi-agent", PI_AGENT_DIR: undefined }, async () => {
+		assert.equal(resolveAgentDir(), "/tmp/pi-agent");
 	});
 });
 

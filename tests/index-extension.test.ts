@@ -80,7 +80,7 @@ function continuationArtifactJson(agentGuideContent: string | null = null) {
 	const brief = {
 		task: "Continue the task.",
 		done_when: "A valid pi-continue/v4 continuation ledger is saved.",
-		forbid: [{ rule: "Do not use fallback artifacts.", source: "user@msg-test-fixture" }],
+		forbid: [{ rule: "Do not write guessed artifacts.", source: "user@msg-test-fixture" }],
 		established: [{
 			claim: "Compaction synthesis succeeded for this fixture.",
 			evidence: "tests/index-extension.test.ts:1",
@@ -545,7 +545,6 @@ test("session_before_compact and session_compact write configured documents only
 		assert.equal(existsSync(join(cwd, "AGENTS.md")), false);
 		assert.deepEqual(pi.sent, []);
 		const summary = result.compaction.summary;
-		assert.doesNotMatch(summary, /<split-prefix>/);
 		assert.match(summary, /<continuation>/);
 		await pi.events.get("session_compact")({
 			fromExtension: true,
@@ -560,6 +559,35 @@ test("session_before_compact and session_compact write configured documents only
 		assert.match(continueContent, /## Established/);
 		assert.match(readFileSync(join(cwd, "AGENTS.md"), "utf8"), /Durable rule/);
 		assert.deepEqual(pi.sent, []);
+	} finally {
+		faux.unregister();
+		rmSync(cwd, { recursive: true, force: true });
+	}
+});
+
+test("session_before_compact clamps history output budget to model max tokens", async () => {
+	const cwd = mkdtempSync(join(tmpdir(), "pi-continue-output-clamp-"));
+	const faux = registerFauxProvider({ models: [{ id: "small-output", reasoning: false, maxTokens: 256 }] });
+	try {
+		let observedMaxTokens;
+		faux.setResponses([(_context, options) => {
+			observedMaxTokens = options?.maxTokens;
+			return fauxAssistantMessage(continuationArtifactJson());
+		}]);
+		const pi = createFakePi(cwd);
+		const ctx = createCommandContext(cwd, async () => undefined);
+		ctx.model = faux.models[0];
+		ctx.modelRegistry.getApiKeyAndHeaders = async () => ({ ok: true, apiKey: "test", headers: {} });
+		registerContinueExtension(pi);
+		await pi.commands.get("continue").handler("steer", ctx);
+		const result = await pi.events.get("session_before_compact")(compactionEvent({
+			settings: { enabled: true, reserveTokens: 1000, keepRecentTokens: 200 },
+		}), ctx);
+		assert.ok("compaction" in result);
+		assert.equal(observedMaxTokens, 256);
+		assert.equal(result.compaction.details.synthesis.history.outputBudget.requestedTokens, 800);
+		assert.equal(result.compaction.details.synthesis.history.outputBudget.effectiveTokens, 256);
+		assert.equal(result.compaction.details.synthesis.history.outputBudget.clampedByModel, true);
 	} finally {
 		faux.unregister();
 		rmSync(cwd, { recursive: true, force: true });
@@ -624,19 +652,17 @@ test("session_before_compact opts out when no extension-owned continuation event
 	}
 });
 
-test("session_before_compact rejects retired v3 envelope from the synthesizer", async () => {
-	const cwd = mkdtempSync(join(tmpdir(), "pi-continue-v3-reject-"));
+test("session_before_compact rejects wrong current artifact shape from the synthesizer", async () => {
+	const cwd = mkdtempSync(join(tmpdir(), "pi-continue-shape-reject-"));
 	const faux = registerFauxProvider();
 	try {
 		writeAlwaysSyncConfig(cwd);
-		const v3Envelope = JSON.stringify({
-			version: "pi-continue-artifacts/v3",
+		const wrongEnvelope = JSON.stringify({
+			version: "pi-continue-artifacts/v4",
 			brief: { task: "x" },
-			document: { task: "x" },
-			agentGuideMarkdown: null,
-			agentGuideChangeReason: "v3 shape",
+			agentGuideUpdate: { content: null, reason: "shape is incomplete" },
 		});
-		faux.setResponses([fauxAssistantMessage(v3Envelope)]);
+		faux.setResponses([fauxAssistantMessage(wrongEnvelope)]);
 		const pi = createFakePi(cwd);
 		const ctx = createCommandContext(cwd, async () => undefined);
 		ctx.model = faux.models[0];

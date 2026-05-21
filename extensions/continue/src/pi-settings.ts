@@ -4,9 +4,10 @@ import { dirname, join } from "node:path";
 import type { ConfigScope, PiCompactionSettings } from "./types.ts";
 import { resolveAgentDir } from "./agent-dir.ts";
 
+// Mirrors Pi core DEFAULT_COMPACTION_SETTINGS in @earendil-works/pi-coding-agent 0.74+.
 const DEFAULT_PI_COMPACTION_SETTINGS: PiCompactionSettings = {
 	enabled: true,
-	reserveTokens: 68000,
+	reserveTokens: 16384,
 	keepRecentTokens: 20000,
 };
 const mutationQueues = new Map<string, Promise<void>>();

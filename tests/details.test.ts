@@ -2,6 +2,23 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { buildContinuationDetails, buildContinuationSynthesisTelemetry, parseContinuationDetails, renderContinuationDetails } from "../extensions/continue/src/details.ts";
 
+const outputBudget = {
+	source: "pi-default" as const,
+	requestedTokens: 800,
+	effectiveTokens: 400,
+	modelMaxTokens: 400,
+	clampedByModel: true,
+};
+
+const historyTelemetry = {
+	requestedModel: "openai/gpt-test",
+	responseModel: "openai/gpt-routed",
+	responseId: "resp-1",
+	usage: { input: 10, output: 20, cacheRead: 1, cacheWrite: 2, totalTokens: 33, costTotal: 0.001 },
+	httpStatus: 200,
+	outputBudget,
+};
+
 test("buildContinuationDetails records current file operations only", () => {
 	const details = buildContinuationDetails(
 		{
@@ -14,15 +31,9 @@ test("buildContinuationDetails records current file operations only", () => {
 		"replacement-pending",
 		"capture corrected command truth",
 		{
-			history: {
-				requestedModel: "openai/gpt-test",
-				responseModel: "openai/gpt-routed",
-				responseId: "resp-1",
-				usage: { input: 10, output: 20, cacheRead: 0, cacheWrite: 0, totalTokens: 30, costTotal: 0.001 },
-				httpStatus: 200,
-			},
+			history: historyTelemetry,
 			totalCost: 0.001,
-			totalTokens: 30,
+			totalTokens: 33,
 		},
 		"continue-1",
 	);
@@ -36,26 +47,24 @@ test("buildContinuationDetails records current file operations only", () => {
 	assert.equal(details.synthesis?.history?.requestedModel, "openai/gpt-test");
 	assert.equal(details.synthesis?.history?.responseModel, "openai/gpt-routed");
 	assert.equal(details.synthesis?.history?.httpStatus, 200);
-	assert.equal(details.synthesis?.totalTokens, 30);
+	assert.deepEqual(details.synthesis?.history?.outputBudget, outputBudget);
+	assert.equal(details.synthesis?.totalTokens, 33);
 });
 
 test("buildContinuationSynthesisTelemetry stores only allowlisted telemetry", () => {
 	const history = {
-		requestedModel: "openai/gpt-test",
-		responseModel: "openai/gpt-routed",
-		responseId: "resp-1",
-		usage: { input: 10, output: 20, cacheRead: 1, cacheWrite: 2, totalTokens: 33, costTotal: 0.001 },
-		httpStatus: 200,
+		...historyTelemetry,
 		text: "RAW MODEL ARTIFACT",
 	};
-	const synthesis = buildContinuationSynthesisTelemetry(history, undefined);
+	const synthesis = buildContinuationSynthesisTelemetry(history);
 	assert.ok(synthesis?.history);
 	assert.equal("text" in synthesis.history, false);
 	assert.deepEqual(synthesis.history.usage, { input: 10, output: 20, cacheRead: 1, cacheWrite: 2, totalTokens: 33, costTotal: 0.001 });
+	assert.deepEqual(synthesis.history.outputBudget, outputBudget);
 	assert.equal(synthesis.totalTokens, 33);
 });
 
-test("parseContinuationDetails reads the full v4 session details payload", () => {
+test("parseContinuationDetails reads the full current session details payload", () => {
 	const parsed = parseContinuationDetails({
 		kind: "pi-continue/v4",
 		readFiles: ["/repo/read.ts"],
@@ -65,6 +74,11 @@ test("parseContinuationDetails reads the full v4 session details payload", () =>
 		agentGuideWriteStatus: "no-replacement",
 		agentGuideChangeReason: "No durable guide change is warranted.",
 		continuationEventId: "continue-2",
+		synthesis: {
+			history: historyTelemetry,
+			totalCost: 0.001,
+			totalTokens: 33,
+		},
 	});
 	assert.deepEqual(parsed, {
 		kind: "pi-continue/v4",
@@ -75,17 +89,17 @@ test("parseContinuationDetails reads the full v4 session details payload", () =>
 		agentGuideWriteStatus: "no-replacement",
 		agentGuideChangeReason: "No durable guide change is warranted.",
 		continuationEventId: "continue-2",
+		synthesis: {
+			history: historyTelemetry,
+			totalCost: 0.001,
+			totalTokens: 33,
+		},
 	});
 });
 
-test("parseContinuationDetails rejects retired v2/v3 and count-only details", () => {
+test("parseContinuationDetails rejects unsupported or summary-only details", () => {
 	assert.equal(parseContinuationDetails({
-		kind: "pi-continue/v2",
-		readFiles: ["/repo/read.ts"],
-		modifiedFiles: ["/repo/write.ts"],
-	}), undefined);
-	assert.equal(parseContinuationDetails({
-		kind: "pi-continue/v3",
+		kind: "other-package/details",
 		readFiles: ["/repo/read.ts"],
 		modifiedFiles: ["/repo/write.ts"],
 	}), undefined);
@@ -107,7 +121,7 @@ test("parseContinuationDetails rejects nested extras and invalid optional values
 		kind: "pi-continue/v4",
 		readFiles: ["/repo/read.ts"],
 		modifiedFiles: ["/repo/write.ts"],
-		agentGuideWriteStatus: "fallback",
+		agentGuideWriteStatus: "not-a-current-status",
 	}), undefined);
 	assert.equal(parseContinuationDetails({
 		kind: "pi-continue/v4",
@@ -117,7 +131,7 @@ test("parseContinuationDetails rejects nested extras and invalid optional values
 			history: {
 				requestedModel: "openai/gpt-test",
 				usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, costTotal: 0 },
-				extra: "retired-field",
+				extra: "noise",
 			},
 		},
 	}), undefined);
@@ -128,7 +142,8 @@ test("parseContinuationDetails rejects nested extras and invalid optional values
 		synthesis: {
 			history: {
 				requestedModel: "openai/gpt-test",
-				usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, costTotal: 0, extra: 3 },
+				usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, costTotal: 0 },
+				outputBudget: { ...outputBudget, clampedByModel: "yes" },
 			},
 		},
 	}), undefined);
@@ -152,6 +167,7 @@ test("renderContinuationDetails writes compact metadata without file paths", () 
 		agentGuideWriteStatus: "replacement-pending",
 		agentGuideChangeReason: "capture durable operating rule",
 		continuationEventId: "continue-3",
+		synthesis: { history: historyTelemetry, totalCost: 0.001, totalTokens: 33 },
 	});
 	assert.match(rendered, /<continuation-compaction-details>/);
 	assert.match(rendered, /"kind": "pi-continue\/v4"/);
@@ -162,6 +178,7 @@ test("renderContinuationDetails writes compact metadata without file paths", () 
 	assert.match(rendered, /"agentGuideWriteStatus": "replacement-pending"/);
 	assert.match(rendered, /"agentGuideChangeReason": "capture durable operating rule"/);
 	assert.match(rendered, /"continuationEventId": "continue-3"/);
+	assert.match(rendered, /"effectiveTokens": 400/);
 	assert.doesNotMatch(rendered, /\/repo\/read\.ts/);
 	assert.doesNotMatch(rendered, /\/repo\/write\.ts/);
 });

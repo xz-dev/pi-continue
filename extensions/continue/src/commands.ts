@@ -189,7 +189,7 @@ export async function runSettingsDialog(pi: ExtensionAPI, ctx: ExtensionCommandC
 			`Enabled: ${config.enabled ? "yes" : "no"}`,
 			`Handoff model: ${config.summarizerModel}`,
 			`Reasoning: ${config.reasoning}`,
-			`History budget: ${config.historyMaxTokens ?? "Pi default"}`,
+			`History output budget: ${config.historyMaxTokens ?? "Pi default"}`,
 			`Continuation file: ${config.continuationDocPath}`,
 			`Save continuation file: ${config.continuationDocSyncMode}`,
 			`Agent guide path: ${config.agentGuidePath}`,
@@ -232,9 +232,9 @@ export async function runSettingsDialog(pi: ExtensionAPI, ctx: ExtensionCommandC
 			});
 			continue;
 		}
-		if (selected.startsWith("History budget:")) {
+		if (selected.startsWith("History output budget:")) {
 			config = await updateSetting(scope, projectContext.projectRoot, config, async (current) => {
-				const next = await chooseTokenOverride(ctx, "History max tokens", current.historyMaxTokens);
+				const next = await chooseTokenOverride(ctx, "History output budget", current.historyMaxTokens);
 				return next !== undefined ? { ...current, historyMaxTokens: next } : undefined;
 			});
 			continue;

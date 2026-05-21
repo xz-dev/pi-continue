@@ -40,7 +40,6 @@ test("loadContinuationConfig uses current-session model, reasoning, guard, and s
 		assert.equal(config.appendCompactionMetadata, false);
 		assert.equal(config.appendReadFileTags, false);
 		assert.equal(config.appendModifiedFileTags, true);
-		assert.equal(Object.hasOwn(config, "appendFileTags"), false);
 		assert.equal(config.showAfterCompact, true);
 	});
 });
@@ -63,16 +62,6 @@ test("loadContinuationConfig preserves explicit mid-run guard false", async () =
 		const config = loadContinuationConfig(root);
 		assert.equal(config.midRunGuardEnabled, false);
 		assert.equal(config.showAfterCompact, false);
-	});
-});
-
-test("loadContinuationConfig ignores retired fallback mode config", async () => {
-	await withTempAgent(async (root) => {
-		const configDir = join(root, ".pi", "extensions");
-		mkdirSync(configDir, { recursive: true });
-		writeFileSync(join(configDir, "pi-continue.json"), JSON.stringify({ fallbackMode: "deterministic-summary" }), "utf8");
-		const config = loadContinuationConfig(root);
-		assert.equal(Object.hasOwn(config, "fallbackMode"), false);
 	});
 });
 

@@ -2,6 +2,20 @@
 
 All notable changes to `pi-continue` are documented here.
 
+## 0.7.1 - 2026-05-21
+
+### Fixed
+
+- Clamped modeled Continuation Ledger history output budgets to the selected summarizer model's positive max-output token limit, matching Pi native compaction behavior when a model cap is known.
+- `/continue status` now reports the requested and effective history output budget and whether the model max-output cap changed it.
+- Synthesis failure status now distinguishes model/provider-call failures from current artifact parse/validation failures with bounded package-owned diagnostic copy.
+
+### Changed
+
+- Aligned the local Pi compaction settings fallback with Pi core defaults (`reserveTokens: 16384`, `keepRecentTokens: 20000`). The 68K reserve-token example remains documented as an explicit 272K-context trigger example.
+- Pruned active tests and examples that existed mainly to name retired contracts; coverage now focuses on the current v4 artifact, current details payload, and current status behavior.
+- Updated the package gallery image URL to the v0.7.1 source tag.
+
 ## 0.7.0 - 2026-05-20
 
 ### Breaking changes

@@ -3,6 +3,7 @@ import type {
 	AgentGuideWriteStatus,
 	ContinuationCompactionDetails,
 	ContinuationSynthesisTelemetry,
+	HistoryOutputBudget,
 	PromptPassTelemetry,
 	PromptPassUsageTelemetry,
 } from "./types.ts";
@@ -13,6 +14,7 @@ interface PromptPassMetadata {
 	httpStatus?: number;
 	totalTokens: number;
 	costTotal: number;
+	outputBudget?: HistoryOutputBudget;
 }
 
 interface ContinuationSummaryMetadata {
@@ -26,7 +28,6 @@ interface ContinuationSummaryMetadata {
 	continuationEventId?: string;
 	synthesis?: {
 		history?: PromptPassMetadata;
-		split?: PromptPassMetadata;
 		totalCost?: number;
 		totalTokens?: number;
 	};
@@ -44,9 +45,10 @@ const CONTINUATION_DETAILS_KEYS = new Set<string>([
 	"continuationEventId",
 	"synthesis",
 ]);
-const SYNTHESIS_KEYS = new Set<string>(["history", "split", "totalCost", "totalTokens"]);
-const PROMPT_PASS_KEYS = new Set<string>(["requestedModel", "responseModel", "responseId", "usage", "httpStatus"]);
+const SYNTHESIS_KEYS = new Set<string>(["history", "totalCost", "totalTokens"]);
+const PROMPT_PASS_KEYS = new Set<string>(["requestedModel", "responseModel", "responseId", "usage", "httpStatus", "outputBudget"]);
 const USAGE_KEYS = new Set<string>(["input", "output", "cacheRead", "cacheWrite", "totalTokens", "costTotal"]);
+const OUTPUT_BUDGET_KEYS = new Set<string>(["source", "requestedTokens", "effectiveTokens", "modelMaxTokens", "clampedByModel"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -101,12 +103,31 @@ function parseUsageTelemetry(value: unknown): PromptPassUsageTelemetry | undefin
 	return { input, output, cacheRead, cacheWrite, totalTokens, costTotal };
 }
 
+function parseOutputBudget(value: unknown): HistoryOutputBudget | undefined {
+	if (!isRecord(value) || !hasOnlyKeys(value, OUTPUT_BUDGET_KEYS)) return undefined;
+	if (value.source !== "pi-default" && value.source !== "config") return undefined;
+	const requestedTokens = requiredNonNegativeNumber(value.requestedTokens);
+	const effectiveTokens = requiredNonNegativeNumber(value.effectiveTokens);
+	const modelMaxTokens = value.modelMaxTokens === undefined ? undefined : requiredNonNegativeNumber(value.modelMaxTokens);
+	if (requestedTokens === undefined || effectiveTokens === undefined || modelMaxTokens === undefined && value.modelMaxTokens !== undefined) return undefined;
+	if (typeof value.clampedByModel !== "boolean") return undefined;
+	return {
+		source: value.source,
+		requestedTokens,
+		effectiveTokens,
+		modelMaxTokens,
+		clampedByModel: value.clampedByModel,
+	};
+}
+
 function parsePromptPassTelemetry(value: unknown): PromptPassTelemetry | undefined {
 	if (!isRecord(value) || !hasOnlyKeys(value, PROMPT_PASS_KEYS)) return undefined;
 	const requestedModel = optionalTrimmedString(value.requestedModel);
 	const usage = parseUsageTelemetry(value.usage);
 	if (!requestedModel || !usage) return undefined;
 	if (invalidOptionalString(value.responseModel) || invalidOptionalString(value.responseId) || invalidOptionalNumber(value.httpStatus)) return undefined;
+	const outputBudget = value.outputBudget === undefined ? undefined : parseOutputBudget(value.outputBudget);
+	if (value.outputBudget !== undefined && !outputBudget) return undefined;
 	const responseModel = optionalTrimmedString(value.responseModel);
 	const responseId = optionalTrimmedString(value.responseId);
 	const httpStatus = optionalNonNegativeNumber(value.httpStatus);
@@ -116,6 +137,7 @@ function parsePromptPassTelemetry(value: unknown): PromptPassTelemetry | undefin
 		responseId,
 		usage,
 		httpStatus,
+		outputBudget,
 	};
 }
 
@@ -123,26 +145,27 @@ function parseSynthesisTelemetry(value: unknown): ContinuationSynthesisTelemetry
 	if (!isRecord(value) || !hasOnlyKeys(value, SYNTHESIS_KEYS)) return undefined;
 	if (invalidOptionalNumber(value.totalCost) || invalidOptionalNumber(value.totalTokens)) return undefined;
 	const history = value.history === undefined ? undefined : parsePromptPassTelemetry(value.history);
-	const split = value.split === undefined ? undefined : parsePromptPassTelemetry(value.split);
-	if ((value.history !== undefined && !history) || (value.split !== undefined && !split)) return undefined;
+	if (value.history !== undefined && !history) return undefined;
 	const totalCost = optionalNonNegativeNumber(value.totalCost);
 	const totalTokens = optionalNonNegativeNumber(value.totalTokens);
-	if (!history && !split && totalCost === undefined && totalTokens === undefined) return undefined;
+	if (!history && totalCost === undefined && totalTokens === undefined) return undefined;
 	return {
 		history,
-		split,
 		totalCost,
 		totalTokens,
 	};
 }
 
-function computeSynthesisTotals(history: PromptPassTelemetry | undefined, split: PromptPassTelemetry | undefined): { totalCost: number | undefined; totalTokens: number | undefined } {
-	const totalCost = (history?.usage.costTotal ?? 0) + (split?.usage.costTotal ?? 0);
-	const totalTokens = (history?.usage.totalTokens ?? 0) + (split?.usage.totalTokens ?? 0);
+function computeSynthesisTotals(history: PromptPassTelemetry | undefined): { totalCost: number | undefined; totalTokens: number | undefined } {
 	return {
-		totalCost: history || split ? totalCost : undefined,
-		totalTokens: history || split ? totalTokens : undefined,
+		totalCost: history ? history.usage.costTotal : undefined,
+		totalTokens: history ? history.usage.totalTokens : undefined,
 	};
+}
+
+function cloneOutputBudget(outputBudget: HistoryOutputBudget | undefined): HistoryOutputBudget | undefined {
+	if (!outputBudget) return undefined;
+	return { ...outputBudget };
 }
 
 function clonePromptPassTelemetry(telemetry: PromptPassTelemetry | undefined): PromptPassTelemetry | undefined {
@@ -160,20 +183,18 @@ function clonePromptPassTelemetry(telemetry: PromptPassTelemetry | undefined): P
 			costTotal: telemetry.usage.costTotal,
 		},
 		httpStatus: telemetry.httpStatus,
+		outputBudget: cloneOutputBudget(telemetry.outputBudget),
 	};
 }
 
 export function buildContinuationSynthesisTelemetry(
 	history: PromptPassTelemetry | undefined,
-	split: PromptPassTelemetry | undefined,
 ): ContinuationSynthesisTelemetry | undefined {
 	const historyTelemetry = clonePromptPassTelemetry(history);
-	const splitTelemetry = clonePromptPassTelemetry(split);
-	if (!historyTelemetry && !splitTelemetry) return undefined;
+	if (!historyTelemetry) return undefined;
 	return {
 		history: historyTelemetry,
-		split: splitTelemetry,
-		...computeSynthesisTotals(historyTelemetry, splitTelemetry),
+		...computeSynthesisTotals(historyTelemetry),
 	};
 }
 
@@ -242,6 +263,7 @@ function renderPromptPassMetadata(telemetry: PromptPassTelemetry | undefined): P
 		httpStatus: telemetry.httpStatus,
 		totalTokens: telemetry.usage.totalTokens,
 		costTotal: telemetry.usage.costTotal,
+		outputBudget: cloneOutputBudget(telemetry.outputBudget),
 	};
 }
 
@@ -259,7 +281,6 @@ function buildSummaryMetadata(details: ContinuationCompactionDetails): Continuat
 	if (details.synthesis) {
 		metadata.synthesis = {
 			history: renderPromptPassMetadata(details.synthesis.history),
-			split: renderPromptPassMetadata(details.synthesis.split),
 			totalCost: details.synthesis.totalCost,
 			totalTokens: details.synthesis.totalTokens,
 		};

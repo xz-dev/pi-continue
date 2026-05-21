@@ -30,12 +30,39 @@ test("renderStatus reports local runtime wiring and write behavior", () => {
 		assert.match(rendered, /## Continuation/);
 		assert.match(rendered, /Last handoff: none in this session/);
 		assert.match(rendered, /- Handoff model: inherit -> openai\/gpt-test/);
+		assert.match(rendered, /- History output budget: Pi default requested [\d,]+; effective [\d,]+; model max unavailable\./);
 		assert.match(rendered, /- Agent guide writes: off/);
 		assert.match(rendered, /full agentGuideUpdate\.content replacements/);
 		assert.match(rendered, /- Append read file tags: no/);
 		assert.match(rendered, /- Append modified file tags: yes/);
 		assert.match(rendered, /Brief entries guide the receiver; they are not proof that files were written/);
 		assert.match(rendered, /- Scenario: unavailable/);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("renderStatus reports clamped configured history output budgets", () => {
+	const root = mkdtempSync(join(tmpdir(), "pi-continuation-status-"));
+	try {
+		const ctx = {
+			model: {
+				provider: "openai",
+				id: "gpt-small-output",
+				contextWindow: 1000,
+				maxTokens: 128,
+			},
+		};
+		const rendered = renderStatus(
+			ctx,
+			{ ...DEFAULT_CONTINUE_CONFIG, historyMaxTokens: 1000 },
+			root,
+			join(root, "CONTINUE.md"),
+			join(root, "AGENTS.md"),
+			undefined,
+			undefined,
+		);
+		assert.match(rendered, /- History output budget: configured requested 1,000; effective 128; clamped by model max 128\./);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -126,7 +153,7 @@ test("renderStatus reports handoff failure without failed-resume copy", () => {
 				continuationDoc: "off",
 				agentGuide: "off",
 			},
-			synthesisFailure: { stage: "history-artifact", reason: "History pass omitted required pi-continue JSON artifacts." },
+			synthesisFailure: { kind: "artifact-parse-validation", code: "artifact-invalid-json", pass: "history", requestedModel: "openai/gpt-test", httpStatus: 200 },
 			failureReason: "Continuation handoff failed.",
 		};
 		const rendered = renderStatus(
@@ -139,9 +166,53 @@ test("renderStatus reports handoff failure without failed-resume copy", () => {
 			latestEvent,
 		);
 		assert.match(rendered, /Last handoff: continuation needs attention/);
-		assert.match(rendered, /Synthesis failure: history-artifact; History pass omitted required pi-continue JSON artifacts\./);
+		assert.match(rendered, /Synthesis failure: current artifact parse\/validation failed during history pass \(invalid JSON\); requested openai\/gpt-test; HTTP 200\./);
 		assert.match(rendered, /Resume outcome: not requested/);
 		assert.doesNotMatch(rendered, /resume needs attention/);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("renderStatus uses bounded model-provider failure diagnostics", () => {
+	const root = mkdtempSync(join(tmpdir(), "pi-continuation-status-"));
+	try {
+		const secretLike = "sk-test-should-not-render";
+		const ctx = {
+			model: {
+				provider: "openai",
+				id: "gpt-test",
+				contextWindow: 1000,
+			},
+		};
+		const latestEvent: ContinuationLatestEvent = {
+			id: "continue-3",
+			source: "command-steer",
+			status: "failed",
+			startedAt: 0,
+			completedAt: 1000,
+			artifactStatus: "aborted",
+			compactionProof: { status: "failed", failureReason: "Continuation handoff failed." },
+			promptStatus: "failed",
+			resume: { status: "not-requested" },
+			documentSync: {
+				continuationDoc: "off",
+				agentGuide: "off",
+			},
+			synthesisFailure: { kind: "model-provider-call", code: "auth-unavailable", pass: "history", requestedModel: "openai/gpt-test" },
+			failureReason: "Continuation handoff failed.",
+		};
+		const rendered = renderStatus(
+			ctx,
+			DEFAULT_CONTINUE_CONFIG,
+			root,
+			join(root, "CONTINUE.md"),
+			join(root, "AGENTS.md"),
+			undefined,
+			latestEvent,
+		);
+		assert.match(rendered, /Synthesis failure: model\/provider call failed during history pass \(auth unavailable\); requested openai\/gpt-test\./);
+		assert.doesNotMatch(rendered, new RegExp(secretLike));
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

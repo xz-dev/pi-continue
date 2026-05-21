@@ -79,12 +79,6 @@ test("receiver prompt frames the agent as its own amnesiac continuer reading dur
 	assert.match(CONTINUATION_PROMPT, /brief\.task/);
 	assert.match(CONTINUATION_PROMPT, /brief\.done_when/);
 	assert.match(CONTINUATION_PROMPT, /do not re-verify/i);
-	assert.doesNotMatch(CONTINUATION_PROMPT, /pi-continue\/v3/);
-	assert.doesNotMatch(CONTINUATION_PROMPT, /\bdocument\b/);
-	assert.doesNotMatch(CONTINUATION_PROMPT, /recency ledger/i);
-	assert.doesNotMatch(CONTINUATION_PROMPT, /durable promotions/i);
-	assert.doesNotMatch(CONTINUATION_PROMPT, /Read Before Acting/);
-	assert.doesNotMatch(CONTINUATION_PROMPT, /Resume Now/);
 });
 
 test("parseContinuationRequest defaults to steer and preserves instructions", () => {

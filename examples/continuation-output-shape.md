@@ -6,39 +6,39 @@ The same rendered brief is what the receiver gets as its first turn after compac
 
 ```text
 ## Task
-Continue the v3 → v4 continuation ledger cutover for pi-continue.
+Continue the current parser and status-diagnostics update for pi-continue.
 
 ## Done When
-pnpm run gate exits 0 against the working tree and README, CHANGELOG, and assets describe pi-continue-artifacts/v4 only.
+pnpm run gate exits 0 against the working tree and README, CHANGELOG, examples, assets, and tests describe the current pi-continue-artifacts/v4 contract.
 
 ## Forbid
-- Do not introduce a v3 compatibility shim. — source: user@msg-greenfield-decision
+- Do not add a parallel artifact contract. — source: user@msg-greenfield-decision
 - Do not edit vendor/ paths. — source: user@msg-vendor-lock
 
 ## Established
-- Finding 7 (duplicate channel) is invalid: the assertion path in delegation.test.ts covers it deterministically. — evidence: tests/delegation.test.ts:142; basis: test; reopen: if tests/delegation.test.ts changes around line 142
+- The parser accepts a seven-slot brief envelope with top-level version, brief, and agentGuideUpdate keys. — evidence: tests/blocks.test.ts:valid-fixture; basis: test; reopen: if the parser key list changes
 - Cross-service eventing uses queues, not pubsub. — evidence: user@msg-arch-decision: 'use queues; pubsub loses messages we cannot lose'; basis: user; reopen: none
 - The OpenAI batch API delivers a webhook on terminal status. — evidence: doc:https://platform.openai.com/docs/api-reference/batch#webhooks; basis: doc; reopen: if the OpenAI batch spec changes
-- pnpm run gate exits 0 against working tree at SHA abcd123. — evidence: cmd:pnpm run gate#exit-status-line; basis: output; reopen: if any file under extensions/ or tests/ changes
+- pnpm run gate exits 0 against working tree at SHA abcd123. — evidence: cmd:pnpm run gate#exit-status-line; basis: output; reopen: if any source, tests, assets, or docs change
 
 ## Learned
-- Multi-line content stuffed into a single brief field re-atomizes into spurious sub-entries on the next render cycle; flatten field values to single lines at synthesis time. — source: session experience: round-trip explosion observed during v4 stabilization
-- Test runner needs `--loader ./tests/pi-peer-loader.mjs` to resolve internal Pi imports; plain `node --test` will fail with module-not-found. — source: cmd:node --no-warnings --experimental-strip-types --loader ./tests/pi-peer-loader.mjs --test tests/blocks.test.ts#first-line
+- Multi-line content stuffed into a single brief field re-atomizes into spurious sub-entries on the next render cycle; flatten field values to single lines at synthesis time. — source: session experience: round-trip explosion observed during parser stabilization
+- Test runner needs the package test command so Pi peer imports resolve consistently. — source: cmd:pnpm test tests/blocks.test.ts#first-line
 
 ## Open
-- Does the gate still pass after the README rewrite? — verifies: Run pnpm run gate and observe exit 0 after committing README changes.
-- Are the BAD/GOOD anchor pairs in history_initial.md sufficient for dumb-model adherence? — verifies: Run one real compaction cycle with a small model and inspect the resulting established entries for anchor specificity.
+- Does the gate still pass after the README rewrite? — verifies: Run pnpm run gate and observe exit 0 after the README change.
+- Are the BAD/GOOD anchor pairs in history_initial.md sufficient for small-model adherence? — verifies: Run one real compaction cycle with a small-output model and inspect the resulting established entries for anchor specificity.
 
 ## Next
 - Run pnpm run gate from the repo root. → Either exit 0 (closes the gate-pass open question) or a concrete failure to triage.
-- If gate passes, perform the manual integration smoke described in CHANGELOG 0.7.0. → A new established entry covering same-session resume behavior.
+- If gate passes, perform the command-surface smoke for this checkout. → The command list still exposes only continue.
 ```
 
 ## Anchor styles
 
-The `evidence` field on every `established` entry must be a navigable identifier the receiver can look up. Bare file names ("tests/delegation.test.ts") are not anchors. Accepted styles:
+The `evidence` field on every `established` entry must be a navigable identifier the receiver can look up. Bare file names ("tests/blocks.test.ts") are not anchors. Accepted styles:
 
-- `path:line` — `tests/delegation.test.ts:142`
+- `path:line` — `tests/blocks.test.ts:78`
 - `test:name` — `test:parseHistoryArtifacts rejects invalid basis`
 - `cmd:command#output-anchor` — `cmd:pnpm run gate#exit-status-line`
 - `doc:url#section` — `doc:https://platform.openai.com/docs/api-reference/batch#webhooks`
