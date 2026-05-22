@@ -4,7 +4,7 @@
 
 The handoff is a structured Continuation Ledger, not a transcript replay. It tells the receiving agent what is still true, what changed recently, what to do next, which evidence is fresh, and what should not be repeated. The prompt assets are overrideable, while the ledger must still match the strict continuation artifact contract.
 
-Optional repo-document writes are explicit opt-ins. A continuation can update the configured continuation document path, and it can replace the configured agent guide only when guide sync is enabled and the model emits a complete replacement guide. Candidate notes alone never write a file.
+A per-session continuation artifact is written by default under the project `.pi/continue/` directory for human inspection and explicit manual bootstrap. It is not automatic memory: `pi-continue` never reads `CONTINUE.md` or prior artifacts into future prompts. The configured agent guide can still be replaced only when guide sync is enabled and the model emits a complete replacement guide. Candidate notes alone never write a file.
 
 It is not a memory system, a session fork, a transcript rewriter, or a replacement for Pi's compaction format.
 
@@ -44,7 +44,7 @@ Running only `/continue` opens a small action palette when UI is available. In n
 | `/continue steer [note]` | Save a handoff now, stopping the current assistant turn if needed, then resume in this session after package-owned handoff proof. |
 | `/continue queue [note]` | Wait for Pi to be idle, then save a handoff and resume in this session after package-owned handoff proof. |
 | `/continue preview [note]` | Show the handoff prompts that would be used; no compaction or resume. |
-| `/continue status` | Show the latest continuation, current settings, prompt sources, trigger threshold, and document-write state. |
+| `/continue status` | Show the latest continuation, current settings, prompt sources, trigger threshold, artifact path, and output-write state. |
 | `/continue ledger` | Show the latest rendered brief in a temporary TUI panel; no transcript entry is appended. |
 | `/continue settings [project\|global]` | Edit package settings and the handoff trigger. |
 | `/continue reset [project\|global]` | Delete package settings after confirmation. |
@@ -86,11 +86,11 @@ Configure the threshold directly in Pi settings, or choose `Handoff trigger` in 
 
 `reserveTokens` and `keepRecentTokens` are absolute token counts. For a 272K context model, an explicit `reserveTokens: 68000` triggers near 75 percent usage. The `/continue settings` control shows and edits the human trigger token count, then saves Pi's canonical `compaction.reserveTokens` value at the selected settings scope; the trigger is not stored in `pi-continue.json`. See [`examples/pi-settings-compaction-75pct-272k.json`](examples/pi-settings-compaction-75pct-272k.json).
 
-Use `/continue status` after a continuation to see what happened. Status reports the latest local run: how the handoff started, whether the Continuation Ledger was created, whether Pi reported package-owned `pi-continue/v4` handoff proof, which summarizer model ran, the requested and effective history output budget, whether the model max-output cap clamped that budget, whether the resume request was sent, whether the resumed assistant turn completed, whether optional document sync updated anything, and what to do next. UI sessions can also show the latest Continuation Ledger as a temporary panel; this never appends another transcript entry. Failure states use explicit package messages rather than parsing provider error text.
+Use `/continue status` after a continuation to see what happened. Status reports the latest local run: how the handoff started, whether the Continuation Ledger was created, whether Pi reported package-owned `pi-continue/v4` handoff proof, which summarizer model ran, the requested and effective history output budget, whether the model max-output cap clamped that budget, whether the resume request was sent, whether the resumed assistant turn completed, whether continuation-artifact or agent-guide output writes updated anything, and what to do next. UI sessions can also show the latest Continuation Ledger as a temporary panel; this never appends another transcript entry. Failure states use explicit package messages rather than parsing provider error text.
 
 A model's context window and maximum output budget are independent. `pi-continue` derives the history budget from Pi's reserve-token setting or `historyMaxTokens`, then clamps the provider request to the selected summarizer model's positive max-output limit when that limit is known.
 
-If modeled Continuation Ledger creation fails, or if Pi reports native/invalid/mismatched compaction proof for an active continuation, `pi-continue` stops before resuming and writes no guessed continuation artifact or repo document. Run `/continue status`, inspect the failure, use `/continue preview` after prompt or config changes, fix the model/auth/context issue, then retry when Pi is idle.
+If modeled Continuation Ledger creation fails, or if Pi reports native/invalid/mismatched compaction proof for an active continuation, `pi-continue` stops before resuming and writes no guessed continuation artifact or agent guide. Run `/continue status`, inspect the failure, use `/continue preview` after prompt or config changes, fix the model/auth/context issue, then retry when Pi is idle.
 
 ## Configuration
 
@@ -114,8 +114,7 @@ Default package config:
   "summarizerModel": "inherit",
   "reasoning": "inherit",
   "historyMaxTokens": null,
-  "continuationDocPath": "CONTINUE.md",
-  "continuationDocSyncMode": "off",
+  "continuationArtifactMode": "always",
   "agentGuidePath": "AGENTS.md",
   "agentGuideSyncMode": "off",
   "midRunGuardEnabled": true,
@@ -136,8 +135,7 @@ Common settings:
 | `summarizerModel` | Uses the active Pi model with `"inherit"`, or a pinned `"provider/model"`. |
 | `reasoning` | Uses Pi's setting with `"inherit"`, or a model-supported thinking level. Unsupported levels are hidden in settings and clamped through Pi's `thinkingLevelMap`. |
 | `historyMaxTokens` | Optional requested history output-token budget; `null` uses Pi-derived default. The effective provider request is clamped to the summarizer model's positive max-output limit when known. |
-| `continuationDocPath` | Repo-relative path for optional continuation document sync; default `"CONTINUE.md"`. |
-| `continuationDocSyncMode` | `"off"` by default; `"always"` writes the configured continuation document path after successful extension-owned compaction. |
+| `continuationArtifactMode` | `"always"` by default writes the rendered brief after successful package-owned compaction to `<project-root>/.pi/continue/<encoded-session-id>.md`; `"off"` disables that artifact. The artifact is human-inspection/manual-bootstrap output only and is never automatic prompt input. |
 | `agentGuidePath` | Repo-relative path for optional full guide replacement; default `"AGENTS.md"`. |
 | `agentGuideSyncMode` | `"off"` by default; `"always"` allows configured agent-guide replacement only when the artifact includes full guide content. |
 | `appendCompactionMetadata` | `false` by default; when true, appends compact non-path metadata to the compaction summary. |
@@ -197,40 +195,38 @@ In practice:
 - `done_when` is the stopping criterion; `task` is the orientation sentence.
 - The receiver trusts every `established` claim by default; the next synthesizer evaluates each `reopen` clause against new evidence and demotes triggered entries back to `open`. Silent drops are forbidden — every retirement is explicit.
 
-The same rendered brief is the receiver's first turn after compaction, the content of `CONTINUE.md` when `continuationDocSyncMode: "always"`, and the TUI overlay shown when `showAfterCompact: true`. All three sinks are byte-identical and produced deterministically by the extension; the synthesizer is responsible only for the brief and the agent-guide update.
+The same rendered brief is the receiver's first turn after compaction, the Markdown saved in Pi's compaction summary, the optional per-session artifact under `.pi/continue/`, and the TUI overlay shown when `showAfterCompact: true`. These sinks are rendered deterministically by the extension; the synthesizer is responsible only for the brief and the agent-guide update. Prior artifacts are never imported automatically into synthesis, preview, or resume prompts.
 
 See [`examples/continuation-output-shape.md`](examples/continuation-output-shape.md) for a rendered shape.
 
-## Optional repo documents and agent-guide updates
+## Per-session artifacts and agent-guide updates
 
-`pi-continue` can write repo-local continuation documents after compaction. These writes are explicit opt-ins.
-
-The default guide path is `AGENTS.md`. When `agentGuideSyncMode` is `"always"`, a continuation may replace that guide with a full modeled update for durable operating guidance: repeated corrections, stable preferences, repo rules, and lessons learned during long runs. Candidate notes alone never write the file.
-
-Default continuation document path:
+`pi-continue` writes a package-owned continuation artifact after successful extension-owned compaction when `continuationArtifactMode` is `"always"` (the default). The artifact path is derived from the current Pi session id:
 
 ```text
-<project-root>/CONTINUE.md
+<project-root>/.pi/continue/<encoded-session-id>.md
 ```
 
-Default agent guide path:
+The artifact is for human inspection or explicit manual bootstrap only. A user may start a new session and explicitly ask the model to read that file, but `pi-continue` never loads `CONTINUE.md` or `.pi/continue/*.md` as automatic prompt memory. Automatic continuation input comes from Pi's compaction state, the current transcript material, turn-prefix material, file-operation signals, custom instructions, and the configured agent guide.
+
+The default guide path is:
 
 ```text
 <project-root>/AGENTS.md
 ```
 
-Both paths are repo-relative and resolve against the project git root when available.
+When `agentGuideSyncMode` is `"always"`, a continuation may replace that guide with a full modeled update for durable operating guidance: repeated corrections, stable preferences, repo rules, and lessons learned during long runs. Candidate notes alone never write the file.
 
 What can change:
 
-- `continuationDocSyncMode: "off"` is the default.
-- `continuationDocSyncMode: "always"` writes the rendered brief to the configured continuation document path after successful extension-owned compaction.
+- `continuationArtifactMode: "always"` writes the rendered brief under `.pi/continue/` after successful extension-owned compaction.
+- `continuationArtifactMode: "off"` writes no continuation artifact.
 - `showAfterCompact: true` (default) surfaces the rendered brief in a TUI overlay right after compaction completes; set `false` for a silent handoff.
 - `agentGuideSyncMode: "off"` is the default.
 - `agentGuideSyncMode: "always"` writes only a full non-null `agentGuideUpdate.content` replacement to the configured agent-guide path.
 - Writes are normalized and skipped when content is unchanged.
 
-In this repository, `CONTINUE.md`, `PLAN.md`, `AGENTS.md`, `ARCH.md`, and `VISION.md` are ignored local state. The npm package keeps README as its only top-level operator guide; it still ships the changelog, examples, and prompt Markdown assets. Automatic AGENTS.md writes remain off by default.
+In this repository, `.pi/`, `CONTINUE.md`, `PLAN.md`, `AGENTS.md`, `ARCH.md`, and `VISION.md` are ignored local state. The npm package keeps README as its only top-level operator guide; it still ships the changelog, examples, and prompt Markdown assets. Automatic AGENTS.md writes remain off by default.
 
 ## Boundaries
 
@@ -244,7 +240,9 @@ In this repository, `CONTINUE.md`, `PLAN.md`, `AGENTS.md`, `ARCH.md`, and `VISIO
 - preserve partial in-flight model output as completed history
 - act as a memory system, context pruner, or general custom-compaction framework
 - register alternate command aliases
-- write the configured continuation document or configured agent guide unless the relevant sync mode is explicitly enabled
+- read `CONTINUE.md` or `.pi/continue/*.md` as automatic prompt input
+- write a continuation artifact when `continuationArtifactMode` is `"off"`
+- write the configured agent guide unless `agentGuideSyncMode` is explicitly enabled
 
 ## Development checks
 

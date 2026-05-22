@@ -3,14 +3,14 @@ import assert from "node:assert/strict";
 import {
 	abandonActiveContinuationEvent,
 	beginContinuationEvent,
-	failPendingDocumentSyncForEvent,
+	failPendingOutputWritesForEvent,
 	finishContinuationEvent,
 	isLatestContinuationEvent,
-	planActiveDocumentSync,
+	planActiveOutputWrites,
 	markContinuationPromptSent,
 	markContinuationResumeStarted,
 	recordActiveSynthesisTelemetry,
-	recordDocumentSyncResult,
+	recordOutputWriteResult,
 	settleContinuationResume,
 } from "../extensions/continue/src/continuation-event.ts";
 import type { ContinuationEventStore } from "../extensions/continue/src/types.ts";
@@ -70,46 +70,46 @@ test("synthesis telemetry records requested and routed summarizer provenance", (
 	assert.equal(store.latestEvent?.synthesis?.totalTokens, 30);
 });
 
-test("document sync updates require the matching latest event id", () => {
+test("output write updates require the matching latest event id", () => {
 	const store = createStore();
 	const event = beginContinuationEvent(store, "command-steer", undefined, "pending");
 	finishContinuationEvent(store, event.id, "completed", undefined);
-	recordDocumentSyncResult(store, "stale-event", "continuation-doc", "failed", "stale failure");
+	recordOutputWriteResult(store, "stale-event", "continuation-artifact", "failed", "stale failure");
 	assert.equal(isLatestContinuationEvent(store, "stale-event"), false);
-	assert.equal(store.latestEvent?.documentSync.continuationDoc, "off");
+	assert.equal(store.latestEvent?.outputWrites.continuationArtifact, "off");
 	assert.equal(store.latestEvent?.failureReason, undefined);
-	recordDocumentSyncResult(store, event.id, "continuation-doc", "updated", undefined);
-	assert.equal(store.latestEvent?.documentSync.continuationDoc, "updated");
+	recordOutputWriteResult(store, event.id, "continuation-artifact", "updated", undefined);
+	assert.equal(store.latestEvent?.outputWrites.continuationArtifact, "updated");
 });
 
-test("abandonActiveContinuationEvent settles pending sync on shutdown", () => {
+test("abandonActiveContinuationEvent settles pending writes on shutdown", () => {
 	const store = createStore();
 	beginContinuationEvent(store, "command-queue", undefined, "pending");
-	planActiveDocumentSync(store, {
-		continuationDoc: "pending",
+	planActiveOutputWrites(store, {
+		continuationArtifact: "pending",
 		agentGuide: "pending",
 	});
 	abandonActiveContinuationEvent(store, "Pi session shut down before continuation finished settling.");
 	assert.equal(store.activeEventId, undefined);
 	assert.equal(store.latestEvent?.status, "failed");
-	assert.equal(store.latestEvent?.documentSync.continuationDoc, "failed");
-	assert.equal(store.latestEvent?.documentSync.agentGuide, "failed");
+	assert.equal(store.latestEvent?.outputWrites.continuationArtifact, "failed");
+	assert.equal(store.latestEvent?.outputWrites.agentGuide, "failed");
 	assert.equal(store.latestEvent?.failureReason, "Pi session shut down before continuation finished settling.");
 });
 
-test("abandonActiveContinuationEvent fails pending sync after handoff completion", () => {
+test("abandonActiveContinuationEvent fails pending writes after handoff completion", () => {
 	const store = createStore();
 	const event = beginContinuationEvent(store, "command-queue", undefined, "pending");
-	planActiveDocumentSync(store, {
-		continuationDoc: "pending",
+	planActiveOutputWrites(store, {
+		continuationArtifact: "pending",
 		agentGuide: "off",
 	});
 	finishContinuationEvent(store, event.id, "completed", undefined);
 	abandonActiveContinuationEvent(store, "Pi session shut down before continuation finished settling.");
 	assert.equal(store.activeEventId, undefined);
 	assert.equal(store.latestEvent?.status, "completed");
-	assert.equal(store.latestEvent?.documentSync.continuationDoc, "failed");
-	assert.equal(store.latestEvent?.documentSync.agentGuide, "off");
+	assert.equal(store.latestEvent?.outputWrites.continuationArtifact, "failed");
+	assert.equal(store.latestEvent?.outputWrites.agentGuide, "off");
 	assert.equal(store.latestEvent?.failureReason, "Pi session shut down before continuation finished settling.");
 });
 
@@ -132,15 +132,15 @@ test("finishContinuationEvent is terminal-idempotent", () => {
 	assert.equal(store.latestEvent?.failureReason, "Continuation handoff failed.");
 });
 
-test("failPendingDocumentSyncForEvent clears pending sync with caller-owned failure copy", () => {
+test("failPendingOutputWritesForEvent clears pending writes with caller-owned failure copy", () => {
 	const store = createStore();
 	const event = beginContinuationEvent(store, "command-steer", undefined, "pending");
-	planActiveDocumentSync(store, {
-		continuationDoc: "pending",
+	planActiveOutputWrites(store, {
+		continuationArtifact: "pending",
 		agentGuide: "no-replacement",
 	});
-	failPendingDocumentSyncForEvent(store, event.id, "Document sync failed; check the configured path and permissions.");
-	assert.equal(store.latestEvent?.documentSync.continuationDoc, "failed");
-	assert.equal(store.latestEvent?.documentSync.agentGuide, "no-replacement");
-	assert.equal(store.latestEvent?.failureReason, "Document sync failed; check the configured path and permissions.");
+	failPendingOutputWritesForEvent(store, event.id, "Output write failed; check the configured path and permissions.");
+	assert.equal(store.latestEvent?.outputWrites.continuationArtifact, "failed");
+	assert.equal(store.latestEvent?.outputWrites.agentGuide, "no-replacement");
+	assert.equal(store.latestEvent?.failureReason, "Output write failed; check the configured path and permissions.");
 });

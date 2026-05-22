@@ -26,7 +26,7 @@ test("buildContinuationDetails records current file operations only", () => {
 			written: new Set<string>(),
 			edited: new Set(["/repo/b.ts", "/repo/c.ts"]),
 		},
-		"sync-1",
+		"artifact-1",
 		"guide-1",
 		"replacement-pending",
 		"capture corrected command truth",
@@ -39,8 +39,8 @@ test("buildContinuationDetails records current file operations only", () => {
 	);
 	assert.deepEqual(details.readFiles, ["/repo/a.ts"]);
 	assert.deepEqual(details.modifiedFiles, ["/repo/b.ts", "/repo/c.ts"]);
-	assert.equal(details.documentSyncId, "sync-1");
-	assert.equal(details.agentGuideSyncId, "guide-1");
+	assert.equal(details.continuationArtifactWriteId, "artifact-1");
+	assert.equal(details.agentGuideWriteId, "guide-1");
 	assert.equal(details.agentGuideWriteStatus, "replacement-pending");
 	assert.equal(details.agentGuideChangeReason, "capture corrected command truth");
 	assert.equal(details.continuationEventId, "continue-1");
@@ -69,8 +69,8 @@ test("parseContinuationDetails reads the full current session details payload", 
 		kind: "pi-continue/v4",
 		readFiles: ["/repo/read.ts"],
 		modifiedFiles: ["/repo/write.ts"],
-		documentSyncId: "sync-2",
-		agentGuideSyncId: "guide-2",
+		continuationArtifactWriteId: "artifact-2",
+		agentGuideWriteId: "guide-2",
 		agentGuideWriteStatus: "no-replacement",
 		agentGuideChangeReason: "No durable guide change is warranted.",
 		continuationEventId: "continue-2",
@@ -84,8 +84,8 @@ test("parseContinuationDetails reads the full current session details payload", 
 		kind: "pi-continue/v4",
 		readFiles: ["/repo/read.ts"],
 		modifiedFiles: ["/repo/write.ts"],
-		documentSyncId: "sync-2",
-		agentGuideSyncId: "guide-2",
+		continuationArtifactWriteId: "artifact-2",
+		agentGuideWriteId: "guide-2",
 		agentGuideWriteStatus: "no-replacement",
 		agentGuideChangeReason: "No durable guide change is warranted.",
 		continuationEventId: "continue-2",
@@ -115,7 +115,7 @@ test("parseContinuationDetails rejects nested extras and invalid optional values
 		kind: "pi-continue/v4",
 		readFiles: ["/repo/read.ts"],
 		modifiedFiles: ["/repo/write.ts"],
-		documentSyncId: 12,
+		continuationArtifactWriteId: 12,
 	}), undefined);
 	assert.equal(parseContinuationDetails({
 		kind: "pi-continue/v4",
@@ -162,8 +162,8 @@ test("renderContinuationDetails writes compact metadata without file paths", () 
 		kind: "pi-continue/v4",
 		readFiles: ["/repo/read.ts"],
 		modifiedFiles: ["/repo/write.ts"],
-		documentSyncId: "sync-3",
-		agentGuideSyncId: "guide-3",
+		continuationArtifactWriteId: "artifact-3",
+		agentGuideWriteId: "guide-3",
 		agentGuideWriteStatus: "replacement-pending",
 		agentGuideChangeReason: "capture durable operating rule",
 		continuationEventId: "continue-3",
@@ -173,8 +173,8 @@ test("renderContinuationDetails writes compact metadata without file paths", () 
 	assert.match(rendered, /"kind": "pi-continue\/v4"/);
 	assert.match(rendered, /"readFileCount": 1/);
 	assert.match(rendered, /"modifiedFileCount": 1/);
-	assert.match(rendered, /"documentSyncId": "sync-3"/);
-	assert.match(rendered, /"agentGuideSyncId": "guide-3"/);
+	assert.match(rendered, /"continuationArtifactWriteId": "artifact-3"/);
+	assert.match(rendered, /"agentGuideWriteId": "guide-3"/);
 	assert.match(rendered, /"agentGuideWriteStatus": "replacement-pending"/);
 	assert.match(rendered, /"agentGuideChangeReason": "capture durable operating rule"/);
 	assert.match(rendered, /"continuationEventId": "continue-3"/);

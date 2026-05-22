@@ -6,7 +6,7 @@ import type {
 	ContinuationLatestEvent,
 	ContinuationResumeOutcome,
 	ContinuationSynthesisFailure,
-	ContinuationSyncStatus,
+	ContinuationWriteStatus,
 	HistoryOutputBudget,
 	PreviewPayload,
 	PromptPassTelemetry,
@@ -88,7 +88,7 @@ function statusLabel(event: ContinuationLatestEvent): string {
 		return "continuation needs attention";
 	}
 	if (event.status === "blocked") return "blocked a repeated unsafe retry";
-	if (event.documentSync.continuationDoc === "failed" || event.documentSync.agentGuide === "failed") return "completed, but document sync needs attention";
+	if (event.outputWrites.continuationArtifact === "failed" || event.outputWrites.agentGuide === "failed") return "completed, but output writes need attention";
 	if (event.promptStatus === "sent" && resume.status !== "completed") return "handoff saved; resume outcome unavailable";
 	return "completed successfully";
 }
@@ -120,7 +120,7 @@ function compactionProofLabel(event: ContinuationLatestEvent): string {
 	return "waiting for package-owned pi-continue/v4 compaction proof";
 }
 
-function syncLabel(status: ContinuationSyncStatus): string {
+function writeLabel(status: ContinuationWriteStatus): string {
 	if (status === "off") return "off";
 	if (status === "pending") return "pending";
 	if (status === "updated") return "updated";
@@ -129,9 +129,9 @@ function syncLabel(status: ContinuationSyncStatus): string {
 	return "no replacement";
 }
 
-function hasNoDocumentWrite(event: ContinuationLatestEvent): boolean {
-	const continuationNoWrite = event.documentSync.continuationDoc === "off";
-	const agentGuideNoWrite = event.documentSync.agentGuide === "off" || event.documentSync.agentGuide === "no-replacement";
+function hasNoOutputWrite(event: ContinuationLatestEvent): boolean {
+	const continuationNoWrite = event.outputWrites.continuationArtifact === "off";
+	const agentGuideNoWrite = event.outputWrites.agentGuide === "off" || event.outputWrites.agentGuide === "no-replacement";
 	return continuationNoWrite && agentGuideNoWrite;
 }
 
@@ -144,8 +144,8 @@ function actionLine(event: ContinuationLatestEvent): string {
 	if (event.status === "blocked") return "No new handoff was started; fix the last failure before retrying.";
 	if (resume.status === "failed" || resume.status === "aborted") return "Review the resume outcome, correct the cause if needed, then continue from live state.";
 	if (event.status === "failed") return "Review the failure, correct the cause, then retry when Pi is idle.";
-	if (event.documentSync.continuationDoc === "failed" || event.documentSync.agentGuide === "failed") return "Continuation completed; review document permissions or paths before relying on repo-document sync.";
-	if (event.documentSync.continuationDoc === "pending" || event.documentSync.agentGuide === "pending") return "Handoff saved; wait for document sync to settle.";
+	if (event.outputWrites.continuationArtifact === "failed" || event.outputWrites.agentGuide === "failed") return "Continuation completed; review output-file permissions or paths before relying on generated files.";
+	if (event.outputWrites.continuationArtifact === "pending" || event.outputWrites.agentGuide === "pending") return "Handoff saved; wait for output writes to settle.";
 	return "No action needed.";
 }
 
@@ -227,8 +227,8 @@ function renderEventSummary(event: ContinuationLatestEvent | undefined): string[
 		`- Resume request: ${event.promptStatus === "sent" ? "sent" : event.promptStatus === "pending" ? "pending" : event.promptStatus === "failed" ? "not sent" : "not requested"}.`,
 		`- Resume outcome: ${resumeLabel(event)}.`,
 		resume.requestedModel ? `- Resume model: requested ${resume.requestedModel}${resume.responseModel ? `; routed ${resume.responseModel}` : ""}.` : undefined,
-		`- Document sync: continuation doc ${syncLabel(event.documentSync.continuationDoc)}; agent guide ${syncLabel(event.documentSync.agentGuide)}.`,
-		hasNoDocumentWrite(event) ? `- Document writes: none performed.` : undefined,
+		`- Output writes: continuation artifact ${writeLabel(event.outputWrites.continuationArtifact)}; agent guide ${writeLabel(event.outputWrites.agentGuide)}.`,
+		hasNoOutputWrite(event) ? `- Output writes: none performed.` : undefined,
 		`- Action: ${actionLine(event)}`,
 		``,
 		`## Diagnostics`,
@@ -243,12 +243,12 @@ function renderEventSummary(event: ContinuationLatestEvent | undefined): string[
 	return lines.filter((line): line is string => line !== undefined);
 }
 
-/** Render effective config, prompt provenance, document-write behavior, and latest continuation status. */
+/** Render effective config, prompt provenance, output-write behavior, and latest continuation status. */
 export function renderStatus(
 	ctx: ExtensionCommandContext,
 	config: ContinuationConfig,
 	projectRoot: string,
-	continuationDocPath: string,
+	continuationArtifactPath: string,
 	agentGuidePath: string,
 	payload: PreviewPayload | undefined,
 	latestEvent: ContinuationLatestEvent | undefined,
@@ -266,8 +266,8 @@ export function renderStatus(
 		`- Handoff model: ${config.summarizerModel} -> ${modelDescription}`,
 		`- Reasoning: ${config.reasoning}`,
 		`- History output budget: ${historyBudget}`,
-		`- Continuation file: ${continuationDocPath}`,
-		`- Save continuation file: ${config.continuationDocSyncMode}`,
+		`- Continuation artifact mode: ${config.continuationArtifactMode}`,
+		`- Continuation artifact path: ${continuationArtifactPath}`,
 		`- Agent guide: ${agentGuidePath}`,
 		`- Agent guide updates: ${config.agentGuideSyncMode}`,
 		`- Agent guide writes: ${config.agentGuideSyncMode === "always" ? "full replacement only" : "off"}`,
@@ -285,7 +285,7 @@ export function renderStatus(
 		`- Keep recent: ${piCompactionSettings.keepRecentTokens}`,
 		``,
 		`## What Can Change`,
-		`- Continuation file sync writes the rendered continuation document when set to always.`,
+		`- Continuation artifacts are Pi-local per-session files for human inspection or explicit manual bootstrap; they are never automatic prompt input.`,
 		`- Agent guide sync writes only full agentGuideUpdate.content replacements to the configured guide; candidates do not modify files.`,
 		`- Brief entries guide the receiver; they are not proof that files were written.`,
 		`- Ledger display is temporary UI only; it does not append a session message.`,

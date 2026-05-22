@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import registerContinueExtension from "../extensions/continue/index.ts";
+import { buildContinuationArtifactPath } from "../extensions/continue/src/project.ts";
 import { CONTINUATION_PROMPT } from "../extensions/continue/src/runtime.ts";
 
 function assistantMessage(stopReason = "stop") {
@@ -116,7 +117,7 @@ function createCommandContext(cwd, custom) {
 		hasUI: true,
 		model: { provider: "openai", id: "gpt-test", contextWindow: 128000 },
 		modelRegistry: { getAvailable() { return []; } },
-		sessionManager: { getBranch() { return []; } },
+		sessionManager: { getBranch() { return []; }, getSessionId() { return "session-test"; } },
 		ui: {
 			theme: { fg(_color, text) { return text; }, bold(text) { return text; } },
 			async custom(factory, options) {
@@ -160,12 +161,22 @@ function createCommandContext(cwd, custom) {
 	return ctx;
 }
 
-function writeAlwaysSyncConfig(cwd) {
+function writeAgentGuideSyncConfig(cwd) {
 	mkdirSync(join(cwd, ".pi", "extensions"), { recursive: true });
 	writeFileSync(join(cwd, ".pi", "extensions", "pi-continue.json"), JSON.stringify({
-		continuationDocSyncMode: "always",
 		agentGuideSyncMode: "always",
 	}), "utf8");
+}
+
+function writeArtifactOffConfig(cwd) {
+	mkdirSync(join(cwd, ".pi", "extensions"), { recursive: true });
+	writeFileSync(join(cwd, ".pi", "extensions", "pi-continue.json"), JSON.stringify({
+		continuationArtifactMode: "off",
+	}), "utf8");
+}
+
+function continuationArtifactPath(cwd) {
+	return buildContinuationArtifactPath(cwd, "session-test");
 }
 
 function compactionEvent(preparation = {}) {
@@ -201,6 +212,7 @@ function ownedCompactionEvent(eventId = "continue-1", details = {}) {
 function assertNoFailedSynthesisSideEffects(cwd, pi) {
 	assert.deepEqual(pi.sent, []);
 	assert.equal(existsSync(join(cwd, "CONTINUE.md")), false);
+	assert.equal(existsSync(continuationArtifactPath(cwd)), false);
 	assert.equal(existsSync(join(cwd, "AGENTS.md")), false);
 }
 
@@ -525,11 +537,11 @@ test("session_compact ledger display is transient UI and does not send a continu
 	assert.deepEqual(pi.sent, []);
 });
 
-test("session_before_compact and session_compact write configured documents only after a successful compaction", async () => {
+test("session_before_compact and session_compact write default artifact and configured agent guide only after a successful compaction", async () => {
 	const cwd = mkdtempSync(join(tmpdir(), "pi-continue-sync-success-"));
 	const faux = registerFauxProvider();
 	try {
-		writeAlwaysSyncConfig(cwd);
+		writeAgentGuideSyncConfig(cwd);
 		faux.setResponses([fauxAssistantMessage(continuationArtifactJson("# Agent Guide\n\nDurable rule.\n"))]);
 		const pi = createFakePi(cwd);
 		const ctx = createCommandContext(cwd, async () => undefined);
@@ -542,6 +554,7 @@ test("session_before_compact and session_compact write configured documents only
 			turnPrefixMessages: [{ role: "user", content: [{ type: "text", text: "split turn prefix" }], timestamp: 0 }],
 		}), ctx);
 		assert.equal(existsSync(join(cwd, "CONTINUE.md")), false);
+		assert.equal(existsSync(continuationArtifactPath(cwd)), false);
 		assert.equal(existsSync(join(cwd, "AGENTS.md")), false);
 		assert.deepEqual(pi.sent, []);
 		const summary = result.compaction.summary;
@@ -554,9 +567,10 @@ test("session_before_compact and session_compact write configured documents only
 				details: result.compaction.details,
 			},
 		}, ctx);
-		const continueContent = readFileSync(join(cwd, "CONTINUE.md"), "utf8");
-		assert.match(continueContent, /## Task\nContinue the task\./);
-		assert.match(continueContent, /## Established/);
+		assert.equal(existsSync(join(cwd, "CONTINUE.md")), false);
+		const artifactContent = readFileSync(continuationArtifactPath(cwd), "utf8");
+		assert.match(artifactContent, /## Task\nContinue the task\./);
+		assert.match(artifactContent, /## Established/);
 		assert.match(readFileSync(join(cwd, "AGENTS.md"), "utf8"), /Durable rule/);
 		assert.deepEqual(pi.sent, []);
 	} finally {
@@ -564,6 +578,68 @@ test("session_before_compact and session_compact write configured documents only
 		rmSync(cwd, { recursive: true, force: true });
 	}
 });
+
+test("session_before_compact omits stale continuation docs and prior artifacts from provider prompt", async () => {
+	const cwd = mkdtempSync(join(tmpdir(), "pi-continue-no-stale-input-"));
+	const faux = registerFauxProvider();
+	try {
+		writeFileSync(join(cwd, "CONTINUE.md"), "STALE_CONTINUE_SENTINEL", "utf8");
+		mkdirSync(join(cwd, ".pi", "continue"), { recursive: true });
+		writeFileSync(continuationArtifactPath(cwd), "STALE_ARTIFACT_SENTINEL", "utf8");
+		let observedPrompt = "";
+		faux.setResponses([((context) => {
+			observedPrompt = JSON.stringify(context);
+			return fauxAssistantMessage(continuationArtifactJson());
+		})]);
+		const pi = createFakePi(cwd);
+		const ctx = createCommandContext(cwd, async () => undefined);
+		ctx.model = faux.models[0];
+		ctx.modelRegistry.getApiKeyAndHeaders = async () => ({ ok: true, apiKey: "test", headers: {} });
+		registerContinueExtension(pi);
+		await pi.commands.get("continue").handler("steer", ctx);
+		const result = await pi.events.get("session_before_compact")(compactionEvent(), ctx);
+		assert.ok("compaction" in result);
+		assert.doesNotMatch(observedPrompt, /STALE_CONTINUE_SENTINEL/);
+		assert.doesNotMatch(observedPrompt, /STALE_ARTIFACT_SENTINEL/);
+		assert.doesNotMatch(observedPrompt, /existing-continuation-md/);
+		assert.doesNotMatch(observedPrompt, /continuation-doc-path/);
+	} finally {
+		faux.unregister();
+		rmSync(cwd, { recursive: true, force: true });
+	}
+});
+
+
+test("continuationArtifactMode off suppresses successful artifact writes", async () => {
+	const cwd = mkdtempSync(join(tmpdir(), "pi-continue-artifact-off-"));
+	const faux = registerFauxProvider();
+	try {
+		writeArtifactOffConfig(cwd);
+		faux.setResponses([fauxAssistantMessage(continuationArtifactJson())]);
+		const pi = createFakePi(cwd);
+		const ctx = createCommandContext(cwd, async () => undefined);
+		ctx.model = faux.models[0];
+		ctx.modelRegistry.getApiKeyAndHeaders = async () => ({ ok: true, apiKey: "test", headers: {} });
+		registerContinueExtension(pi);
+		await pi.commands.get("continue").handler("steer", ctx);
+		const result = await pi.events.get("session_before_compact")(compactionEvent(), ctx);
+		assert.ok("compaction" in result);
+		await pi.events.get("session_compact")({
+			fromExtension: true,
+			compactionEntry: {
+				id: "compact-artifact-off",
+				summary: result.compaction.summary,
+				details: result.compaction.details,
+			},
+		}, ctx);
+		assert.equal(existsSync(continuationArtifactPath(cwd)), false);
+		assert.equal(existsSync(join(cwd, "CONTINUE.md")), false);
+	} finally {
+		faux.unregister();
+		rmSync(cwd, { recursive: true, force: true });
+	}
+});
+
 
 test("session_before_compact clamps history output budget to model max tokens", async () => {
 	const cwd = mkdtempSync(join(tmpdir(), "pi-continue-output-clamp-"));
@@ -597,7 +673,7 @@ test("session_before_compact clamps history output budget to model max tokens", 
 test("session_before_compact fails closed when ledger synthesis cannot authenticate", async () => {
 	const cwd = mkdtempSync(join(tmpdir(), "pi-continue-hard-fail-"));
 	try {
-		writeAlwaysSyncConfig(cwd);
+		writeAgentGuideSyncConfig(cwd);
 		const pi = createFakePi(cwd);
 		const ctx = createCommandContext(cwd, async () => undefined);
 		ctx.modelRegistry.getApiKeyAndHeaders = async () => ({
@@ -618,7 +694,7 @@ test("session_before_compact fails closed when history artifacts are malformed",
 	const cwd = mkdtempSync(join(tmpdir(), "pi-continue-hard-fail-"));
 	const faux = registerFauxProvider();
 	try {
-		writeAlwaysSyncConfig(cwd);
+		writeAgentGuideSyncConfig(cwd);
 		faux.setResponses([fauxAssistantMessage("not json")]);
 		const pi = createFakePi(cwd);
 		const ctx = createCommandContext(cwd, async () => undefined);
@@ -638,7 +714,7 @@ test("session_before_compact fails closed when history artifacts are malformed",
 test("session_before_compact opts out when no extension-owned continuation event is active", async () => {
 	const cwd = mkdtempSync(join(tmpdir(), "pi-continue-optout-"));
 	try {
-		writeAlwaysSyncConfig(cwd);
+		writeAgentGuideSyncConfig(cwd);
 		const pi = createFakePi(cwd);
 		const ctx = createCommandContext(cwd, async () => undefined);
 		registerContinueExtension(pi);
@@ -646,6 +722,7 @@ test("session_before_compact opts out when no extension-owned continuation event
 		assert.equal(result, undefined);
 		assert.deepEqual(pi.sent, []);
 		assert.equal(existsSync(join(cwd, "CONTINUE.md")), false);
+		assert.equal(existsSync(continuationArtifactPath(cwd)), false);
 		assert.equal(existsSync(join(cwd, "AGENTS.md")), false);
 	} finally {
 		rmSync(cwd, { recursive: true, force: true });
@@ -656,7 +733,7 @@ test("session_before_compact rejects wrong current artifact shape from the synth
 	const cwd = mkdtempSync(join(tmpdir(), "pi-continue-shape-reject-"));
 	const faux = registerFauxProvider();
 	try {
-		writeAlwaysSyncConfig(cwd);
+		writeAgentGuideSyncConfig(cwd);
 		const wrongEnvelope = JSON.stringify({
 			version: "pi-continue-artifacts/v4",
 			brief: { task: "x" },

@@ -21,8 +21,8 @@ interface ContinuationSummaryMetadata {
 	kind: "pi-continue/v4";
 	readFileCount: number;
 	modifiedFileCount: number;
-	documentSyncId?: string;
-	agentGuideSyncId?: string;
+	continuationArtifactWriteId?: string;
+	agentGuideWriteId?: string;
 	agentGuideWriteStatus?: AgentGuideWriteStatus;
 	agentGuideChangeReason?: string;
 	continuationEventId?: string;
@@ -38,8 +38,8 @@ const CONTINUATION_DETAILS_KEYS = new Set<string>([
 	"kind",
 	"readFiles",
 	"modifiedFiles",
-	"documentSyncId",
-	"agentGuideSyncId",
+	"continuationArtifactWriteId",
+	"agentGuideWriteId",
 	"agentGuideWriteStatus",
 	"agentGuideChangeReason",
 	"continuationEventId",
@@ -59,7 +59,7 @@ function isStringArray(value: unknown): value is string[] {
 }
 
 function asAgentGuideWriteStatus(value: unknown): AgentGuideWriteStatus | undefined {
-	if (value === "sync-off" || value === "no-replacement" || value === "replacement-pending") return value;
+	if (value === "write-off" || value === "no-replacement" || value === "replacement-pending") return value;
 	return undefined;
 }
 
@@ -203,10 +203,10 @@ export function parseContinuationDetails(value: unknown): ContinuationCompaction
 	if (!isRecord(value) || !hasOnlyKeys(value, CONTINUATION_DETAILS_KEYS)) return undefined;
 	if (value.kind !== CONTINUATION_DETAILS_KIND_V4) return undefined;
 	if (!isStringArray(value.readFiles) || !isStringArray(value.modifiedFiles)) return undefined;
-	if (invalidOptionalString(value.documentSyncId) || invalidOptionalString(value.agentGuideSyncId) || invalidOptionalString(value.agentGuideChangeReason) || invalidOptionalString(value.continuationEventId)) return undefined;
+	if (invalidOptionalString(value.continuationArtifactWriteId) || invalidOptionalString(value.agentGuideWriteId) || invalidOptionalString(value.agentGuideChangeReason) || invalidOptionalString(value.continuationEventId)) return undefined;
 	if (value.agentGuideWriteStatus !== undefined && !asAgentGuideWriteStatus(value.agentGuideWriteStatus)) return undefined;
-	const documentSyncId = optionalTrimmedString(value.documentSyncId);
-	const agentGuideSyncId = optionalTrimmedString(value.agentGuideSyncId);
+	const continuationArtifactWriteId = optionalTrimmedString(value.continuationArtifactWriteId);
+	const agentGuideWriteId = optionalTrimmedString(value.agentGuideWriteId);
 	const agentGuideWriteStatus = asAgentGuideWriteStatus(value.agentGuideWriteStatus);
 	const agentGuideChangeReason = optionalTrimmedString(value.agentGuideChangeReason);
 	const continuationEventId = optionalTrimmedString(value.continuationEventId);
@@ -217,8 +217,8 @@ export function parseContinuationDetails(value: unknown): ContinuationCompaction
 		readFiles: value.readFiles,
 		modifiedFiles: value.modifiedFiles,
 	};
-	if (documentSyncId) details.documentSyncId = documentSyncId;
-	if (agentGuideSyncId) details.agentGuideSyncId = agentGuideSyncId;
+	if (continuationArtifactWriteId) details.continuationArtifactWriteId = continuationArtifactWriteId;
+	if (agentGuideWriteId) details.agentGuideWriteId = agentGuideWriteId;
 	if (agentGuideWriteStatus) details.agentGuideWriteStatus = agentGuideWriteStatus;
 	if (agentGuideChangeReason) details.agentGuideChangeReason = agentGuideChangeReason;
 	if (continuationEventId) details.continuationEventId = continuationEventId;
@@ -229,8 +229,8 @@ export function parseContinuationDetails(value: unknown): ContinuationCompaction
 /** Build current-compaction details without inheriting cumulative path lists from older summaries. */
 export function buildContinuationDetails(
 	fileOps: FileOperations,
-	documentSyncId: string | undefined,
-	agentGuideSyncId: string | undefined,
+	continuationArtifactWriteId: string | undefined,
+	agentGuideWriteId: string | undefined,
 	agentGuideWriteStatus: AgentGuideWriteStatus | undefined,
 	agentGuideChangeReason: string | undefined,
 	synthesis: ContinuationSynthesisTelemetry | undefined,
@@ -242,8 +242,8 @@ export function buildContinuationDetails(
 		readFiles,
 		modifiedFiles,
 	};
-	if (documentSyncId) details.documentSyncId = documentSyncId;
-	if (agentGuideSyncId) details.agentGuideSyncId = agentGuideSyncId;
+	if (continuationArtifactWriteId) details.continuationArtifactWriteId = continuationArtifactWriteId;
+	if (agentGuideWriteId) details.agentGuideWriteId = agentGuideWriteId;
 	if (agentGuideWriteStatus) details.agentGuideWriteStatus = agentGuideWriteStatus;
 	if (agentGuideChangeReason) details.agentGuideChangeReason = agentGuideChangeReason;
 	if (continuationEventId) details.continuationEventId = continuationEventId;
@@ -273,8 +273,8 @@ function buildSummaryMetadata(details: ContinuationCompactionDetails): Continuat
 		readFileCount: details.readFiles.length,
 		modifiedFileCount: details.modifiedFiles.length,
 	};
-	if (details.documentSyncId) metadata.documentSyncId = details.documentSyncId;
-	if (details.agentGuideSyncId) metadata.agentGuideSyncId = details.agentGuideSyncId;
+	if (details.continuationArtifactWriteId) metadata.continuationArtifactWriteId = details.continuationArtifactWriteId;
+	if (details.agentGuideWriteId) metadata.agentGuideWriteId = details.agentGuideWriteId;
 	if (details.agentGuideWriteStatus) metadata.agentGuideWriteStatus = details.agentGuideWriteStatus;
 	if (details.agentGuideChangeReason) metadata.agentGuideChangeReason = clip(details.agentGuideChangeReason, 360);
 	if (details.continuationEventId) metadata.continuationEventId = details.continuationEventId;

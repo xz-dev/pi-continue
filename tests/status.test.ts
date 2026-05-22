@@ -7,21 +7,42 @@ import { DEFAULT_CONTINUE_CONFIG } from "../extensions/continue/src/config.ts";
 import { renderStatus } from "../extensions/continue/src/status.ts";
 import type { ContinuationLatestEvent } from "../extensions/continue/src/types.ts";
 
-test("renderStatus reports local runtime wiring and write behavior", () => {
+const artifactPath = (root: string) => join(root, ".pi", "continue", "session-test.md");
+
+function baseCtx() {
+	return {
+		model: {
+			provider: "openai",
+			id: "gpt-test",
+			contextWindow: 1000,
+		},
+	};
+}
+
+function baseEvent(overrides: Partial<ContinuationLatestEvent> = {}): ContinuationLatestEvent {
+	return {
+		id: "continue-1",
+		source: "command-steer",
+		status: "completed",
+		startedAt: 0,
+		completedAt: 1000,
+		artifactStatus: "modeled",
+		compactionProof: { status: "verified", compactionEntryId: "compact-1", verifiedAt: 250 },
+		promptStatus: "sent",
+		resume: { status: "completed", startedAt: 500, completedAt: 900, stopReason: "stop" },
+		outputWrites: { continuationArtifact: "off", agentGuide: "off" },
+		...overrides,
+	};
+}
+
+test("renderStatus reports local runtime wiring and artifact behavior", () => {
 	const root = mkdtempSync(join(tmpdir(), "pi-continuation-status-"));
 	try {
-		const ctx = {
-			model: {
-				provider: "openai",
-				id: "gpt-test",
-				contextWindow: 1000,
-			},
-		};
 		const rendered = renderStatus(
-			ctx,
+			baseCtx(),
 			DEFAULT_CONTINUE_CONFIG,
 			root,
-			join(root, "CONTINUE.md"),
+			artifactPath(root),
 			join(root, "AGENTS.md"),
 			undefined,
 			undefined,
@@ -31,7 +52,10 @@ test("renderStatus reports local runtime wiring and write behavior", () => {
 		assert.match(rendered, /Last handoff: none in this session/);
 		assert.match(rendered, /- Handoff model: inherit -> openai\/gpt-test/);
 		assert.match(rendered, /- History output budget: Pi default requested [\d,]+; effective [\d,]+; model max unavailable\./);
+		assert.match(rendered, /- Continuation artifact mode: always/);
+		assert.match(rendered, /- Continuation artifact path: .*\.pi\/continue\/session-test\.md/);
 		assert.match(rendered, /- Agent guide writes: off/);
+		assert.match(rendered, /Continuation artifacts are Pi-local per-session files/);
 		assert.match(rendered, /full agentGuideUpdate\.content replacements/);
 		assert.match(rendered, /- Append read file tags: no/);
 		assert.match(rendered, /- Append modified file tags: yes/);
@@ -57,7 +81,7 @@ test("renderStatus reports clamped configured history output budgets", () => {
 			ctx,
 			{ ...DEFAULT_CONTINUE_CONFIG, historyMaxTokens: 1000 },
 			root,
-			join(root, "CONTINUE.md"),
+			artifactPath(root),
 			join(root, "AGENTS.md"),
 			undefined,
 			undefined,
@@ -71,19 +95,8 @@ test("renderStatus reports clamped configured history output budgets", () => {
 test("renderStatus summarizes a completed latest continuation calmly", () => {
 	const root = mkdtempSync(join(tmpdir(), "pi-continuation-status-"));
 	try {
-		const ctx = {
-			model: {
-				provider: "openai",
-				id: "gpt-test",
-				contextWindow: 1000,
-			},
-		};
-		const latestEvent: ContinuationLatestEvent = {
-			id: "continue-1",
+		const latestEvent = baseEvent({
 			source: "mid-run-guard",
-			status: "completed",
-			startedAt: 0,
-			completedAt: 1000,
 			trigger: {
 				estimatedTokens: 820,
 				thresholdTokens: 750,
@@ -93,9 +106,6 @@ test("renderStatus summarizes a completed latest continuation calmly", () => {
 				trailingTokens: 20,
 				lastUsageIndex: 3,
 			},
-			artifactStatus: "modeled",
-			compactionProof: { status: "verified", compactionEntryId: "compact-1", verifiedAt: 250 },
-			promptStatus: "sent",
 			resume: {
 				status: "completed",
 				startedAt: 500,
@@ -104,16 +114,12 @@ test("renderStatus summarizes a completed latest continuation calmly", () => {
 				requestedModel: "openai/gpt-test",
 				responseModel: "openai/gpt-routed",
 			},
-			documentSync: {
-				continuationDoc: "off",
-				agentGuide: "off",
-			},
-		};
+		});
 		const rendered = renderStatus(
-			ctx,
+			baseCtx(),
 			DEFAULT_CONTINUE_CONFIG,
 			root,
-			join(root, "CONTINUE.md"),
+			artifactPath(root),
 			join(root, "AGENTS.md"),
 			undefined,
 			latestEvent,
@@ -122,7 +128,7 @@ test("renderStatus summarizes a completed latest continuation calmly", () => {
 		assert.match(rendered, /Safe boundary: completed assistant\/tool-result batch before the next model request/);
 		assert.match(rendered, /Ledger: Continuation Ledger ready/);
 		assert.match(rendered, /Saved handoff proof: verified package-owned pi-continue\/v4 compaction/);
-		assert.match(rendered, /Document writes: none performed/);
+		assert.match(rendered, /Output writes: none performed/);
 		assert.match(rendered, /Action: No action needed/);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
@@ -132,35 +138,21 @@ test("renderStatus summarizes a completed latest continuation calmly", () => {
 test("renderStatus reports handoff failure without failed-resume copy", () => {
 	const root = mkdtempSync(join(tmpdir(), "pi-continuation-status-"));
 	try {
-		const ctx = {
-			model: {
-				provider: "openai",
-				id: "gpt-test",
-				contextWindow: 1000,
-			},
-		};
-		const latestEvent: ContinuationLatestEvent = {
+		const latestEvent = baseEvent({
 			id: "continue-2",
-			source: "command-steer",
 			status: "failed",
-			startedAt: 0,
-			completedAt: 1000,
 			artifactStatus: "pending",
 			compactionProof: { status: "failed", failureReason: "Continuation handoff failed." },
 			promptStatus: "failed",
 			resume: { status: "not-requested" },
-			documentSync: {
-				continuationDoc: "off",
-				agentGuide: "off",
-			},
 			synthesisFailure: { kind: "artifact-parse-validation", code: "artifact-invalid-json", pass: "history", requestedModel: "openai/gpt-test", httpStatus: 200 },
 			failureReason: "Continuation handoff failed.",
-		};
+		});
 		const rendered = renderStatus(
-			ctx,
+			baseCtx(),
 			DEFAULT_CONTINUE_CONFIG,
 			root,
-			join(root, "CONTINUE.md"),
+			artifactPath(root),
 			join(root, "AGENTS.md"),
 			undefined,
 			latestEvent,
@@ -178,35 +170,21 @@ test("renderStatus uses bounded model-provider failure diagnostics", () => {
 	const root = mkdtempSync(join(tmpdir(), "pi-continuation-status-"));
 	try {
 		const secretLike = "sk-test-should-not-render";
-		const ctx = {
-			model: {
-				provider: "openai",
-				id: "gpt-test",
-				contextWindow: 1000,
-			},
-		};
-		const latestEvent: ContinuationLatestEvent = {
+		const latestEvent = baseEvent({
 			id: "continue-3",
-			source: "command-steer",
 			status: "failed",
-			startedAt: 0,
-			completedAt: 1000,
 			artifactStatus: "aborted",
 			compactionProof: { status: "failed", failureReason: "Continuation handoff failed." },
 			promptStatus: "failed",
 			resume: { status: "not-requested" },
-			documentSync: {
-				continuationDoc: "off",
-				agentGuide: "off",
-			},
 			synthesisFailure: { kind: "model-provider-call", code: "auth-unavailable", pass: "history", requestedModel: "openai/gpt-test" },
 			failureReason: "Continuation handoff failed.",
-		};
+		});
 		const rendered = renderStatus(
-			ctx,
+			baseCtx(),
 			DEFAULT_CONTINUE_CONFIG,
 			root,
-			join(root, "CONTINUE.md"),
+			artifactPath(root),
 			join(root, "AGENTS.md"),
 			undefined,
 			latestEvent,
@@ -221,39 +199,22 @@ test("renderStatus uses bounded model-provider failure diagnostics", () => {
 test("renderStatus reports an aborted resume without generic internal failure copy", () => {
 	const root = mkdtempSync(join(tmpdir(), "pi-continuation-status-"));
 	try {
-		const ctx = {
-			model: {
-				provider: "openai",
-				id: "gpt-test",
-				contextWindow: 1000,
-			},
-		};
-		const latestEvent: ContinuationLatestEvent = {
+		const latestEvent = baseEvent({
 			id: "continue-3",
-			source: "command-steer",
 			status: "failed",
-			startedAt: 0,
-			completedAt: 1000,
-			artifactStatus: "modeled",
-			compactionProof: { status: "verified", compactionEntryId: "compact-3", verifiedAt: 100 },
-			promptStatus: "sent",
 			resume: {
 				status: "aborted",
 				startedAt: 200,
 				completedAt: 900,
 				failureReason: "Continuation resume was aborted.",
 			},
-			documentSync: {
-				continuationDoc: "off",
-				agentGuide: "off",
-			},
 			failureReason: "Continuation resume was aborted.",
-		};
+		});
 		const rendered = renderStatus(
-			ctx,
+			baseCtx(),
 			DEFAULT_CONTINUE_CONFIG,
 			root,
-			join(root, "CONTINUE.md"),
+			artifactPath(root),
 			join(root, "AGENTS.md"),
 			undefined,
 			latestEvent,
@@ -266,22 +227,12 @@ test("renderStatus reports an aborted resume without generic internal failure co
 	}
 });
 
-test("renderStatus does not call pending or failed sync no-op writes", () => {
+test("renderStatus does not call pending or failed output writes no-op writes", () => {
 	const root = mkdtempSync(join(tmpdir(), "pi-continuation-status-"));
 	try {
-		const ctx = {
-			model: {
-				provider: "openai",
-				id: "gpt-test",
-				contextWindow: 1000,
-			},
-		};
-		const latestEvent: ContinuationLatestEvent = {
+		const latestEvent = baseEvent({
 			id: "continue-2",
-			source: "command-steer",
 			status: "failed",
-			startedAt: 0,
-			completedAt: 1000,
 			artifactStatus: "aborted",
 			compactionProof: { status: "failed", failureReason: "Continuation handoff failed." },
 			promptStatus: "failed",
@@ -289,25 +240,25 @@ test("renderStatus does not call pending or failed sync no-op writes", () => {
 				status: "failed",
 				failureReason: "Continuation resume request failed.",
 			},
-			documentSync: {
-				continuationDoc: "failed",
+			outputWrites: {
+				continuationArtifact: "failed",
 				agentGuide: "pending",
 			},
-			failureReason: "Document sync failed; check the configured path and permissions.",
-		};
+			failureReason: "Output write failed; check the configured path and permissions.",
+		});
 		const rendered = renderStatus(
-			ctx,
+			baseCtx(),
 			DEFAULT_CONTINUE_CONFIG,
 			root,
-			join(root, "CONTINUE.md"),
+			artifactPath(root),
 			join(root, "AGENTS.md"),
 			undefined,
 			latestEvent,
 		);
-		assert.match(rendered, /Document sync: continuation doc failed; agent guide pending/);
+		assert.match(rendered, /Output writes: continuation artifact failed; agent guide pending/);
 		assert.match(rendered, /Resume request: not sent/);
-		assert.match(rendered, /Needs attention: Document sync failed; check the configured path and permissions/);
-		assert.doesNotMatch(rendered, /Document writes: none performed/);
+		assert.match(rendered, /Needs attention: Output write failed; check the configured path and permissions/);
+		assert.doesNotMatch(rendered, /Output writes: none performed/);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

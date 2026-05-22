@@ -2,7 +2,7 @@
 
 This is a shape example for rendered `brief` content. Real output uses actual session facts and omits any of the five entry-array sections (`Forbid`, `Established`, `Learned`, `Open`, `Next`) that have no entries this cycle. `Task` and `Done When` always appear.
 
-The same rendered brief is what the receiver gets as its first turn after compaction, what is written to `CONTINUE.md` when `continuationDocSyncMode: "always"`, and what is shown in the TUI overlay when `showAfterCompact: true`. All three are the byte-identical render of the brief — pi-continue (the extension) renders them deterministically, not the synthesizer.
+The same rendered brief is what the receiver gets as its first turn after compaction, what is persisted in Pi's compaction summary, what may be written as a per-session artifact under `<project-root>/.pi/continue/<encoded-session-id>.md`, and what is shown in the TUI overlay when `showAfterCompact: true`. pi-continue (the extension) renders these deterministically, not the synthesizer. Artifacts are manual inspection/bootstrap outputs only and are never imported automatically into future prompts.
 
 ```text
 ## Task

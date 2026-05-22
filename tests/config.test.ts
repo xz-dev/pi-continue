@@ -28,12 +28,12 @@ async function withTempAgent(work) {
 	}
 }
 
-test("loadContinuationConfig uses current-session model, reasoning, guard, and sync defaults", async () => {
+test("loadContinuationConfig uses current-session model, reasoning, guard, and output defaults", async () => {
 	await withTempAgent(async (root) => {
 		const config = loadContinuationConfig(root);
 		assert.equal(config.summarizerModel, "inherit");
 		assert.equal(config.reasoning, "inherit");
-		assert.equal(config.continuationDocSyncMode, "off");
+		assert.equal(config.continuationArtifactMode, "always");
 		assert.equal(config.agentGuidePath, "AGENTS.md");
 		assert.equal(config.agentGuideSyncMode, "off");
 		assert.equal(config.midRunGuardEnabled, true);
@@ -65,17 +65,21 @@ test("loadContinuationConfig preserves explicit mid-run guard false", async () =
 	});
 });
 
-test("loadContinuationConfig preserves explicit repo document sync settings", async () => {
+test("loadContinuationConfig preserves explicit artifact and agent guide settings while ignoring retired document keys", async () => {
 	await withTempAgent(async (root) => {
 		const configDir = join(root, ".pi", "extensions");
 		mkdirSync(configDir, { recursive: true });
 		writeFileSync(join(configDir, "pi-continue.json"), JSON.stringify({
+			continuationArtifactMode: "off",
+			continuationDocPath: "SHOULD_NOT_SURVIVE.md",
 			continuationDocSyncMode: "always",
 			agentGuidePath: "docs/AGENTS.md",
 			agentGuideSyncMode: "always",
 		}), "utf8");
 		const config = loadContinuationConfig(root);
-		assert.equal(config.continuationDocSyncMode, "always");
+		assert.equal("continuationDocPath" in config, false);
+		assert.equal("continuationDocSyncMode" in config, false);
+		assert.equal(config.continuationArtifactMode, "off");
 		assert.equal(config.agentGuidePath, "docs/AGENTS.md");
 		assert.equal(config.agentGuideSyncMode, "always");
 	});
@@ -128,7 +132,7 @@ test("save and reset round-trip the mid-run guard setting", async () => {
 		assert.equal(loadContinuationConfig(root).midRunGuardEnabled, false);
 		await resetContinuationConfig("project", root);
 		assert.equal(loadContinuationConfig(root).midRunGuardEnabled, true);
-		assert.equal(loadContinuationConfig(root).continuationDocSyncMode, "off");
+		assert.equal(loadContinuationConfig(root).continuationArtifactMode, "always");
 		assert.equal(loadContinuationConfig(root).agentGuideSyncMode, "off");
 	});
 });

@@ -1,7 +1,7 @@
 import type {
 	ContinuationArtifactStatus,
-	ContinuationDocumentSyncStatus,
-	ContinuationDocumentSyncTarget,
+	ContinuationOutputWriteStatus,
+	ContinuationOutputWriteTarget,
 	ContinuationEventSource,
 	ContinuationEventStore,
 	ContinuationEventStatus,
@@ -11,7 +11,7 @@ import type {
 	ContinuationResumeStatus,
 	ContinuationSynthesisFailure,
 	ContinuationSynthesisTelemetry,
-	ContinuationSyncStatus,
+	ContinuationWriteStatus,
 	MidRunGuardTrigger,
 } from "./types.ts";
 
@@ -24,9 +24,9 @@ function nextEventId(store: ContinuationEventStore): string {
 	return `continue-${store.nextEventSequence}`;
 }
 
-function defaultDocumentSync(): ContinuationDocumentSyncStatus {
+function defaultOutputWrites(): ContinuationOutputWriteStatus {
 	return {
-		continuationDoc: "off",
+		continuationArtifact: "off",
 		agentGuide: "off",
 	};
 }
@@ -79,7 +79,7 @@ export function beginContinuationEvent(
 		artifactStatus: "pending",
 		compactionProof: defaultCompactionProof(),
 		promptStatus,
-		documentSync: defaultDocumentSync(),
+		outputWrites: defaultOutputWrites(),
 		resume: defaultResume(),
 	};
 	store.latestEvent = event;
@@ -106,7 +106,7 @@ export function recordBlockedContinuationEvent(
 		artifactStatus: "pending",
 		compactionProof: { status: "failed", failureReason: reason },
 		promptStatus: "not-requested",
-		documentSync: defaultDocumentSync(),
+		outputWrites: defaultOutputWrites(),
 		resume: defaultResume(),
 		failureReason: reason,
 	};
@@ -188,41 +188,41 @@ export function recordActiveSynthesisTelemetry(
 	});
 }
 
-/** Record planned document-sync outcomes before Pi saves the compaction entry. */
-export function planActiveDocumentSync(
+/** Record planned output-write outcomes before Pi saves the compaction entry. */
+export function planActiveOutputWrites(
 	store: ContinuationEventStore,
-	documentSync: ContinuationDocumentSyncStatus,
+	outputWrites: ContinuationOutputWriteStatus,
 ): void {
 	const event = activeLatest(store);
 	if (!event) return;
 	replaceLatest(store, {
 		...event,
-		documentSync,
+		outputWrites,
 	});
 }
 
-function updateDocumentTarget(
-	current: ContinuationDocumentSyncStatus,
-	target: ContinuationDocumentSyncTarget,
-	status: ContinuationSyncStatus,
-): ContinuationDocumentSyncStatus {
-	if (target === "continuation-doc") return { ...current, continuationDoc: status };
+function updateOutputTarget(
+	current: ContinuationOutputWriteStatus,
+	target: ContinuationOutputWriteTarget,
+	status: ContinuationWriteStatus,
+): ContinuationOutputWriteStatus {
+	if (target === "continuation-artifact") return { ...current, continuationArtifact: status };
 	return { ...current, agentGuide: status };
 }
 
-/** Apply a post-compaction document-sync result only to the matching latest event id. */
-export function recordDocumentSyncResult(
+/** Apply a post-compaction output-write result only to the matching latest event id. */
+export function recordOutputWriteResult(
 	store: ContinuationEventStore,
 	eventId: string | undefined,
-	target: ContinuationDocumentSyncTarget,
-	status: ContinuationSyncStatus,
+	target: ContinuationOutputWriteTarget,
+	status: ContinuationWriteStatus,
 	reason: string | undefined,
 ): void {
 	const event = latestMatching(store, eventId);
 	if (!event) return;
 	replaceLatest(store, {
 		...event,
-		documentSync: updateDocumentTarget(event.documentSync, target, status),
+		outputWrites: updateOutputTarget(event.outputWrites, target, status),
 		failureReason: status === "failed" && reason ? reason : event.failureReason,
 	});
 }
@@ -354,20 +354,20 @@ export function settleContinuationResume(
 	return true;
 }
 
-function failPendingDocumentSync(documentSync: ContinuationDocumentSyncStatus): ContinuationDocumentSyncStatus {
+function failPendingOutputWrites(outputWrites: ContinuationOutputWriteStatus): ContinuationOutputWriteStatus {
 	return {
-		continuationDoc: documentSync.continuationDoc === "pending" ? "failed" : documentSync.continuationDoc,
-		agentGuide: documentSync.agentGuide === "pending" ? "failed" : documentSync.agentGuide,
+		continuationArtifact: outputWrites.continuationArtifact === "pending" ? "failed" : outputWrites.continuationArtifact,
+		agentGuide: outputWrites.agentGuide === "pending" ? "failed" : outputWrites.agentGuide,
 	};
 }
 
-/** Mark pending document-sync outcomes for an event as failed without changing terminal compaction status. */
-export function failPendingDocumentSyncForEvent(store: ContinuationEventStore, eventId: string | undefined, reason: string): void {
+/** Mark pending output-write outcomes for an event as failed without changing terminal compaction status. */
+export function failPendingOutputWritesForEvent(store: ContinuationEventStore, eventId: string | undefined, reason: string): void {
 	const event = latestMatching(store, eventId);
 	if (!event) return;
 	replaceLatest(store, {
 		...event,
-		documentSync: failPendingDocumentSync(event.documentSync),
+		outputWrites: failPendingOutputWrites(event.outputWrites),
 		failureReason: reason,
 	});
 }
@@ -386,15 +386,15 @@ function abandonedResume(event: ContinuationLatestEvent, reason: string): Contin
 export function abandonActiveContinuationEvent(store: ContinuationEventStore, reason: string): void {
 	const event = activeLatest(store) ?? store.latestEvent;
 	if (!event) return;
-	const hasPendingSync = event.documentSync.continuationDoc === "pending" || event.documentSync.agentGuide === "pending";
+	const hasPendingWrites = event.outputWrites.continuationArtifact === "pending" || event.outputWrites.agentGuide === "pending";
 	const activeOrRunning = store.activeEventId === event.id || event.status === "running";
-	if (!activeOrRunning && !hasPendingSync) return;
+	if (!activeOrRunning && !hasPendingWrites) return;
 	replaceLatest(store, {
 		...event,
 		status: activeOrRunning ? "failed" : event.status,
 		completedAt: event.completedAt ?? nowMs(),
 		promptStatus: activeOrRunning && event.promptStatus === "pending" ? "failed" : event.promptStatus,
-		documentSync: failPendingDocumentSync(event.documentSync),
+		outputWrites: failPendingOutputWrites(event.outputWrites),
 		resume: abandonedResume(event, reason),
 		failureReason: reason,
 	});

@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { buildContinuationCommandArgs } from "./command-shape.ts";
 import { runLedgerCommand, runPreviewCommand, runResetCommand, runSettingsDialog, runStatusCommand } from "./commands.ts";
-import { DEFAULT_CONTINUE_CONFIG, loadContinuationConfig } from "./config.ts";
+import { loadContinuationConfig } from "./config.ts";
 import type { ContinuePaletteResult } from "./palette-actions.ts";
 import { sendContinuationPrompt } from "./prompt-dispatch.ts";
 import { resolveProjectContext } from "./project.ts";
@@ -15,7 +15,7 @@ export async function runEnabledContinuationCommand(
 	args: string | undefined,
 	onContinuationFailed: (eventId: string) => void,
 ): Promise<void> {
-	const projectContext = await resolveProjectContext(pi, ctx.cwd, DEFAULT_CONTINUE_CONFIG.continuationDocPath);
+	const projectContext = await resolveProjectContext(pi, ctx.cwd, ctx.sessionManager.getSessionId());
 	const config = loadContinuationConfig(projectContext.projectRoot);
 	if (!config.enabled) {
 		if (ctx.hasUI) ctx.ui.notify("pi-continue is disabled. Re-enable it with /continue settings.", "warning");

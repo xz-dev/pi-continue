@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { DEFAULT_CONTINUE_CONFIG, loadContinuationConfig } from "./config.ts";
+import { loadContinuationConfig } from "./config.ts";
 import { readEffectivePiCompactionSettings } from "./pi-settings.ts";
 import { loadPiInternals } from "./pi-internals.ts";
 import { resolveProjectContext } from "./project.ts";
@@ -72,7 +72,7 @@ export async function runMidRunGuard(
 	onContinuationFailed?: (eventId: string) => void,
 ): Promise<void> {
 	if (!shouldEvaluateMidRunContext(messages) || !ctx.model) return;
-	const initialProjectContext = await resolveProjectContext(pi, ctx.cwd, DEFAULT_CONTINUE_CONFIG.continuationDocPath);
+	const initialProjectContext = await resolveProjectContext(pi, ctx.cwd, ctx.sessionManager.getSessionId());
 	const config = loadContinuationConfig(initialProjectContext.projectRoot);
 	if (!config.enabled || !config.midRunGuardEnabled) return;
 	const piSettings = readEffectivePiCompactionSettings(initialProjectContext.projectRoot);

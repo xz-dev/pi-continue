@@ -2,6 +2,20 @@
 
 All notable changes to `pi-continue` are documented here.
 
+## Unreleased
+
+## 0.8.0 - 2026-05-22
+
+### Breaking changes
+
+- Retired repo-root continuation document sync from the active contract: `continuationDocPath` and `continuationDocSyncMode` are ignored, and `pi-continue` no longer reads `CONTINUE.md` or prior artifacts into synthesis, preview, or resume prompts.
+
+### Changed
+
+- Added the default-on per-session continuation artifact contract: successful package-owned compactions write one human-inspectable artifact under `.pi/continue/<encoded-session-id>.md`, controlled by `continuationArtifactMode: "always" | "off"`.
+- Updated status/settings/README/examples/tests to describe artifacts as manual-bootstrap output only while same-session continuation remains driven by Pi compaction state and the package-owned v4 brief.
+- Updated the package gallery image URL to the v0.8.0 source tag.
+
 ## 0.7.1 - 2026-05-21
 
 ### Fixed

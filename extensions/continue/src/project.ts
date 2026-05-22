@@ -33,7 +33,7 @@ function trimTrailingWhitespace(value: string): string {
 }
 
 /** Normalize markdown content before diffing or writing. */
-export function normalizeDocumentContent(value: string): string {
+export function normalizeMarkdownContent(value: string): string {
 	return `${trimTrailingWhitespace(value)}\n`;
 }
 
@@ -42,6 +42,10 @@ async function getGitRoot(pi: ExecApi, cwd: string): Promise<string | undefined>
 	if (result.code !== 0) return undefined;
 	const root = result.stdout.trim();
 	return root.length > 0 ? root : undefined;
+}
+
+export async function resolveProjectRoot(pi: ExecApi, cwd: string): Promise<string> {
+	return (await getGitRoot(pi, cwd)) ?? cwd;
 }
 
 function sanitizeRepoRelativePath(projectRoot: string, configuredPath: string, fallback: string): string {
@@ -58,32 +62,38 @@ function readOptionalFile(path: string): string | undefined {
 	return existsSync(path) ? readFileSync(path, "utf8") : undefined;
 }
 
-/** Resolve repo-local continuation and agent-guide targets plus current content. */
+export function encodeSessionIdForArtifactPath(sessionId: string): string {
+	const encoded = Buffer.from(sessionId, "utf8").toString("base64url");
+	return encoded.length > 0 ? encoded : "empty-session-id";
+}
+
+export function buildContinuationArtifactPath(projectRoot: string, sessionId: string): string {
+	return join(projectRoot, ".pi", "continue", `${encodeSessionIdForArtifactPath(sessionId)}.md`);
+}
+
+/** Resolve the project root, package-owned continuation artifact path, and configured agent guide. */
 export async function resolveProjectContext(
 	pi: ExecApi,
 	cwd: string,
-	configuredDocPath: string,
+	sessionId: string,
 	configuredAgentGuidePath = "AGENTS.md",
 ): Promise<ResolvedProjectContext> {
-	const projectRoot = (await getGitRoot(pi, cwd)) ?? cwd;
-	const repoRelativeDocPath = sanitizeRepoRelativePath(projectRoot, configuredDocPath, "CONTINUE.md");
+	const projectRoot = await resolveProjectRoot(pi, cwd);
 	const repoRelativeAgentGuidePath = sanitizeRepoRelativePath(projectRoot, configuredAgentGuidePath, "AGENTS.md");
-	const continuationDocPath = join(projectRoot, repoRelativeDocPath);
 	const agentGuidePath = join(projectRoot, repoRelativeAgentGuidePath);
 	return {
 		projectRoot,
-		continuationDocPath,
-		existingContinuationDoc: readOptionalFile(continuationDocPath),
+		continuationArtifactPath: buildContinuationArtifactPath(projectRoot, sessionId),
 		agentGuidePath,
 		existingAgentGuide: readOptionalFile(agentGuidePath),
 	};
 }
 
-/** Write a durable repo-local document only when normalized content changes. */
-export async function writeRepoDocument(path: string, content: string): Promise<"updated" | "unchanged"> {
-	const normalized = normalizeDocumentContent(content);
+/** Write a normalized Markdown file only when normalized content changes. */
+export async function writeNormalizedMarkdownFile(path: string, content: string): Promise<"updated" | "unchanged"> {
+	const normalized = normalizeMarkdownContent(content);
 	const existing = existsSync(path) ? readFileSync(path, "utf8") : undefined;
-	if (existing !== undefined && normalizeDocumentContent(existing) === normalized) {
+	if (existing !== undefined && normalizeMarkdownContent(existing) === normalized) {
 		return "unchanged";
 	}
 	await withMutationQueue(path, async () => {

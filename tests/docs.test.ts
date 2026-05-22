@@ -31,7 +31,9 @@ test("README stays a front-facing product and operator guide", () => {
 	assert.match(readme, /native Pi compaction/i);
 	assert.match(readme, /Continuation Ledger/);
 	assert.match(readme, /handoff prompt|prompt assets/i);
-	assert.match(readme, /Optional repo documents/);
+	assert.match(readme, /Per-session artifacts/);
+	assert.match(readme, /\.pi\/continue\/.*encoded-session-id/);
+	assert.match(readme, /never loads `CONTINUE\.md` or `\.pi\/continue\/\*\.md` as automatic prompt memory/);
 	assert.match(readme, /pi install npm:pi-continue/);
 	assert.match(readme, /Only `\/continue` is registered/);
 	assert.match(readme, /There are no command aliases/);
@@ -110,7 +112,7 @@ test("npm dry-run package contents align with the public contract", () => {
 test("package metadata and package contents align with the public contract", () => {
 	const packageJson = JSON.parse(readText("package.json"));
 	assert.equal(packageJson.name, "pi-continue");
-	assert.equal(packageJson.version, "0.7.1");
+	assert.equal(packageJson.version, "0.8.0");
 	assert.match(packageJson.description, /Mid-turn continuation/);
 	assert.match(packageJson.description, /long Pi tool runs/);
 	assert.match(packageJson.description, /context overflow/);
@@ -143,6 +145,6 @@ test("package metadata and package contents align with the public contract", () 
 	assert.equal(packageJson.peerDependencies["@earendil-works/pi-ai"], ">=0.74.0");
 	assert.equal(packageJson.peerDependencies["@earendil-works/pi-coding-agent"], ">=0.74.0");
 	assert.deepEqual(packageJson.pi.extensions, ["./extensions/continue/index.ts"]);
-	assert.equal(packageJson.pi.image, "https://raw.githubusercontent.com/Tiziano-AI/pi-continue/v0.7.1/assets/gallery/pi-continue-gallery.webp");
+	assert.equal(packageJson.pi.image, "https://raw.githubusercontent.com/Tiziano-AI/pi-continue/v0.8.0/assets/gallery/pi-continue-gallery.webp");
 	assert.equal(existsSync("assets/gallery/pi-continue-gallery.webp"), true);
 });

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { compileHistoryPrompt } from "../extensions/continue/src/prompt.ts";
 
-test("compileHistoryPrompt includes runtime sections and provenance", () => {
+test("compileHistoryPrompt includes runtime sections and provenance without continuation-document memory", () => {
 	const prompt = compileHistoryPrompt(
 		{
 			system: { content: "system text", sourcePath: "/pkg/system.md" },
@@ -12,8 +12,6 @@ test("compileHistoryPrompt includes runtime sections and provenance", () => {
 		{
 			scenario: "update",
 			projectRoot: "/repo",
-			continuationDocPath: "/repo/CONTINUE.md",
-			existingContinuationDoc: "old doc",
 			agentGuidePath: "/repo/AGENTS.md",
 			existingAgentGuide: "agent guide",
 			previousSummary: "old summary",
@@ -25,7 +23,9 @@ test("compileHistoryPrompt includes runtime sections and provenance", () => {
 	);
 	assert.equal(prompt.systemPrompt, "system text");
 	assert.match(prompt.userPrompt, /<base-continuation-contract>[\s\S]*base text/);
-	assert.match(prompt.userPrompt, /<existing-continuation-md>[\s\S]*old doc/);
+	assert.doesNotMatch(prompt.userPrompt, /existing-continuation-md/);
+	assert.doesNotMatch(prompt.userPrompt, /continuation-doc-path/);
+	assert.doesNotMatch(prompt.userPrompt, /STALE_CONTINUATION_SENTINEL/);
 	assert.match(prompt.userPrompt, /<agent-guide-path>[\s\S]*\/repo\/AGENTS\.md/);
 	assert.match(prompt.userPrompt, /<existing-agent-guide>[\s\S]*agent guide/);
 	assert.match(prompt.userPrompt, /<history-to-summarize>[\s\S]*serialized history/);
@@ -48,8 +48,6 @@ test("compileHistoryPrompt renders turn-prefix-messages when split-turn material
 		{
 			scenario: "initial",
 			projectRoot: "/repo",
-			continuationDocPath: "/repo/CONTINUE.md",
-			existingContinuationDoc: undefined,
 			agentGuidePath: "/repo/AGENTS.md",
 			existingAgentGuide: undefined,
 			previousSummary: undefined,

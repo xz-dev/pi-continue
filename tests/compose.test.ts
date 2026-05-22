@@ -7,8 +7,8 @@ const details: ContinuationCompactionDetails = {
 	kind: "pi-continue/v4",
 	readFiles: ["/repo/read.ts"],
 	modifiedFiles: ["/repo/write.ts"],
-	documentSyncId: "sync-1",
-	agentGuideSyncId: "guide-1",
+	continuationArtifactWriteId: "artifact-1",
+	agentGuideWriteId: "guide-1",
 };
 
 test("composeCompactionSummary wraps the brief in <continuation>", () => {
@@ -31,7 +31,7 @@ test("composeCompactionSummary can append compaction metadata without file paths
 	assert.match(summary, /<continuation>\ncontinue\n<\/continuation>/);
 	assert.match(summary, /"readFileCount": 1/);
 	assert.match(summary, /"modifiedFileCount": 1/);
-	assert.match(summary, /"agentGuideSyncId": "guide-1"/);
+	assert.match(summary, /"agentGuideWriteId": "guide-1"/);
 	assert.doesNotMatch(summary, /<read-files>/);
 	assert.doesNotMatch(summary, /\/repo\/read\.ts/);
 	assert.doesNotMatch(summary, /\/repo\/write\.ts/);

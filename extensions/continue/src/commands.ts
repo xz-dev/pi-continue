@@ -3,7 +3,7 @@ import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { loadHistoryPromptAssets } from "./assets.ts";
 import { snapshotFileOperations } from "./compaction-preparation.ts";
-import { DEFAULT_CONTINUE_CONFIG, loadContinuationConfig, loadScopeConfig, patchContinuationConfig, resetContinuationConfig } from "./config.ts";
+import { loadContinuationConfig, loadScopeConfig, patchContinuationConfig, resetContinuationConfig } from "./config.ts";
 import { showLatestContinuationLedger } from "./ledger-viewer.ts";
 import { showScrollableTextOverlay } from "./text-viewer.ts";
 import { readEffectivePiCompactionSettings } from "./pi-settings.ts";
@@ -43,9 +43,10 @@ async function buildPromptPreviewPayload(
 	ctx: ExtensionCommandContext,
 	customInstructions: string | undefined,
 ): Promise<PreviewPayload | undefined> {
-	const initialProjectContext = await resolveProjectContext(pi, ctx.cwd, DEFAULT_CONTINUE_CONFIG.continuationDocPath);
+	const sessionId = ctx.sessionManager.getSessionId();
+	const initialProjectContext = await resolveProjectContext(pi, ctx.cwd, sessionId);
 	const config = loadContinuationConfig(initialProjectContext.projectRoot);
-	const projectContext = await resolveProjectContext(pi, ctx.cwd, config.continuationDocPath, config.agentGuidePath);
+	const projectContext = await resolveProjectContext(pi, ctx.cwd, sessionId, config.agentGuidePath);
 	const piCompactionSettings = readEffectivePiCompactionSettings(projectContext.projectRoot);
 	const internals = await loadPiInternals();
 	const preparation = internals.prepareCompaction(ctx.sessionManager.getBranch(), piCompactionSettings) as {
@@ -66,8 +67,6 @@ async function buildPromptPreviewPayload(
 	const history = compileHistoryPrompt(historyAssets, {
 		scenario,
 		projectRoot: projectContext.projectRoot,
-		continuationDocPath: projectContext.continuationDocPath,
-		existingContinuationDoc: projectContext.existingContinuationDoc,
 		agentGuidePath: projectContext.agentGuidePath,
 		existingAgentGuide: projectContext.existingAgentGuide,
 		previousSummary: preparation.previousSummary,
@@ -135,8 +134,7 @@ const CONFIG_KEYS = [
 	"summarizerModel",
 	"reasoning",
 	"historyMaxTokens",
-	"continuationDocPath",
-	"continuationDocSyncMode",
+	"continuationArtifactMode",
 	"agentGuidePath",
 	"agentGuideSyncMode",
 	"midRunGuardEnabled",
@@ -175,7 +173,7 @@ async function updateSetting(
 /** Edit scoped config in the TUI. */
 export async function runSettingsDialog(pi: ExtensionAPI, ctx: ExtensionCommandContext, args: string | undefined): Promise<void> {
 	if (!(await requireUi(ctx))) return;
-	const projectContext = await resolveProjectContext(pi, ctx.cwd, DEFAULT_CONTINUE_CONFIG.continuationDocPath);
+	const projectContext = await resolveProjectContext(pi, ctx.cwd, ctx.sessionManager.getSessionId());
 	const parsedScope = parseScope(args, "settings");
 	if (parsedScope.error) {
 		ctx.ui.notify(parsedScope.error, "warning");
@@ -190,8 +188,7 @@ export async function runSettingsDialog(pi: ExtensionAPI, ctx: ExtensionCommandC
 			`Handoff model: ${config.summarizerModel}`,
 			`Reasoning: ${config.reasoning}`,
 			`History output budget: ${config.historyMaxTokens ?? "Pi default"}`,
-			`Continuation file: ${config.continuationDocPath}`,
-			`Save continuation file: ${config.continuationDocSyncMode}`,
+			`Continuation artifact: ${config.continuationArtifactMode}`,
 			`Agent guide path: ${config.agentGuidePath}`,
 			`Agent guide updates: ${config.agentGuideSyncMode} (full replacement only)`,
 			`Automatic mid-run continuation: ${config.midRunGuardEnabled ? "yes" : "no"}`,
@@ -239,17 +236,10 @@ export async function runSettingsDialog(pi: ExtensionAPI, ctx: ExtensionCommandC
 			});
 			continue;
 		}
-		if (selected.startsWith("Continuation file:")) {
+		if (selected.startsWith("Continuation artifact:")) {
 			config = await updateSetting(scope, projectContext.projectRoot, config, async (current) => {
-				const next = await ctx.ui.input("Continuation doc path", "repo-relative path, default CONTINUE.md");
-				return next?.trim() ? { ...current, continuationDocPath: next.trim() } : undefined;
-			});
-			continue;
-		}
-		if (selected.startsWith("Save continuation file:")) {
-			config = await updateSetting(scope, projectContext.projectRoot, config, async (current) => {
-				const next = await ctx.ui.select("Continuation doc sync", ["off", "always"]);
-				return next ? { ...current, continuationDocSyncMode: next as ContinuationConfig["continuationDocSyncMode"] } : undefined;
+				const next = await ctx.ui.select("Continuation artifact", ["always", "off"]);
+				return next ? { ...current, continuationArtifactMode: next as ContinuationConfig["continuationArtifactMode"] } : undefined;
 			});
 			continue;
 		}
@@ -327,9 +317,10 @@ export async function runSettingsDialog(pi: ExtensionAPI, ctx: ExtensionCommandC
 /** Show effective config and prompt provenance. */
 export async function runStatusCommand(pi: ExtensionAPI, ctx: ExtensionCommandContext, runtime: ContinuationRuntimeState): Promise<void> {
 	if (!(await requireUi(ctx))) return;
-	const initialProjectContext = await resolveProjectContext(pi, ctx.cwd, DEFAULT_CONTINUE_CONFIG.continuationDocPath);
+	const sessionId = ctx.sessionManager.getSessionId();
+	const initialProjectContext = await resolveProjectContext(pi, ctx.cwd, sessionId);
 	const config = loadContinuationConfig(initialProjectContext.projectRoot);
-	const projectContext = await resolveProjectContext(pi, ctx.cwd, config.continuationDocPath, config.agentGuidePath);
+	const projectContext = await resolveProjectContext(pi, ctx.cwd, sessionId, config.agentGuidePath);
 	const payload = await buildPromptPreviewPayload(pi, ctx, undefined);
 	await showText(
 		ctx,
@@ -338,7 +329,7 @@ export async function runStatusCommand(pi: ExtensionAPI, ctx: ExtensionCommandCo
 			ctx,
 			config,
 			projectContext.projectRoot,
-			projectContext.continuationDocPath,
+			projectContext.continuationArtifactPath,
 			projectContext.agentGuidePath,
 			payload,
 			getLatestContinuationEvent(runtime),
@@ -354,7 +345,7 @@ export async function runLedgerCommand(ctx: ExtensionCommandContext, runtime: Co
 /** Reset scoped config. */
 export async function runResetCommand(pi: ExtensionAPI, ctx: ExtensionCommandContext, args: string | undefined): Promise<void> {
 	if (!(await requireUi(ctx))) return;
-	const projectContext = await resolveProjectContext(pi, ctx.cwd, DEFAULT_CONTINUE_CONFIG.continuationDocPath);
+	const projectContext = await resolveProjectContext(pi, ctx.cwd, ctx.sessionManager.getSessionId());
 	const parsedScope = parseScope(args, "reset");
 	if (parsedScope.error) {
 		ctx.ui.notify(parsedScope.error, "warning");

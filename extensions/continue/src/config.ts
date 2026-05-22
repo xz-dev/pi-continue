@@ -4,9 +4,9 @@ import { dirname, join } from "node:path";
 import type {
 	ConfigScope,
 	ContinuationConfig,
-	DocumentSyncMode,
 	ContinuationReasoning,
 	PromptOverridePolicy,
+	WriteMode,
 } from "./types.ts";
 import { resolveAgentDir } from "./agent-dir.ts";
 
@@ -24,7 +24,7 @@ const PROMPT_OVERRIDE_POLICIES = new Set<PromptOverridePolicy>([
 	"global-override",
 	"project-override",
 ]);
-const DOCUMENT_SYNC_MODES = new Set<DocumentSyncMode>(["always", "off"]);
+const WRITE_MODES = new Set<WriteMode>(["always", "off"]);
 const mutationQueues = new Map<string, Promise<void>>();
 
 async function withConfigMutationQueue(path: string, work: () => Promise<void>): Promise<void> {
@@ -43,8 +43,7 @@ export const DEFAULT_CONTINUE_CONFIG: ContinuationConfig = {
 	summarizerModel: "inherit",
 	reasoning: "inherit",
 	historyMaxTokens: null,
-	continuationDocPath: "CONTINUE.md",
-	continuationDocSyncMode: "off",
+	continuationArtifactMode: "always",
 	agentGuidePath: "AGENTS.md",
 	agentGuideSyncMode: "off",
 	midRunGuardEnabled: true,
@@ -60,8 +59,7 @@ interface PartialContinuationConfig {
 	summarizerModel?: string;
 	reasoning?: string;
 	historyMaxTokens?: number | null;
-	continuationDocPath?: string;
-	continuationDocSyncMode?: string;
+	continuationArtifactMode?: string;
 	agentGuidePath?: string;
 	agentGuideSyncMode?: string;
 	midRunGuardEnabled?: boolean;
@@ -77,10 +75,9 @@ export interface ContinuationConfigPatch {
 	summarizerModel?: string;
 	reasoning?: ContinuationReasoning;
 	historyMaxTokens?: number | null;
-	continuationDocPath?: string;
-	continuationDocSyncMode?: DocumentSyncMode;
+	continuationArtifactMode?: WriteMode;
 	agentGuidePath?: string;
-	agentGuideSyncMode?: DocumentSyncMode;
+	agentGuideSyncMode?: WriteMode;
 	midRunGuardEnabled?: boolean;
 	appendCompactionMetadata?: boolean;
 	appendReadFileTags?: boolean;
@@ -121,10 +118,8 @@ function parsePartialConfig(value: unknown): PartialContinuationConfig {
 	if (reasoning !== undefined) result.reasoning = reasoning;
 	const historyMaxTokens = asNullableNumber(value.historyMaxTokens);
 	if (historyMaxTokens !== undefined) result.historyMaxTokens = historyMaxTokens;
-	const continuationDocPath = asString(value.continuationDocPath);
-	if (continuationDocPath !== undefined) result.continuationDocPath = continuationDocPath;
-	const continuationDocSyncMode = asString(value.continuationDocSyncMode);
-	if (continuationDocSyncMode !== undefined) result.continuationDocSyncMode = continuationDocSyncMode;
+	const continuationArtifactMode = asString(value.continuationArtifactMode);
+	if (continuationArtifactMode !== undefined) result.continuationArtifactMode = continuationArtifactMode;
 	const agentGuidePath = asString(value.agentGuidePath);
 	if (agentGuidePath !== undefined) result.agentGuidePath = agentGuidePath;
 	const agentGuideSyncMode = asString(value.agentGuideSyncMode);
@@ -169,9 +164,9 @@ function normalizePromptOverridePolicy(value: string | undefined): PromptOverrid
 		: DEFAULT_CONTINUE_CONFIG.promptOverridePolicy;
 }
 
-function normalizeSyncMode(value: string | undefined, fallback: DocumentSyncMode): DocumentSyncMode {
-	return value !== undefined && DOCUMENT_SYNC_MODES.has(value as DocumentSyncMode)
-		? (value as DocumentSyncMode)
+function normalizeWriteMode(value: string | undefined, fallback: WriteMode): WriteMode {
+	return value !== undefined && WRITE_MODES.has(value as WriteMode)
+		? (value as WriteMode)
 		: fallback;
 }
 
@@ -197,10 +192,9 @@ function normalizeConfig(partial: PartialContinuationConfig): ContinuationConfig
 		summarizerModel: normalizeSummarizerModel(partial.summarizerModel),
 		reasoning: normalizeReasoning(partial.reasoning),
 		historyMaxTokens: normalizeTokenOverride(partial.historyMaxTokens),
-		continuationDocPath: normalizePath(partial.continuationDocPath, DEFAULT_CONTINUE_CONFIG.continuationDocPath),
-		continuationDocSyncMode: normalizeSyncMode(partial.continuationDocSyncMode, DEFAULT_CONTINUE_CONFIG.continuationDocSyncMode),
+		continuationArtifactMode: normalizeWriteMode(partial.continuationArtifactMode, DEFAULT_CONTINUE_CONFIG.continuationArtifactMode),
 		agentGuidePath: normalizePath(partial.agentGuidePath, DEFAULT_CONTINUE_CONFIG.agentGuidePath),
-		agentGuideSyncMode: normalizeSyncMode(partial.agentGuideSyncMode, DEFAULT_CONTINUE_CONFIG.agentGuideSyncMode),
+		agentGuideSyncMode: normalizeWriteMode(partial.agentGuideSyncMode, DEFAULT_CONTINUE_CONFIG.agentGuideSyncMode),
 		midRunGuardEnabled: partial.midRunGuardEnabled ?? DEFAULT_CONTINUE_CONFIG.midRunGuardEnabled,
 		appendCompactionMetadata: partial.appendCompactionMetadata ?? DEFAULT_CONTINUE_CONFIG.appendCompactionMetadata,
 		appendReadFileTags: partial.appendReadFileTags ?? DEFAULT_CONTINUE_CONFIG.appendReadFileTags,

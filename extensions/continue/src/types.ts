@@ -8,7 +8,7 @@ export type ContinuationReasoning =
 	| "xhigh";
 
 export type PromptOverridePolicy = "package-default" | "global-override" | "project-override";
-export type DocumentSyncMode = "always" | "off";
+export type WriteMode = "always" | "off";
 export type ConfigScope = "global" | "project";
 export type HistoryScenario = "initial" | "update";
 
@@ -17,10 +17,9 @@ export interface ContinuationConfig {
 	summarizerModel: string;
 	reasoning: ContinuationReasoning;
 	historyMaxTokens: number | null;
-	continuationDocPath: string;
-	continuationDocSyncMode: DocumentSyncMode;
+	continuationArtifactMode: WriteMode;
 	agentGuidePath: string;
-	agentGuideSyncMode: DocumentSyncMode;
+	agentGuideSyncMode: WriteMode;
 	midRunGuardEnabled: boolean;
 	appendCompactionMetadata: boolean;
 	appendReadFileTags: boolean;
@@ -31,8 +30,7 @@ export interface ContinuationConfig {
 
 export interface ResolvedProjectContext {
 	projectRoot: string;
-	continuationDocPath: string;
-	existingContinuationDoc: string | undefined;
+	continuationArtifactPath: string;
 	agentGuidePath: string;
 	existingAgentGuide: string | undefined;
 }
@@ -56,8 +54,6 @@ export interface FileOpsSnapshot {
 export interface HistoryPromptInput {
 	scenario: HistoryScenario;
 	projectRoot: string;
-	continuationDocPath: string;
-	existingContinuationDoc: string | undefined;
 	agentGuidePath: string;
 	existingAgentGuide: string | undefined;
 	previousSummary: string | undefined;
@@ -99,8 +95,8 @@ export type ContinuationSynthesisFailureCode =
 	| "artifact-invalid-json"
 	| "artifact-invalid-shape"
 	| "internal-error";
-export type ContinuationSyncStatus = "off" | "pending" | "updated" | "unchanged" | "failed" | "no-replacement";
-export type ContinuationDocumentSyncTarget = "continuation-doc" | "agent-guide";
+export type ContinuationWriteStatus = "off" | "pending" | "updated" | "unchanged" | "failed" | "no-replacement";
+export type ContinuationOutputWriteTarget = "continuation-artifact" | "agent-guide";
 
 export interface HistoryOutputBudget {
 	source: "pi-default" | "config";
@@ -165,9 +161,9 @@ export interface ContinuationResumeOutcome {
 	failureReason?: string;
 }
 
-export interface ContinuationDocumentSyncStatus {
-	continuationDoc: ContinuationSyncStatus;
-	agentGuide: ContinuationSyncStatus;
+export interface ContinuationOutputWriteStatus {
+	continuationArtifact: ContinuationWriteStatus;
+	agentGuide: ContinuationWriteStatus;
 }
 
 /** Latest operator-facing continuation lifecycle snapshot. It stores no transcript or document content. */
@@ -181,7 +177,7 @@ export interface ContinuationLatestEvent {
 	artifactStatus: ContinuationArtifactStatus;
 	compactionProof: ContinuationCompactionProof;
 	promptStatus: ContinuationPromptStatus;
-	documentSync: ContinuationDocumentSyncStatus;
+	outputWrites: ContinuationOutputWriteStatus;
 	resume: ContinuationResumeOutcome;
 	synthesis?: ContinuationSynthesisTelemetry;
 	synthesisFailure?: ContinuationSynthesisFailure;
@@ -195,7 +191,7 @@ export interface ContinuationEventStore {
 }
 
 /** Persisted status for whether a compaction attempted a configured agent-guide replacement. */
-export type AgentGuideWriteStatus = "sync-off" | "no-replacement" | "replacement-pending";
+export type AgentGuideWriteStatus = "write-off" | "no-replacement" | "replacement-pending";
 
 export type ContinuationCompactionDetailsKind = "pi-continue/v4";
 
@@ -204,8 +200,8 @@ export interface ContinuationCompactionDetails {
 	kind: ContinuationCompactionDetailsKind;
 	readFiles: string[];
 	modifiedFiles: string[];
-	documentSyncId?: string;
-	agentGuideSyncId?: string;
+	continuationArtifactWriteId?: string;
+	agentGuideWriteId?: string;
 	agentGuideWriteStatus?: AgentGuideWriteStatus;
 	agentGuideChangeReason?: string;
 	continuationEventId?: string;
@@ -219,11 +215,11 @@ export interface ContinuationLedgerSnapshot {
 	capturedAt: number;
 }
 
-export interface PendingDocumentWrite {
+export interface PendingOutputWrite {
 	path: string;
 	content: string;
 	label: string;
-	target: ContinuationDocumentSyncTarget;
+	target: ContinuationOutputWriteTarget;
 	eventId: string | undefined;
 }
 

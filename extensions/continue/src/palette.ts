@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { DEFAULT_CONTINUE_CONFIG, loadContinuationConfig } from "./config.ts";
+import { loadContinuationConfig } from "./config.ts";
 import { readEffectivePiCompactionSettings } from "./pi-settings.ts";
 import { resolveProjectContext } from "./project.ts";
 import type { ContinuationRuntimeState } from "./runtime.ts";
@@ -145,9 +145,9 @@ function renderUsage(ctx: ExtensionCommandContext): string {
 }
 
 async function buildPaletteSnapshot(pi: ExtensionAPI, ctx: ExtensionCommandContext, runtime: ContinuationRuntimeState): Promise<ContinuePaletteSnapshot> {
-	const initialProjectContext = await resolveProjectContext(pi, ctx.cwd, DEFAULT_CONTINUE_CONFIG.continuationDocPath);
+	const initialProjectContext = await resolveProjectContext(pi, ctx.cwd, ctx.sessionManager.getSessionId());
 	const config = loadContinuationConfig(initialProjectContext.projectRoot);
-	const projectContext = await resolveProjectContext(pi, ctx.cwd, config.continuationDocPath, config.agentGuidePath);
+	const projectContext = await resolveProjectContext(pi, ctx.cwd, ctx.sessionManager.getSessionId(), config.agentGuidePath);
 	const compaction = readEffectivePiCompactionSettings(projectContext.projectRoot);
 	const contextWindow = ctx.model?.contextWindow ?? ctx.getContextUsage()?.contextWindow;
 	return {
