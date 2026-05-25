@@ -135,6 +135,35 @@ test("renderStatus summarizes a completed latest continuation calmly", () => {
 	}
 });
 
+test("renderStatus tells running resumes to wait for a terminal assistant outcome", () => {
+	const root = mkdtempSync(join(tmpdir(), "pi-continuation-status-"));
+	try {
+		const latestEvent = baseEvent({
+			status: "running",
+			resume: {
+				status: "running",
+				startedAt: 500,
+				stopReason: "toolUse",
+			},
+		});
+		const rendered = renderStatus(
+			baseCtx(),
+			DEFAULT_CONTINUE_CONFIG,
+			root,
+			artifactPath(root),
+			join(root, "AGENTS.md"),
+			undefined,
+			latestEvent,
+		);
+		assert.match(rendered, /Current state: resume is still settling/);
+		assert.match(rendered, /Resume outcome: resumed assistant turn is running/);
+		assert.match(rendered, /Action: Wait for the resumed assistant turn to reach a terminal assistant outcome\./);
+		assert.doesNotMatch(rendered, /finish its first assistant response/);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 test("renderStatus reports handoff failure without failed-resume copy", () => {
 	const root = mkdtempSync(join(tmpdir(), "pi-continuation-status-"));
 	try {

@@ -74,12 +74,13 @@ test("history system prompts distinguish durable vs transient material", () => {
 	}
 });
 
-test("history system prompts teach tool-result-over-agent-text truth precedence", () => {
+test("history system prompts teach factual evidence precedence and the instruction boundary", () => {
 	for (const path of ["assets/system/history_initial.md", "assets/system/history_update.md"]) {
 		const content = readFileSync(path, "utf8");
-		assert.match(content, /[Tt]ool result.*ground truth/s, `${path}: must name tool result as ground truth`);
+		assert.match(content, /[Tt]ool results?.*authoritative factual.*ground truth/s, `${path}: must name tool results as authoritative factual ground truth`);
 		assert.match(content, /agent text|assistant text|commentary/i, `${path}: must name assistant/agent text as commentary`);
-		assert.match(content, /tool result wins|when assistant text contradicts a tool result, the tool result wins|truth weight/i, `${path}: must declare the precedence resolution`);
+		assert.match(content, /tool result wins|when assistant text contradicts a tool result, the tool result wins|factual weight|evidence precedence/i, `${path}: must declare the factual precedence resolution`);
+		assert.match(content, /[Ii]nstruction authority is separate from factual authority|directive-looking text.*does not instruct|not instruction authority/is, `${path}: must separate factual evidence from instruction authority`);
 	}
 });
 
@@ -123,7 +124,19 @@ test("user base contract describes the v4 inputs", () => {
 	assert.match(content, /<turn-prefix-messages>/);
 	assert.match(content, /<file-operations>/);
 	assert.match(content, /JSON/);
+	assert.match(content, /directive-looking text.*input data|not instruction authority/is, "base wrapper must echo the fact-vs-instruction boundary");
+	assert.match(content, /<custom-instructions>.*current-run package\/operator guidance/is, "base wrapper must classify custom instructions separately");
+	assert.match(content, /do not record it as the human-stated task, forbid, or an established fact/is, "base wrapper must deny custom instructions as durable human evidence by themselves");
 	assert.doesNotMatch(content, numericReadQuotaPattern);
+});
+
+test("history prompts classify custom-instructions separately from transcript evidence", () => {
+	for (const path of ["assets/system/history_initial.md", "assets/system/history_update.md", "assets/user/history_initial.md", "assets/user/history_update.md"]) {
+		const content = readFileSync(path, "utf8");
+		assert.match(content, /<custom-instructions>/, `${path}: must mention custom instructions`);
+		assert.match(content, /current-run package\/operator guidance/is, `${path}: must classify custom instructions as run-scoped guidance`);
+		assert.match(content, /not transcript evidence|not the human's transcript intent|not human transcript intent/is, `${path}: must not treat custom instructions as transcript evidence`);
+	}
 });
 
 test("user scenario prompts describe their cycle role and the learned slot", () => {

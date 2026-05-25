@@ -39,6 +39,18 @@ export function beginWorkingVisuals(
 	ctx.ui.setWorkingIndicator(workingIndicator(ctx));
 }
 
+export function updateWorkingVisuals(
+	ctx: ExtensionContext,
+	runtime: object,
+	eventId: string | undefined,
+	message: string,
+): void {
+	if (!ctx.hasUI) return;
+	const state = stateFor(runtime);
+	if (!eventId || state.activeEventId !== eventId) return;
+	ctx.ui.setWorkingMessage(message);
+}
+
 export function settleWorkingVisuals(ctx: ExtensionContext, runtime: object, eventId: string | undefined): void {
 	if (!ctx.hasUI) return;
 	const state = stateFor(runtime);

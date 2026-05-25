@@ -34,8 +34,13 @@ test("README stays a front-facing product and operator guide", () => {
 	assert.match(readme, /Per-session artifacts/);
 	assert.match(readme, /\.pi\/continue\/.*encoded-session-id/);
 	assert.match(readme, /never loads `CONTINUE\.md` or `\.pi\/continue\/\*\.md` as automatic prompt memory/);
+	assert.match(readme, /requests tools.*resume-running state.*terminal assistant outcome|resume-running state.*terminal assistant outcome.*toolUse/is);
+	assert.match(readme, /persisted compaction summary above the same-session resume prompt/i);
+	assert.doesNotMatch(readme, /receiver's first turn/i);
 	assert.match(readme, /pi install npm:pi-continue/);
 	assert.match(readme, /Only `\/continue` is registered/);
+	assert.match(readme, /Inspect and configuration subcommands \(`preview`, `status`, `ledger`, `settings`, `reset`\) use Pi UI\/TUI panels/);
+	assert.match(readme, /When UI is unavailable, use `\/continue` or `\/continue steer\|queue` for direct continuation/);
 	assert.match(readme, /There are no command aliases/);
 	assert.match(readme, /AGENTS\.md sync remain off|[Aa]utomatic AGENTS\.md writes remain off by default/);
 	assert.match(readme, /Requires Pi `0\.74\.0` or newer/);
@@ -48,26 +53,31 @@ test("documented default config matches runtime and public example", () => {
 	assert.deepEqual(readJson("examples/pi-continue.json"), DEFAULT_CONTINUE_CONFIG);
 });
 
-test("CHANGELOG documents the current release contract", () => {
+test("CHANGELOG documents the current package version", () => {
 	const changelog = readText("CHANGELOG.md");
-	assert.match(changelog, /## 0\.7\.1 - 2026-05-21/);
-	assert.match(changelog, /max-output token limit/);
-	assert.match(changelog, /requested and effective history output budget/);
-	assert.match(changelog, /model\/provider-call failures from current artifact parse\/validation failures/);
-	assert.match(changelog, /reserveTokens: 16384/);
-	assert.match(changelog, /v0\.7\.1 source tag/);
-	assert.match(changelog, /## 0\.7\.0 - 2026-05-20/);
+	const packageJson = JSON.parse(readText("package.json"));
+	const escapedVersion = packageJson.version.replace(/\./g, "\\.");
+	assert.match(changelog, new RegExp(`## ${escapedVersion} - `));
+	assert.match(changelog, new RegExp(`v${escapedVersion} source tag`));
 	assert.match(changelog, /pi-continue-artifacts\/v4/);
-	assert.match(changelog, /seven-slot|7-slot/);
-	assert.match(changelog, /Memento|tattoo/i);
-	assert.match(changelog, /\blearned\b/);
-	assert.match(changelog, /showAfterCompact/);
-	assert.match(changelog, /Why the rewrite/);
-	assert.match(changelog, /anti-rework|anchor discipline|research[- ]ledger/i);
-	assert.match(changelog, /v0\.7\.0 source tag/);
-	assert.match(changelog, /## 0\.6\.7 - 2026-05-08/);
-	assert.match(changelog, /human-facing handoff trigger/);
-	assert.match(changelog, /compaction\.reserveTokens/);
+	assert.match(changelog, /per-session continuation artifact/i);
+});
+
+test("CHANGELOG documents the 0.8.1 patch contract", () => {
+	const changelog = readText("CHANGELOG.md");
+	assert.match(changelog, /## Unreleased/);
+	assert.match(changelog, /## 0\.8\.1 - 2026-05-25/);
+	assert.match(changelog, /prompt authority model/i);
+	assert.match(changelog, /authoritative factual evidence/i);
+	assert.match(changelog, /dynamic handoff-prompt inputs/i);
+	assert.match(changelog, /prior-summary, guide, and modeled brief text/i);
+	assert.match(changelog, /wrapper tags/i);
+	assert.match(changelog, /provider-unsafe kept suffixes/i);
+	assert.match(changelog, /matching tool-call IDs/i);
+	assert.match(changelog, /toolUse/i);
+	assert.match(changelog, /terminal assistant outcome/i);
+	assert.match(changelog, /TUI status surfaces/i);
+	assert.match(changelog, /shared footer status row/i);
 });
 
 test("ignored local Markdown guides stay out of the package corpus", () => {
@@ -112,7 +122,7 @@ test("npm dry-run package contents align with the public contract", () => {
 test("package metadata and package contents align with the public contract", () => {
 	const packageJson = JSON.parse(readText("package.json"));
 	assert.equal(packageJson.name, "pi-continue");
-	assert.equal(packageJson.version, "0.8.0");
+	assert.equal(packageJson.version, "0.8.1");
 	assert.match(packageJson.description, /Mid-turn continuation/);
 	assert.match(packageJson.description, /long Pi tool runs/);
 	assert.match(packageJson.description, /context overflow/);
@@ -145,6 +155,6 @@ test("package metadata and package contents align with the public contract", () 
 	assert.equal(packageJson.peerDependencies["@earendil-works/pi-ai"], ">=0.74.0");
 	assert.equal(packageJson.peerDependencies["@earendil-works/pi-coding-agent"], ">=0.74.0");
 	assert.deepEqual(packageJson.pi.extensions, ["./extensions/continue/index.ts"]);
-	assert.equal(packageJson.pi.image, "https://raw.githubusercontent.com/Tiziano-AI/pi-continue/v0.8.0/assets/gallery/pi-continue-gallery.webp");
+	assert.equal(packageJson.pi.image, "https://raw.githubusercontent.com/Tiziano-AI/pi-continue/v0.8.1/assets/gallery/pi-continue-gallery.webp");
 	assert.equal(existsSync("assets/gallery/pi-continue-gallery.webp"), true);
 });

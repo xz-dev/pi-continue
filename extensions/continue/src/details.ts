@@ -255,6 +255,13 @@ function clip(value: string, maxLength: number): string {
 	return value.length <= maxLength ? value : `${value.slice(0, maxLength - 3)}...`;
 }
 
+function escapeTaggedContent(content: string): string {
+	return content
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;");
+}
+
 function renderPromptPassMetadata(telemetry: PromptPassTelemetry | undefined): PromptPassMetadata | undefined {
 	if (!telemetry) return undefined;
 	return {
@@ -290,5 +297,6 @@ function buildSummaryMetadata(details: ContinuationCompactionDetails): Continuat
 
 /** Serialize compact, non-path metadata for the visible compaction summary appendix. */
 export function renderContinuationDetails(details: ContinuationCompactionDetails): string {
-	return `<continuation-compaction-details>\n${JSON.stringify(buildSummaryMetadata(details), null, 2)}\n</continuation-compaction-details>`;
+	const payload = escapeTaggedContent(JSON.stringify(buildSummaryMetadata(details), null, 2));
+	return `<continuation-compaction-details>\n${payload}\n</continuation-compaction-details>`;
 }

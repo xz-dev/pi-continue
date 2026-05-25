@@ -1,4 +1,5 @@
 import type { PiCompactionSettings } from "./types.ts";
+import { assistantToolCallIds, messageRole as messageRoleOf, toolResultIdsMatchAssistant } from "./tool-batches.ts";
 
 /** File-operation sets extracted from compacted assistant tool calls. */
 export interface FileOperations {
@@ -22,7 +23,10 @@ export interface ContinuationCompactionPreparation {
 /** Continuation preparation after package-level safety repair decisions. */
 export interface NormalizedCompactionPreparation extends ContinuationCompactionPreparation {
 	repairedNoOpCut: boolean;
+	repairedProviderUnsafeSuffix: boolean;
 }
+
+export const NO_PRE_COMPACTION_MESSAGES_KEPT_ENTRY_ID = "pi-continue-no-pre-compaction-messages-kept";
 
 interface EntryRecord {
 	type: string;
@@ -74,7 +78,7 @@ function asToolCallBlock(value: unknown): ToolCallBlock | undefined {
 }
 
 function messageRole(entry: EntryRecord | undefined): string | undefined {
-	return asMessage(entry?.message)?.role;
+	return messageRoleOf(entry?.message);
 }
 
 function createFileOps(): FileOperations {
@@ -153,7 +157,13 @@ function findCompletedToolResultSuffixAssistantIndex(entries: EntryRecord[]): nu
 	let index = entries.length - 1;
 	if (messageRole(entries[index]) !== "toolResult") return undefined;
 	while (index >= 0 && messageRole(entries[index]) === "toolResult") index--;
-	return messageRole(entries[index]) === "assistant" ? index : undefined;
+	if (messageRole(entries[index]) !== "assistant") return undefined;
+	return toolResultIdsMatchAssistant(
+		entries.slice(index + 1).map((entry) => entry.message),
+		entries[index].message,
+	)
+		? index
+		: undefined;
 }
 
 function findPreviousCompactionIndex(entries: EntryRecord[], beforeIndex: number): number | undefined {
@@ -196,6 +206,163 @@ function shouldRepairNoOpPreparation(
 	return firstKeptIndex >= 0 && firstKeptIndex < assistantIndex;
 }
 
+function cloneFileOps(fileOps: FileOperations): FileOperations {
+	return {
+		read: new Set(fileOps.read),
+		written: new Set(fileOps.written),
+		edited: new Set(fileOps.edited),
+	};
+}
+
+function mergeFileOps(left: FileOperations, right: FileOperations): FileOperations {
+	const merged = cloneFileOps(left);
+	for (const file of right.read) merged.read.add(file);
+	for (const file of right.written) merged.written.add(file);
+	for (const file of right.edited) merged.edited.add(file);
+	return merged;
+}
+
+function toolResultRunEndIndex(entries: EntryRecord[], startIndex: number): number {
+	let index = startIndex;
+	while (index < entries.length && messageRole(entries[index]) === "toolResult") index++;
+	return index;
+}
+
+function toolResultRunStartIndex(entries: EntryRecord[], entryIndex: number): number {
+	let index = entryIndex;
+	while (index > 0 && messageRole(entries[index - 1]) === "toolResult") index--;
+	return index;
+}
+
+function isCompleteToolResultRunAfterAssistant(
+	entries: EntryRecord[],
+	assistantIndex: number,
+	resultStartIndex: number,
+): boolean {
+	const resultEndIndex = toolResultRunEndIndex(entries, resultStartIndex);
+	return resultEndIndex > resultStartIndex
+		&& toolResultIdsMatchAssistant(
+			entries.slice(resultStartIndex, resultEndIndex).map((entry) => entry.message),
+			entries[assistantIndex].message,
+		);
+}
+
+function findOwningAssistantForToolResultRun(entries: EntryRecord[], resultIndex: number): number | undefined {
+	const resultStartIndex = toolResultRunStartIndex(entries, resultIndex);
+	const assistantIndex = resultStartIndex - 1;
+	if (messageRole(entries[assistantIndex]) !== "assistant") return undefined;
+	return isCompleteToolResultRunAfterAssistant(entries, assistantIndex, resultStartIndex) ? assistantIndex : undefined;
+}
+
+function findFirstProviderUnsafeEntryIndex(entries: EntryRecord[], startIndex: number): number | undefined {
+	let index = startIndex;
+	while (index < entries.length) {
+		const role = messageRole(entries[index]);
+		if (role === "assistant") {
+			const nextIndex = index + 1;
+			const toolCallIds = assistantToolCallIds(entries[index].message);
+			if (!toolCallIds) return index;
+			if (toolCallIds.length > 0 && messageRole(entries[nextIndex]) !== "toolResult") {
+				return index;
+			}
+			if (messageRole(entries[nextIndex]) === "toolResult") {
+				if (!isCompleteToolResultRunAfterAssistant(entries, index, nextIndex)) return nextIndex;
+				index = toolResultRunEndIndex(entries, nextIndex);
+				continue;
+			}
+		}
+		if (role === "toolResult") return index;
+		index++;
+	}
+	return undefined;
+}
+
+function suffixIsProviderSafe(entries: EntryRecord[], startIndex: number): boolean {
+	return findFirstProviderUnsafeEntryIndex(entries, startIndex) === undefined;
+}
+
+function canStartKeptSuffixAt(entry: EntryRecord | undefined): boolean {
+	return entry !== undefined && messageRole(entry) !== "toolResult";
+}
+
+function findProviderSafeStartAfter(entries: EntryRecord[], afterIndex: number): number | undefined {
+	for (let index = afterIndex + 1; index < entries.length; index++) {
+		if (!canStartKeptSuffixAt(entries[index])) continue;
+		if (suffixIsProviderSafe(entries, index)) return index;
+	}
+	return undefined;
+}
+
+function buildPreparationForCut(
+	preparation: ContinuationCompactionPreparation,
+	entries: EntryRecord[],
+	boundaryStart: number,
+	firstKeptIndex: number | undefined,
+	repairFlags: Pick<NormalizedCompactionPreparation, "repairedNoOpCut" | "repairedProviderUnsafeSuffix">,
+): NormalizedCompactionPreparation {
+	if (firstKeptIndex === undefined) {
+		const messagesToSummarize = messagesFromEntryRange(entries, boundaryStart, entries.length);
+		return {
+			...preparation,
+			firstKeptEntryId: NO_PRE_COMPACTION_MESSAGES_KEPT_ENTRY_ID,
+			messagesToSummarize,
+			turnPrefixMessages: [],
+			isSplitTurn: false,
+			fileOps: mergeFileOps(preparation.fileOps, extractFileOps(messagesToSummarize)),
+			...repairFlags,
+		};
+	}
+	const turnStartIndex = findTurnStartIndex(entries, firstKeptIndex, boundaryStart);
+	const isSplitTurn = !isTurnStart(entries[firstKeptIndex])
+		&& turnStartIndex !== undefined
+		&& turnStartIndex < firstKeptIndex;
+	const messagesToSummarize = messagesFromEntryRange(
+		entries,
+		boundaryStart,
+		isSplitTurn ? turnStartIndex : firstKeptIndex,
+	);
+	const turnPrefixMessages = isSplitTurn ? messagesFromEntryRange(entries, turnStartIndex, firstKeptIndex) : [];
+	const summarizedMessages = [...messagesToSummarize, ...turnPrefixMessages];
+	return {
+		...preparation,
+		firstKeptEntryId: entries[firstKeptIndex].id,
+		messagesToSummarize,
+		turnPrefixMessages,
+		isSplitTurn,
+		fileOps: mergeFileOps(preparation.fileOps, extractFileOps(summarizedMessages)),
+		...repairFlags,
+	};
+}
+
+function repairProviderUnsafeKeptSuffix(
+	preparation: ContinuationCompactionPreparation,
+	entries: EntryRecord[],
+): NormalizedCompactionPreparation | undefined {
+	const firstKeptIndex = entries.findIndex((entry) => entry.id === preparation.firstKeptEntryId);
+	if (firstKeptIndex < 0) return undefined;
+	const firstUnsafeIndex = findFirstProviderUnsafeEntryIndex(entries, firstKeptIndex);
+	if (firstUnsafeIndex === undefined) return undefined;
+	const boundaryStart = findBoundaryStart(entries, firstKeptIndex);
+	if (boundaryStart > firstKeptIndex) return undefined;
+	const owningAssistantIndex = findOwningAssistantForToolResultRun(entries, firstUnsafeIndex);
+	if (
+		owningAssistantIndex !== undefined
+		&& owningAssistantIndex >= boundaryStart
+		&& owningAssistantIndex < firstKeptIndex
+		&& suffixIsProviderSafe(entries, owningAssistantIndex)
+	) {
+		return buildPreparationForCut(preparation, entries, boundaryStart, owningAssistantIndex, {
+			repairedNoOpCut: false,
+			repairedProviderUnsafeSuffix: true,
+		});
+	}
+	const safeStartIndex = findProviderSafeStartAfter(entries, firstUnsafeIndex);
+	return buildPreparationForCut(preparation, entries, boundaryStart, safeStartIndex, {
+		repairedNoOpCut: false,
+		repairedProviderUnsafeSuffix: true,
+	});
+}
+
 /**
  * Repair Pi preparations that would append a summary while keeping the whole branch.
  *
@@ -205,17 +372,30 @@ function shouldRepairNoOpPreparation(
  * replacement cut is the assistant message that owns the suffix, with the earlier same-turn prefix
  * summarized separately.
  */
+export function stripCompactionPreparationMessages<T extends ContinuationCompactionPreparation>(
+	preparation: T,
+	shouldStrip: (message: unknown) => boolean,
+): T {
+	return {
+		...preparation,
+		messagesToSummarize: preparation.messagesToSummarize.filter((message) => !shouldStrip(message)),
+		turnPrefixMessages: preparation.turnPrefixMessages.filter((message) => !shouldStrip(message)),
+	};
+}
+
 export function normalizeCompactionPreparation(
 	preparation: ContinuationCompactionPreparation,
 	branchEntries: unknown[],
 ): NormalizedCompactionPreparation {
 	const entries = branchEntries.map(asEntry).filter((entry): entry is EntryRecord => entry !== undefined);
+	const unsafeSuffixRepair = repairProviderUnsafeKeptSuffix(preparation, entries);
+	if (unsafeSuffixRepair) return unsafeSuffixRepair;
 	const assistantIndex = findCompletedToolResultSuffixAssistantIndex(entries);
 	if (assistantIndex === undefined || !shouldRepairNoOpPreparation(preparation, entries, assistantIndex)) {
-		return { ...preparation, repairedNoOpCut: false };
+		return { ...preparation, repairedNoOpCut: false, repairedProviderUnsafeSuffix: false };
 	}
 	const boundaryStart = findBoundaryStart(entries, assistantIndex);
-	if (boundaryStart >= assistantIndex) return { ...preparation, repairedNoOpCut: false };
+	if (boundaryStart >= assistantIndex) return { ...preparation, repairedNoOpCut: false, repairedProviderUnsafeSuffix: false };
 	const turnStartIndex = findTurnStartIndex(entries, assistantIndex, boundaryStart);
 	const isSplitTurn = turnStartIndex !== undefined && turnStartIndex < assistantIndex;
 	const messagesToSummarize = messagesFromEntryRange(
@@ -225,7 +405,7 @@ export function normalizeCompactionPreparation(
 	);
 	const turnPrefixMessages = isSplitTurn ? messagesFromEntryRange(entries, turnStartIndex, assistantIndex) : [];
 	if (messagesToSummarize.length === 0 && turnPrefixMessages.length === 0) {
-		return { ...preparation, repairedNoOpCut: false };
+		return { ...preparation, repairedNoOpCut: false, repairedProviderUnsafeSuffix: false };
 	}
 	const summarizedMessages = [...messagesToSummarize, ...turnPrefixMessages];
 	return {
@@ -236,5 +416,6 @@ export function normalizeCompactionPreparation(
 		isSplitTurn,
 		fileOps: extractFileOps(summarizedMessages),
 		repairedNoOpCut: true,
+		repairedProviderUnsafeSuffix: false,
 	};
 }

@@ -1,8 +1,15 @@
 import { renderContinuationDetails } from "./details.ts";
 import type { ContinuationCompactionDetails } from "./types.ts";
 
+function escapeTaggedContent(content: string): string {
+	return content
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;");
+}
+
 function renderBlock(tag: string, content: string): string {
-	return `<${tag}>\n${content.trim()}\n</${tag}>`;
+	return `<${tag}>\n${escapeTaggedContent(content.trim())}\n</${tag}>`;
 }
 
 function renderFileListTag(tag: string, values: string[]): string | undefined {

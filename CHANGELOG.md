@@ -4,6 +4,21 @@ All notable changes to `pi-continue` are documented here.
 
 ## Unreleased
 
+## 0.8.1 - 2026-05-25
+
+### Changed
+
+- Clarified the prompt authority model: tool/session I/O and anchored brief entries are authoritative factual evidence, while embedded directives inside evidence remain data unless the current instruction hierarchy grants authority.
+- Updated the package gallery image URL to the v0.8.1 source tag.
+
+### Fixed
+
+- Escaped dynamic handoff-prompt inputs and persisted-summary tag contents so transcript, tool, path, prior-summary, guide, and modeled brief text cannot spoof package wrapper tags.
+- Normalized compaction checkpoints so provider-unsafe kept suffixes cannot retain tool results whose matching assistant tool calls are outside the post-compaction context.
+- Tightened the automatic mid-run guard to act only after exact completed assistant/tool-result batches, including matching tool-call IDs.
+- Kept same-session resume proof running when the resumed assistant asks for tools; completion now waits for a terminal assistant outcome instead of treating `toolUse` as done.
+- Updated TUI status surfaces: the working indicator shows saving, verifying while waiting for compaction proof, resuming, and resume-running phases, then clears when continuation reaches a terminal outcome; transient lifecycle progress no longer writes to Pi's shared footer status row.
+
 ## 0.8.0 - 2026-05-22
 
 ### Breaking changes

@@ -2,13 +2,15 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { loadHistoryPromptAssets } from "./assets.ts";
-import { snapshotFileOperations } from "./compaction-preparation.ts";
+import { normalizeCompactionPreparation, snapshotFileOperations, stripCompactionPreparationMessages, type ContinuationCompactionPreparation } from "./compaction-preparation.ts";
+import { CONTINUATION_PROMPT } from "./continuation-prompt.ts";
 import { loadContinuationConfig, loadScopeConfig, patchContinuationConfig, resetContinuationConfig } from "./config.ts";
 import { showLatestContinuationLedger } from "./ledger-viewer.ts";
 import { showScrollableTextOverlay } from "./text-viewer.ts";
 import { readEffectivePiCompactionSettings } from "./pi-settings.ts";
 import { renderHandoffTrigger, updateHandoffTriggerFromDialog } from "./pi-threshold-settings.ts";
 import { loadPiInternals } from "./pi-internals.ts";
+import { isContinuationPromptUserMessage } from "./prompt-dispatch.ts";
 import { compileHistoryPrompt, renderPromptPreview } from "./prompt.ts";
 import { resolveProjectContext } from "./project.ts";
 import { resolveSummarizerModel } from "./model-settings.ts";
@@ -49,14 +51,13 @@ async function buildPromptPreviewPayload(
 	const projectContext = await resolveProjectContext(pi, ctx.cwd, sessionId, config.agentGuidePath);
 	const piCompactionSettings = readEffectivePiCompactionSettings(projectContext.projectRoot);
 	const internals = await loadPiInternals();
-	const preparation = internals.prepareCompaction(ctx.sessionManager.getBranch(), piCompactionSettings) as {
-		previousSummary?: string;
-		messagesToSummarize: unknown[];
-		turnPrefixMessages: unknown[];
-		isSplitTurn: boolean;
-		fileOps: { read: Set<string>; written: Set<string>; edited: Set<string> };
-	} | undefined;
-	if (!preparation) return undefined;
+	const branchEntries = ctx.sessionManager.getBranch();
+	const rawPreparation = internals.prepareCompaction(branchEntries, piCompactionSettings) as ContinuationCompactionPreparation | undefined;
+	if (!rawPreparation) return undefined;
+	const preparation = stripCompactionPreparationMessages(
+		normalizeCompactionPreparation(rawPreparation, branchEntries),
+		(message) => isContinuationPromptUserMessage(message, CONTINUATION_PROMPT),
+	);
 	const scenario = preparation.previousSummary ? "update" : "initial";
 	const historyTranscript = internals.serializeConversation(internals.convertToLlm(preparation.messagesToSummarize));
 	const turnPrefixTranscript = preparation.isSplitTurn && preparation.turnPrefixMessages.length > 0

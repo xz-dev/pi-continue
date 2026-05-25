@@ -138,7 +138,7 @@ function hasNoOutputWrite(event: ContinuationLatestEvent): boolean {
 function actionLine(event: ContinuationLatestEvent): string {
 	const resume = resumeOutcome(event);
 	if (event.status === "running" && resume.status === "pending") return "Wait for the resumed assistant turn to start.";
-	if (event.status === "running" && resume.status === "running") return "Wait for the resumed assistant turn to finish its first assistant response.";
+	if (event.status === "running" && resume.status === "running") return "Wait for the resumed assistant turn to reach a terminal assistant outcome.";
 	if (event.status === "running" && event.compactionProof.status === "pending" && event.artifactStatus === "modeled") return "Wait for Pi to report the saved package-owned handoff proof.";
 	if (event.status === "running") return "Wait; pi-continue is saving the handoff now.";
 	if (event.status === "blocked") return "No new handoff was started; fix the last failure before retrying.";

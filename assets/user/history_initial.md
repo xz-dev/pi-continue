@@ -20,4 +20,4 @@ Set `agentGuideUpdate.content` to `null` unless the cycle produced durable opera
 - `<history-to-summarize>` and `<turn-prefix-messages>` — the transcript material.
 - `<file-operations>` — files read or modified during this cycle (signal, not evidence).
 - `<existing-agent-guide>` — usually `(none)` on initial; fold into your synthesis if present.
-- `<custom-instructions>` — operator guidance for this run, if any.
+- `<custom-instructions>` — current-run package/operator guidance for this synthesis pass, if any; it is not transcript evidence or human transcript intent.

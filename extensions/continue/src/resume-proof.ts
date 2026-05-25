@@ -9,9 +9,8 @@ import {
 	markContinuationResumePending,
 } from "./continuation-event.ts";
 import type { ContinuationEventStore } from "./types.ts";
-import { settleWorkingVisuals } from "./working-ui.ts";
+import { settleWorkingVisuals, updateWorkingVisuals } from "./working-ui.ts";
 
-export const CONTINUE_STATUS_KEY = "pi-continue";
 export const PROMPT_DISPATCH_FAILURE = "Continuation resume request failed.";
 export const RESUME_START_TIMEOUT_FAILURE = "Continuation resume request failed before the next run started.";
 export const COMPACTION_PROOF_TIMEOUT_FAILURE = "Pi did not report a saved package-owned continuation handoff before resume.";
@@ -63,11 +62,6 @@ export function notify(ctx: ExtensionContext, message: string, type: "info" | "w
 	ctx.ui.notify(message, type);
 }
 
-export function setStatus(ctx: ExtensionContext, value: string | undefined): void {
-	if (!ctx.hasUI) return;
-	ctx.ui.setStatus(CONTINUE_STATUS_KEY, value);
-}
-
 function unrefTimer(timer: ReturnType<typeof setTimeout>): void {
 	if (typeof timer === "object" && timer !== null) timer.unref?.();
 }
@@ -117,7 +111,6 @@ function scheduleResumeStartTimeout(ctx: ExtensionContext, runtime: ResumeProofR
 		if (!failed) return;
 		resumeStart.onContinuationFailed?.(resumeStart.eventId);
 		settleWorkingVisuals(ctx, runtime, resumeStart.eventId);
-		setStatus(ctx, `${resumeStart.label}: failed`);
 		notify(ctx, `${resumeStart.label}: resume request failed.`, "error");
 	}, Math.max(0, resumeStart.resumeStartTimeoutMs));
 	runtime.resumeStartTimeout = timeout;
@@ -162,7 +155,7 @@ function dispatchIfReady(ctx: ExtensionContext, runtime: ResumeProofRuntimeState
 	if (!isActiveRunningContinuationEvent(runtime, eventId)) return false;
 	clearCompactionProofTimeout(runtime);
 	runtime.pendingResumeDispatch = undefined;
-	setStatus(ctx, `${pending.label}: resuming this session`);
+	updateWorkingVisuals(ctx, runtime, eventId, "pi-continue resuming this session");
 	markContinuationResumePending(runtime, eventId);
 	runtime.awaitingResumeEventId = eventId;
 	const resumeStart: AwaitingResumeStart = {
@@ -185,7 +178,6 @@ function dispatchIfReady(ctx: ExtensionContext, runtime: ResumeProofRuntimeState
 		clearResumeStartTimeout(runtime);
 		runtime.awaitingResumeEventId = undefined;
 		settleWorkingVisuals(ctx, runtime, eventId);
-		setStatus(ctx, `${pending.label}: failed`);
 		notify(ctx, `${pending.label}: resume request failed: ${PROMPT_DISPATCH_FAILURE}`, "error");
 		return false;
 	}
@@ -197,7 +189,7 @@ export function markContinuationCompactionComplete(ctx: ExtensionContext, runtim
 	if (!pending || pending.eventId !== eventId) return false;
 	pending.compactionCompleted = true;
 	if (pending.proofVerified) return dispatchIfReady(ctx, runtime, eventId);
-	setStatus(ctx, `${pending.label}: verifying saved handoff`);
+	updateWorkingVisuals(ctx, runtime, eventId, "pi-continue verifying saved handoff");
 	scheduleCompactionProofTimeout(ctx, runtime, pending);
 	return true;
 }
@@ -228,7 +220,6 @@ export function failContinuationCompactionProof(ctx: ExtensionContext, runtime: 
 	runtime.compactionRunning = false;
 	if (!finishContinuationEvent(runtime, eventId, "failed", reason)) return false;
 	settleWorkingVisuals(ctx, runtime, eventId);
-	setStatus(ctx, `pi-continue: failed`);
 	notify(ctx, `pi-continue: handoff failed: ${reason}`, "error");
 	return true;
 }

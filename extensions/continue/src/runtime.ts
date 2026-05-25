@@ -22,7 +22,6 @@ import {
 	markContinuationCompactionComplete,
 	notify,
 	preparePendingResumeDispatch,
-	setStatus,
 	type ResumeProofRuntimeState,
 } from "./resume-proof.ts";
 import {
@@ -31,7 +30,7 @@ import {
 } from "./working-ui.ts";
 
 export { CONTINUATION_PROMPT } from "./continuation-prompt.ts";
-export { CONTINUE_STATUS_KEY, acceptContinuationCompactionProof, armDeferredResumeStartTimeout, clearResumeStartTimeout, failContinuationCompactionProof } from "./resume-proof.ts";
+export { acceptContinuationCompactionProof, armDeferredResumeStartTimeout, clearResumeStartTimeout, failContinuationCompactionProof } from "./resume-proof.ts";
 
 export type ContinuationRequestMode = "steer" | "queue";
 export type ContinuationRequestSource = ContinuationEventSource;
@@ -197,7 +196,6 @@ export function startContinuationCompaction(
 	if (hasActiveContinuationSettlement(runtime)) {
 		if (options.source === "mid-run-guard" && options.abortActiveRun) ctx.abort();
 		notify(ctx, "The previous continuation is still resuming; no new handoff was started.", "warning");
-		setStatus(ctx, "continuation still resuming");
 		return false;
 	}
 	const guardKey = options.trigger ? buildGuardFailureKey(options.trigger) : undefined;
@@ -210,7 +208,6 @@ export function startContinuationCompaction(
 			BLOCKED_RETRY_FAILURE,
 		);
 		notify(ctx, "pi-continue paused before another over-limit model request. Review /continue status before retrying.", "error");
-		setStatus(ctx, "pi-continue blocked retry after failed handoff");
 		return false;
 	}
 	runtime.compactionRunning = true;
@@ -224,7 +221,6 @@ export function startContinuationCompaction(
 	if (options.abortActiveRun) ctx.abort();
 	const label = sourceLabel(options.source);
 	const triggerText = options.trigger ? ` (${describeGuardTrigger(options.trigger)})` : "";
-	setStatus(ctx, `${label}: saving handoff${triggerText}`);
 	notify(ctx, `${label}: saving handoff${triggerText}.`, "info");
 	const customInstructions = mergeInstructions([
 		options.instructions,
@@ -256,7 +252,6 @@ export function startContinuationCompaction(
 		clearResumeStartTimeout(runtime);
 		runtime.awaitingResumeEventId = undefined;
 		settleWorkingVisuals(ctx, runtime, event.id);
-		setStatus(ctx, `${label}: failed`);
 		notify(ctx, `${label}: handoff failed: ${reason}`, "error");
 	}
 	try {
@@ -272,7 +267,6 @@ export function startContinuationCompaction(
 				}
 				finishContinuationEvent(runtime, event.id, "completed", undefined);
 				settleWorkingVisuals(ctx, runtime, event.id);
-				setStatus(ctx, undefined);
 				notify(ctx, `${label}: handoff saved.`, "info");
 			},
 			onError: () => {
@@ -307,7 +301,8 @@ export function settleAwaitingContinuationResumeFromAssistant(
 	clearStaleAwaitingContinuationResume(runtime);
 	const eventId = runtime.awaitingResumeEventId;
 	if (!eventId || runtime.latestEvent?.id !== eventId || runtime.latestEvent.resume.status !== "running") return undefined;
-	if (message.stopReason === "stop" || message.stopReason === "toolUse") {
+	if (message.stopReason === "toolUse") return undefined;
+	if (message.stopReason === "stop") {
 		if (settleContinuationResume(runtime, eventId, "completed", {
 			stopReason: message.stopReason,
 			requestedModel: requestedAssistantModel(message),

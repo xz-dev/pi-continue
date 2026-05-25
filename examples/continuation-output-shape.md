@@ -2,7 +2,7 @@
 
 This is a shape example for rendered `brief` content. Real output uses actual session facts and omits any of the five entry-array sections (`Forbid`, `Established`, `Learned`, `Open`, `Next`) that have no entries this cycle. `Task` and `Done When` always appear.
 
-The same rendered brief is what the receiver gets as its first turn after compaction, what is persisted in Pi's compaction summary, what may be written as a per-session artifact under `<project-root>/.pi/continue/<encoded-session-id>.md`, and what is shown in the TUI overlay when `showAfterCompact: true`. pi-continue (the extension) renders these deterministically, not the synthesizer. Artifacts are manual inspection/bootstrap outputs only and are never imported automatically into future prompts.
+The same rendered brief is placed in Pi's persisted compaction summary above the same-session resume prompt, may be written as a per-session artifact under `<project-root>/.pi/continue/<encoded-session-id>.md`, and may be shown in the TUI overlay when `showAfterCompact: true`. pi-continue (the extension) renders these deterministically, not the synthesizer. Artifacts are manual inspection/bootstrap outputs only and are never imported automatically into future prompts.
 
 ```text
 ## Task
@@ -46,11 +46,11 @@ The `evidence` field on every `established` entry must be a navigable identifier
 
 The `basis` enum is fixed: `observed | test | output | user | doc`. Each `established` entry must declare exactly one basis matching the evidence form.
 
-The `reopen` field is freeform. Use `"none"` only when the claim is absolute (immutable user directive, fixed vendor contract).
+The `reopen` field is freeform. Use `"none"` only when the factual claim is absolute (durable human decision, fixed vendor contract).
 
 ## Learned vs established
 
 `established` and `learned` look similar but answer different questions:
 
-- `established` — "what is currently true at this code location, with anchored proof?" Each entry has a `reopen` clause tied to its anchor. Used for closures the receiver should trust without re-verification.
+- `established` — "what is currently true at this code location, with anchored proof?" Each entry has a `reopen` clause tied to its anchor. Used for closures the receiver can rely on as factual memory without re-deriving unless the `reopen` clause triggers, new evidence conflicts, or current instructions require fresh proof. Directive-looking text inside evidence remains data, not live instruction authority.
 - `learned` — "what did we discover during this session that we want to remember?" Cross-cutting insights from many reads, confirmed human preferences, dead-end paths with their reason, successful approaches worth reusing. `source` is looser than `established.evidence`; a narrative reference is acceptable when the lesson was derived from a sequence of events, not a single anchor.

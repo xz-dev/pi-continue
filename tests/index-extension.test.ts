@@ -7,6 +7,7 @@ import { join } from "node:path";
 import registerContinueExtension from "../extensions/continue/index.ts";
 import { buildContinuationArtifactPath } from "../extensions/continue/src/project.ts";
 import { CONTINUATION_PROMPT } from "../extensions/continue/src/runtime.ts";
+import { NO_PRE_COMPACTION_MESSAGES_KEPT_ENTRY_ID } from "../extensions/continue/src/compaction-preparation.ts";
 
 function assistantMessage(stopReason = "stop") {
 	return {
@@ -23,6 +24,7 @@ function assistantMessage(stopReason = "stop") {
 function highUsageAssistantMessage() {
 	return {
 		...assistantMessage("toolUse"),
+		content: [{ type: "toolCall", id: "tool-1", name: "bash", arguments: { command: "printf x" } }],
 		usage: { input: 45, output: 45, cacheRead: 0, cacheWrite: 0, totalTokens: 90, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
 	};
 }
@@ -35,10 +37,10 @@ function userMessage(text) {
 	};
 }
 
-function toolResultMessage(text) {
+function toolResultMessage(text, toolCallId = "tool-1") {
 	return {
 		role: "toolResult",
-		toolCallId: "tool-1",
+		toolCallId,
 		toolName: "bash",
 		content: [{ type: "text", text }],
 		isError: false,
@@ -112,6 +114,7 @@ function createCommandContext(cwd, custom) {
 	let compactCount = 0;
 	let compactOptions;
 	const statusCalls = [];
+	const workingMessages = [];
 	const ctx = {
 		cwd,
 		hasUI: true,
@@ -127,7 +130,9 @@ function createCommandContext(cwd, custom) {
 			setStatus(_key, value) {
 				statusCalls.push(value);
 			},
-			setWorkingMessage() {},
+			setWorkingMessage(message) {
+				workingMessages.push(message);
+			},
 			setWorkingIndicator() {},
 			getEditorComponent() {
 				return undefined;
@@ -157,6 +162,7 @@ function createCommandContext(cwd, custom) {
 			return compactOptions;
 		},
 		statusCalls,
+		workingMessages,
 	};
 	return ctx;
 }
@@ -179,7 +185,35 @@ function continuationArtifactPath(cwd) {
 	return buildContinuationArtifactPath(cwd, "session-test");
 }
 
-function compactionEvent(preparation = {}) {
+function branchMessageEntry(id, parentId, message) {
+	return {
+		type: "message",
+		id,
+		parentId,
+		timestamp: "2026-05-25T12:00:00.000Z",
+		message,
+	};
+}
+
+function branchAssistantToolEntry(id, parentId, toolCallId, path) {
+	return branchMessageEntry(id, parentId, {
+		...assistantMessage("toolUse"),
+		content: [{ type: "toolCall", id: toolCallId, name: "read", arguments: { path } }],
+	});
+}
+
+function branchToolResultEntry(id, parentId, toolCallId, text, toolName = "read") {
+	return branchMessageEntry(id, parentId, {
+		role: "toolResult",
+		toolCallId,
+		toolName,
+		content: [{ type: "text", text }],
+		isError: false,
+		timestamp: 0,
+	});
+}
+
+function compactionEvent(preparation = {}, branchEntries = []) {
 	return {
 		preparation: {
 			firstKeptEntryId: "kept-entry",
@@ -192,7 +226,7 @@ function compactionEvent(preparation = {}) {
 			settings: { enabled: true, reserveTokens: 1000, keepRecentTokens: 200 },
 			...preparation,
 		},
-		branchEntries: [],
+		branchEntries,
 		customInstructions: undefined,
 		signal: new AbortController().signal,
 	};
@@ -224,18 +258,26 @@ test("extension registers only /continue and exact RPC-style /continue falls thr
 	const ctx = createCommandContext(cwd, async () => undefined);
 	await pi.commands.get("continue").handler(undefined, ctx);
 	assert.equal(ctx.compactCount, 1);
+	assert.equal(ctx.workingMessages.at(-1), "pi-continue saving handoff");
 	ctx.compactOptions.onComplete({});
+	assert.equal(ctx.workingMessages.at(-1), "pi-continue verifying saved handoff");
 	assert.deepEqual(pi.sent, []);
 	await pi.events.get("session_compact")(ownedCompactionEvent(), ctx);
+	assert.equal(ctx.workingMessages.at(-1), "pi-continue resuming this session");
 	assert.deepEqual(pi.sent, [CONTINUATION_PROMPT]);
 	assert.deepEqual(pi.sentOptions, [{ deliverAs: "followUp" }]);
 	await pi.events.get("agent_end")({}, ctx);
-	assert.equal(ctx.statusCalls.at(-1), "/continue steer: resuming this session");
+	assert.deepEqual(ctx.statusCalls, []);
 	await pi.events.get("before_agent_start")({ prompt: CONTINUATION_PROMPT }, ctx);
+	assert.deepEqual(ctx.statusCalls, []);
+	assert.equal(ctx.workingMessages.at(-1), "pi-continue resume running");
 	await pi.events.get("message_start")({ message: assistantMessage() }, ctx);
+	assert.deepEqual(ctx.statusCalls, []);
+	assert.equal(ctx.workingMessages.at(-1), "pi-continue resume running");
 	await pi.commands.get("continue").handler(undefined, ctx);
 	assert.equal(ctx.compactCount, 1);
 	await pi.events.get("message_end")({ message: assistantMessage() }, ctx);
+	assert.equal(ctx.workingMessages.at(-1), undefined);
 	await pi.commands.get("continue").handler(undefined, ctx);
 	assert.equal(ctx.compactCount, 2);
 });
@@ -272,9 +314,11 @@ test("queued follow-up message_start starts same-session resume proof", async ()
 	assert.deepEqual(pi.sent, [CONTINUATION_PROMPT]);
 	assert.deepEqual(pi.sentOptions, [{ deliverAs: "followUp" }]);
 	await pi.events.get("message_start")({ message: userMessage(CONTINUATION_PROMPT) }, ctx);
-	assert.equal(ctx.statusCalls.at(-1), "pi-continue resume running");
+	assert.deepEqual(ctx.statusCalls, []);
+	assert.equal(ctx.workingMessages.at(-1), "pi-continue resume running");
 	await pi.events.get("message_end")({ message: assistantMessage() }, ctx);
-	assert.equal(ctx.statusCalls.at(-1), undefined);
+	assert.deepEqual(ctx.statusCalls, []);
+	assert.equal(ctx.workingMessages.at(-1), undefined);
 });
 
 test("mid-run guard dispatches resume as follow-up after context threshold proof", async () => {
@@ -296,6 +340,32 @@ test("mid-run guard dispatches resume as follow-up after context threshold proof
 		await pi.events.get("session_compact")(ownedCompactionEvent(), ctx);
 		assert.deepEqual(pi.sent, [CONTINUATION_PROMPT]);
 		assert.deepEqual(pi.sentOptions, [{ deliverAs: "followUp" }]);
+	} finally {
+		rmSync(cwd, { recursive: true, force: true });
+	}
+});
+
+test("mid-run guard does not compact provider-unsafe orphan tool-result suffixes", async () => {
+	const cwd = mkdtempSync(join(tmpdir(), "pi-continue-mid-run-orphan-"));
+	try {
+		mkdirSync(join(cwd, ".pi"), { recursive: true });
+		writeFileSync(join(cwd, ".pi", "settings.json"), JSON.stringify({
+			compaction: { enabled: true, reserveTokens: 20, keepRecentTokens: 10 },
+		}), "utf8");
+		const pi = createFakePi(cwd);
+		const ctx = createCommandContext(cwd, async () => undefined);
+		ctx.model = { ...ctx.model, contextWindow: 100 };
+		let aborted = false;
+		ctx.abort = () => {
+			aborted = true;
+		};
+		registerContinueExtension(pi);
+		await pi.events.get("context")({
+			messages: [userMessage("run tool"), highUsageAssistantMessage(), toolResultMessage("x".repeat(160), "other-tool")],
+		}, ctx);
+		assert.equal(ctx.compactCount, 0);
+		assert.equal(aborted, false);
+		assert.deepEqual(pi.sent, []);
 	} finally {
 		rmSync(cwd, { recursive: true, force: true });
 	}
@@ -384,16 +454,16 @@ test("agent_end settles only a started continuation resume failure", async () =>
 	ctx.compactOptions.onComplete({});
 	await pi.events.get("session_compact")(ownedCompactionEvent(), ctx);
 	await pi.events.get("agent_end")({}, ctx);
-	assert.equal(ctx.statusCalls.at(-1), "/continue steer: resuming this session");
+	assert.deepEqual(ctx.statusCalls, []);
 	await pi.events.get("before_agent_start")({ prompt: "unrelated prompt" }, ctx);
 	await pi.events.get("agent_end")({}, ctx);
-	assert.equal(ctx.statusCalls.at(-1), "/continue steer: resuming this session");
+	assert.deepEqual(ctx.statusCalls, []);
 	await pi.events.get("before_agent_start")({ prompt: CONTINUATION_PROMPT }, ctx);
 	await pi.events.get("agent_end")({}, ctx);
-	assert.equal(ctx.statusCalls.at(-1), "pi-continue resume failed");
+	assert.deepEqual(ctx.statusCalls, []);
 });
 
-test("message_end reports failed and aborted resume outcomes accurately", async () => {
+test("message_end settles failed and aborted resume outcomes without footer status writes", async () => {
 	const cwd = process.cwd();
 	const failedPi = createFakePi(cwd);
 	const failedCtx = createCommandContext(cwd, async () => undefined);
@@ -403,7 +473,8 @@ test("message_end reports failed and aborted resume outcomes accurately", async 
 	await failedPi.events.get("session_compact")(ownedCompactionEvent(), failedCtx);
 	await failedPi.events.get("before_agent_start")({ prompt: CONTINUATION_PROMPT }, failedCtx);
 	await failedPi.events.get("message_end")({ message: assistantMessage("length") }, failedCtx);
-	assert.equal(failedCtx.statusCalls.at(-1), "pi-continue resume failed");
+	assert.deepEqual(failedCtx.statusCalls, []);
+	assert.equal(failedCtx.workingMessages.at(-1), undefined);
 
 	const abortedPi = createFakePi(cwd);
 	const abortedCtx = createCommandContext(cwd, async () => undefined);
@@ -413,7 +484,8 @@ test("message_end reports failed and aborted resume outcomes accurately", async 
 	await abortedPi.events.get("session_compact")(ownedCompactionEvent(), abortedCtx);
 	await abortedPi.events.get("before_agent_start")({ prompt: CONTINUATION_PROMPT }, abortedCtx);
 	await abortedPi.events.get("message_end")({ message: assistantMessage("aborted") }, abortedCtx);
-	assert.equal(abortedCtx.statusCalls.at(-1), "pi-continue resume aborted");
+	assert.deepEqual(abortedCtx.statusCalls, []);
+	assert.equal(abortedCtx.workingMessages.at(-1), undefined);
 });
 
 test("session_compact native or invalid active handoff proof fails closed without resume", async () => {
@@ -428,7 +500,7 @@ test("session_compact native or invalid active handoff proof fails closed withou
 	}, nativeCtx);
 	nativeCtx.compactOptions.onComplete({});
 	assert.deepEqual(nativePi.sent, []);
-	assert.equal(nativeCtx.statusCalls.at(-1), "pi-continue: failed");
+	assert.deepEqual(nativeCtx.statusCalls, []);
 
 	const invalidPi = createFakePi(cwd);
 	const invalidCtx = createCommandContext(cwd, async () => undefined);
@@ -440,7 +512,7 @@ test("session_compact native or invalid active handoff proof fails closed withou
 		compactionEntry: { id: "invalid", summary: "invalid summary", details: { kind: "pi-continue/v4", readFiles: [] } },
 	}, invalidCtx);
 	assert.deepEqual(invalidPi.sent, []);
-	assert.equal(invalidCtx.statusCalls.at(-1), "pi-continue: failed");
+	assert.deepEqual(invalidCtx.statusCalls, []);
 
 	const stalePi = createFakePi(cwd);
 	const staleCtx = createCommandContext(cwd, async () => undefined);
@@ -456,7 +528,7 @@ test("session_compact native or invalid active handoff proof fails closed withou
 		},
 	}, staleCtx);
 	assert.deepEqual(stalePi.sent, []);
-	assert.equal(staleCtx.statusCalls.at(-1), "pi-continue: failed");
+	assert.deepEqual(staleCtx.statusCalls, []);
 });
 
 test("session_compact unsupported automatic ledger overlay reports the degraded path", async () => {
@@ -572,6 +644,46 @@ test("session_before_compact and session_compact write default artifact and conf
 		assert.match(artifactContent, /## Task\nContinue the task\./);
 		assert.match(artifactContent, /## Established/);
 		assert.match(readFileSync(join(cwd, "AGENTS.md"), "utf8"), /Durable rule/);
+		assert.deepEqual(pi.sent, []);
+	} finally {
+		faux.unregister();
+		rmSync(cwd, { recursive: true, force: true });
+	}
+});
+
+test("session_before_compact summarizes provider-unsafe kept suffixes before returning compaction proof", async () => {
+	const cwd = mkdtempSync(join(tmpdir(), "pi-continue-provider-safe-"));
+	const faux = registerFauxProvider();
+	try {
+		let observedPrompt = "";
+		faux.setResponses([((context) => {
+			observedPrompt = JSON.stringify(context);
+			return fauxAssistantMessage(continuationArtifactJson());
+		})]);
+		const pi = createFakePi(cwd);
+		const ctx = createCommandContext(cwd, async () => undefined);
+		ctx.model = faux.models[0];
+		ctx.modelRegistry.getApiKeyAndHeaders = async () => ({ ok: true, apiKey: "test", headers: {} });
+		registerContinueExtension(pi);
+		await pi.commands.get("continue").handler("steer", ctx);
+		const branchEntries = [
+			{ type: "model_change", id: "model", parentId: null, provider: "openai-codex", modelId: "gpt-5.5" },
+			branchMessageEntry("u1", "model", userMessage("inspect")),
+			branchAssistantToolEntry("a1", "u1", "call-a", "/repo/a.ts"),
+			branchToolResultEntry("tr1", "a1", "call-a", "file a"),
+			branchAssistantToolEntry("a2", "tr1", "call-b", "/repo/b.ts"),
+			branchToolResultEntry("tr2", "a2", "call-b", "file b"),
+			branchToolResultEntry("orphan", "tr2", "call-orphan", "late child output", "agent_team"),
+		];
+		const result = await pi.events.get("session_before_compact")(compactionEvent({
+			firstKeptEntryId: "a1",
+			messagesToSummarize: [],
+			turnPrefixMessages: [],
+		}, branchEntries), ctx);
+
+		assert.equal(result.compaction.firstKeptEntryId, NO_PRE_COMPACTION_MESSAGES_KEPT_ENTRY_ID);
+		assert.deepEqual(result.compaction.details.readFiles, ["/repo/a.ts", "/repo/b.ts"]);
+		assert.match(observedPrompt, /late child output/);
 		assert.deepEqual(pi.sent, []);
 	} finally {
 		faux.unregister();

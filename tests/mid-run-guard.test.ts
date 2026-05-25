@@ -40,14 +40,37 @@ function input(overrides = {}) {
 	};
 }
 
-test("shouldEvaluateMidRunContext only accepts contexts ending in a contiguous tool-result suffix", () => {
+function userMessage() {
+	return { role: "user" };
+}
+
+function assistantMessage(...toolCallIds: string[]) {
+	return {
+		role: "assistant",
+		content: toolCallIds.map((id) => ({ type: "toolCall", id, name: "read", arguments: { path: `/repo/${id}.ts` } })),
+	};
+}
+
+function assistantTextMessage() {
+	return { role: "assistant", content: [{ type: "text", text: "done" }] };
+}
+
+function toolResultMessage(toolCallId: string) {
+	return { role: "toolResult", toolCallId, toolName: "read", content: [{ type: "text", text: "file" }], isError: false };
+}
+
+test("shouldEvaluateMidRunContext only accepts contexts ending in a complete assistant/tool-result batch", () => {
 	assert.equal(shouldEvaluateMidRunContext([{ role: "user" }]), false);
-	assert.equal(shouldEvaluateMidRunContext([{ role: "user" }, { role: "assistant" }]), false);
-	assert.equal(shouldEvaluateMidRunContext([{ role: "user" }, { role: "assistant" }, { role: "toolResult" }]), true);
-	assert.equal(shouldEvaluateMidRunContext([{ role: "user" }, { role: "assistant" }, { role: "toolResult" }, { role: "toolResult" }]), true);
-	assert.equal(shouldEvaluateMidRunContext([{ role: "user" }, { role: "assistant" }, { role: "toolResult" }, { role: "user" }]), false);
-	assert.equal(shouldEvaluateMidRunContext([{ role: "assistant" }, { role: "toolResult" }, { role: "assistant" }]), false);
-	assert.equal(shouldEvaluateMidRunContext([{ role: "assistant" }, { role: "user" }, { role: "toolResult" }]), false);
+	assert.equal(shouldEvaluateMidRunContext([userMessage(), assistantMessage("call-a")]), false);
+	assert.equal(shouldEvaluateMidRunContext([userMessage(), assistantMessage("call-a"), toolResultMessage("call-a")]), true);
+	assert.equal(shouldEvaluateMidRunContext([userMessage(), assistantMessage("call-a", "call-b"), toolResultMessage("call-a"), toolResultMessage("call-b")]), true);
+	assert.equal(shouldEvaluateMidRunContext([userMessage(), assistantMessage("call-a"), toolResultMessage("call-a"), userMessage()]), false);
+	assert.equal(shouldEvaluateMidRunContext([assistantMessage("call-a"), toolResultMessage("call-a"), assistantTextMessage()]), false);
+	assert.equal(shouldEvaluateMidRunContext([assistantMessage("call-a"), userMessage(), toolResultMessage("call-a")]), false);
+	assert.equal(shouldEvaluateMidRunContext([userMessage(), assistantTextMessage(), toolResultMessage("orphan")]), false);
+	assert.equal(shouldEvaluateMidRunContext([userMessage(), assistantMessage("call-a"), toolResultMessage("call-b")]), false);
+	assert.equal(shouldEvaluateMidRunContext([userMessage(), assistantMessage("call-a", "call-b"), toolResultMessage("call-a")]), false);
+	assert.equal(shouldEvaluateMidRunContext([userMessage(), assistantMessage("call-a"), toolResultMessage("call-a"), toolResultMessage("extra")]), false);
 });
 
 test("decideMidRunGuardTrigger ignores disabled branches", () => {

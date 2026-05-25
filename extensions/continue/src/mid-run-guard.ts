@@ -5,6 +5,7 @@ import { loadPiInternals } from "./pi-internals.ts";
 import { resolveProjectContext } from "./project.ts";
 import { sendContinuationPrompt } from "./prompt-dispatch.ts";
 import { startContinuationCompaction, type ContinuationRuntimeState } from "./runtime.ts";
+import { endsWithCompleteToolResultBatch } from "./tool-batches.ts";
 import type {
 	ContextUsageEstimateSnapshot,
 	ContinuationConfig,
@@ -19,31 +20,13 @@ export interface MidRunGuardDecisionInput {
 	estimate: ContextUsageEstimateSnapshot;
 }
 
-function isMessageRecord(value: unknown): value is { role: unknown } {
-	return typeof value === "object" && value !== null && "role" in value;
-}
-
-function messageRole(value: unknown): string | undefined {
-	if (!isMessageRecord(value)) return undefined;
-	return typeof value.role === "string" ? value.role : undefined;
-}
-
-function endsWithContiguousToolResultSuffix(messages: unknown[]): boolean {
-	if (messageRole(messages[messages.length - 1]) !== "toolResult") return false;
-	let index = messages.length - 1;
-	while (index >= 0 && messageRole(messages[index]) === "toolResult") {
-		index--;
-	}
-	return messageRole(messages[index]) === "assistant";
-}
-
 function hasUsableContextWindow(contextWindow: number | undefined, reserveTokens: number): contextWindow is number {
 	return contextWindow !== undefined && Number.isFinite(contextWindow) && contextWindow > reserveTokens;
 }
 
 /** Decide whether a pre-provider context belongs to a completed assistant/tool-result loop. */
 export function shouldEvaluateMidRunContext(messages: unknown[]): boolean {
-	return endsWithContiguousToolResultSuffix(messages);
+	return endsWithCompleteToolResultBatch(messages);
 }
 
 /** Decide whether the package must stop before Pi sends another provider request. */

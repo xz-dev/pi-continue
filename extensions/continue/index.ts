@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { loadHistoryPromptAssets } from "./src/assets.ts";
 import { parseHistoryArtifacts } from "./src/blocks.ts";
 import { splitContinueSubcommand, shouldOpenContinuePalette } from "./src/command-shape.ts";
 import { runContinuePaletteResult, runEnabledContinuationCommand } from "./src/command-runner.ts";
 import { runLedgerCommand, runPreviewCommand, runResetCommand, runSettingsDialog, runStatusCommand } from "./src/commands.ts";
 import { getContinueArgumentCompletions } from "./src/completions.ts";
-import { normalizeCompactionPreparation, snapshotFileOperations } from "./src/compaction-preparation.ts";
+import { normalizeCompactionPreparation, snapshotFileOperations, stripCompactionPreparationMessages } from "./src/compaction-preparation.ts";
 import { composeCompactionSummary } from "./src/compose.ts";
 import { DEFAULT_CONTINUE_CONFIG, loadContinuationConfig } from "./src/config.ts";
 import {
@@ -33,7 +33,6 @@ import { isContinuationPromptUserMessage } from "./src/prompt-dispatch.ts";
 import { showContinuePalette } from "./src/palette.ts";
 import {
 	CONTINUATION_PROMPT,
-	CONTINUE_STATUS_KEY,
 	acceptContinuationCompactionProof,
 	armDeferredResumeStartTimeout,
 	clearResumeStartTimeout,
@@ -54,6 +53,7 @@ import type { AgentGuideWriteStatus, ContinuationSynthesisFailure, ContinuationS
 import {
 	clearWorkingVisuals,
 	settleWorkingVisuals,
+	updateWorkingVisuals,
 } from "./src/working-ui.ts";
 
 function decideAgentGuideWriteStatus(writeMode: WriteMode, agentGuideMd: string | undefined): AgentGuideWriteStatus {
@@ -89,11 +89,6 @@ function normalizeSynthesisFailure(error: unknown): ContinuationSynthesisFailure
 	}
 	if (error instanceof ArtifactParseError) return error.failure;
 	return { kind: "internal", code: "internal-error", pass: "history" };
-}
-
-function setRuntimeStatus(ctx: ExtensionContext, value: string | undefined): void {
-	if (!ctx.hasUI) return;
-	ctx.ui.setStatus(CONTINUE_STATUS_KEY, value);
 }
 
 export default function (pi: ExtensionAPI) {
@@ -158,26 +153,27 @@ export default function (pi: ExtensionAPI) {
 		if (event.prompt !== CONTINUATION_PROMPT) return;
 		const eventId = markAwaitingContinuationResumeStarted(runtime);
 		if (!eventId) return;
-		setRuntimeStatus(ctx, "pi-continue resume running");
+		updateWorkingVisuals(ctx, runtime, eventId, "pi-continue resume running");
 	});
 
 	pi.on("message_start", async (event, ctx) => {
 		if (isContinuationPromptUserMessage(event.message, CONTINUATION_PROMPT)) {
 			const eventId = markAwaitingContinuationResumeStarted(runtime);
-			if (eventId) setRuntimeStatus(ctx, "pi-continue resume running");
+			if (eventId) {
+				updateWorkingVisuals(ctx, runtime, eventId, "pi-continue resume running");
+			}
 			return;
 		}
 		if (!isAssistantMessage(event.message)) return;
 		const eventId = runtime.awaitingResumeEventId;
 		if (!eventId || runtime.latestEvent?.id !== eventId || runtime.latestEvent.resume.status !== "running") return;
-		setRuntimeStatus(ctx, "pi-continue resume running");
+		updateWorkingVisuals(ctx, runtime, eventId, "pi-continue resume running");
 	});
 
 	pi.on("agent_end", async (_event, ctx) => {
 		const settlement = failRunningAwaitingContinuationResume(runtime, "Continuation resume did not produce an assistant response.");
 		if (settlement) {
 			settleWorkingVisuals(ctx, runtime, settlement.eventId);
-			setRuntimeStatus(ctx, "pi-continue resume failed");
 			return;
 		}
 		armDeferredResumeStartTimeout(ctx, runtime);
@@ -187,13 +183,7 @@ export default function (pi: ExtensionAPI) {
 		if (!isAssistantMessage(event.message)) return;
 		const settlement = settleAwaitingContinuationResumeFromAssistant(runtime, event.message);
 		if (!settlement) return;
-		const statusText = settlement.status === "completed"
-			? undefined
-			: settlement.status === "aborted"
-				? "pi-continue resume aborted"
-				: "pi-continue resume failed";
 		settleWorkingVisuals(ctx, runtime, settlement.eventId);
-		setRuntimeStatus(ctx, statusText);
 	});
 
 	pi.on("context", async (event, ctx) => {
@@ -207,20 +197,23 @@ export default function (pi: ExtensionAPI) {
 		if (!config.enabled) return undefined;
 		if (getActiveContinuationEventId(runtime) === undefined) return undefined;
 		const resolvedProjectContext = await resolveProjectContext(pi, ctx.cwd, sessionId, config.agentGuidePath);
-		const preparation = normalizeCompactionPreparation(event.preparation, event.branchEntries);
-		if (preparation.repairedNoOpCut && ctx.hasUI) {
+		const normalizedPreparation = normalizeCompactionPreparation(event.preparation, event.branchEntries);
+		if (normalizedPreparation.repairedProviderUnsafeSuffix && ctx.hasUI) {
+			ctx.ui.notify("pi-continue summarized a provider-unsafe kept suffix before resuming.", "warning");
+		} else if (normalizedPreparation.repairedNoOpCut && ctx.hasUI) {
 			ctx.ui.notify("pi-continue moved the handoff to a safer checkpoint before resuming.", "warning");
 		}
-		const fileOpsSnapshot = snapshotFileOperations(preparation.fileOps);
-		const internals = await loadPiInternals();
 		// Strip pi-continue's own receiver prompt so the synthesizer never mistakes
 		// our resume wrapper ("Continue from the same-session pi-continue/v4 handoff…")
 		// for user content. Otherwise the synthesizer can promote our wrapper sentences
 		// as `forbid` or `task` entries.
-		const stripPiContinueInjection = <T>(messages: T[]): T[] =>
-			messages.filter((message) => !isContinuationPromptUserMessage(message, CONTINUATION_PROMPT));
-		const messagesToSummarize = stripPiContinueInjection(preparation.messagesToSummarize);
-		const turnPrefixMessages = stripPiContinueInjection(preparation.turnPrefixMessages);
+		const preparation = stripCompactionPreparationMessages(normalizedPreparation, (message) =>
+			isContinuationPromptUserMessage(message, CONTINUATION_PROMPT)
+		);
+		const fileOpsSnapshot = snapshotFileOperations(preparation.fileOps);
+		const internals = await loadPiInternals();
+		const messagesToSummarize = preparation.messagesToSummarize;
+		const turnPrefixMessages = preparation.turnPrefixMessages;
 		const turnPrefixTranscript = preparation.isSplitTurn && turnPrefixMessages.length > 0
 			? internals.serializeConversation(internals.convertToLlm(turnPrefixMessages))
 			: undefined;

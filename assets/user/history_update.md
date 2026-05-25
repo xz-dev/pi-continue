@@ -27,4 +27,4 @@ If `<existing-agent-guide>` has content and your `content` is non-null, your rep
 - `<history-to-summarize>` and `<turn-prefix-messages>` — the new transcript material.
 - `<file-operations>` — files read or modified during this cycle (signal, not evidence).
 - `<existing-agent-guide>` — prior agent guide, if any.
-- `<custom-instructions>` — operator guidance for this run, if any.
+- `<custom-instructions>` — current-run package/operator guidance for this synthesis pass, if any; it is not transcript evidence or human transcript intent.

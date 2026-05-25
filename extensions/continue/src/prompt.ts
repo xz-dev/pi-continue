@@ -1,13 +1,25 @@
 import type { CompiledPrompt, FileOpsSnapshot, HistoryPromptAssets, HistoryPromptInput } from "./types.ts";
 
-function renderTag(tag: string, content: string | undefined): string {
+function escapeTaggedContent(content: string): string {
+	return content
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;");
+}
+
+function renderTag(tag: string, content: string | undefined, options: { escapeContent?: boolean } = {}): string {
 	const normalized = content && content.trim().length > 0 ? content.trim() : "(none)";
-	return `<${tag}>\n${normalized}\n</${tag}>`;
+	const safeContent = options.escapeContent ? escapeTaggedContent(normalized) : normalized;
+	return `<${tag}>\n${safeContent}\n</${tag}>`;
+}
+
+function renderDataTag(tag: string, content: string | undefined): string {
+	return renderTag(tag, content, { escapeContent: true });
 }
 
 function renderFileOps(fileOps: FileOpsSnapshot): string {
-	const reads = fileOps.readFiles.length > 0 ? fileOps.readFiles.join("\n") : "(none)";
-	const modified = fileOps.modifiedFiles.length > 0 ? fileOps.modifiedFiles.join("\n") : "(none)";
+	const reads = fileOps.readFiles.length > 0 ? fileOps.readFiles.map(escapeTaggedContent).join("\n") : "(none)";
+	const modified = fileOps.modifiedFiles.length > 0 ? fileOps.modifiedFiles.map(escapeTaggedContent).join("\n") : "(none)";
 	return [`<read-files>`, reads, `</read-files>`, ``, `<modified-files>`, modified, `</modified-files>`].join("\n");
 }
 
@@ -16,14 +28,14 @@ export function compileHistoryPrompt(assets: HistoryPromptAssets, input: History
 	const sections = [
 		renderTag("base-continuation-contract", assets.baseUser.content),
 		renderTag("history-task", assets.scenarioUser.content),
-		renderTag("project-root", input.projectRoot),
-		renderTag("agent-guide-path", input.agentGuidePath),
-		renderTag("existing-agent-guide", input.existingAgentGuide),
-		renderTag("previous-compaction-summary", input.previousSummary),
-		renderTag("history-to-summarize", input.historyTranscript),
-		renderTag("turn-prefix-messages", input.turnPrefixTranscript),
+		renderDataTag("project-root", input.projectRoot),
+		renderDataTag("agent-guide-path", input.agentGuidePath),
+		renderDataTag("existing-agent-guide", input.existingAgentGuide),
+		renderDataTag("previous-compaction-summary", input.previousSummary),
+		renderDataTag("history-to-summarize", input.historyTranscript),
+		renderDataTag("turn-prefix-messages", input.turnPrefixTranscript),
 		renderTag("file-operations", renderFileOps(input.fileOps)),
-		renderTag("custom-instructions", input.customInstructions),
+		renderDataTag("custom-instructions", input.customInstructions),
 	];
 	return {
 		systemPrompt: assets.system.content.trim(),

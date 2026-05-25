@@ -38,6 +38,8 @@ Package-side automatic continuation is enabled by default. The trigger still fol
 
 Running only `/continue` opens a small action palette when UI is available. In non-interactive modes, `/continue` runs the direct continuation path instead of waiting for a UI.
 
+Inspect and configuration subcommands (`preview`, `status`, `ledger`, `settings`, `reset`) use Pi UI/TUI panels. When UI is unavailable, use `/continue` or `/continue steer|queue` for direct continuation and inspect status from a UI-capable session.
+
 | Command | What it does |
 | --- | --- |
 | `/continue` | Open the palette when UI is available; otherwise continue now. |
@@ -57,7 +59,7 @@ The automatic mid-turn guard is the main reason to use this package. It acts dur
 
 It:
 
-- waits for a completed assistant/tool-result batch
+- waits for a completed assistant/tool-result batch with matching tool-call IDs
 - checks Pi's own compaction threshold
 - stops before the next oversized provider request is sent
 - runs native Pi compaction
@@ -86,7 +88,7 @@ Configure the threshold directly in Pi settings, or choose `Handoff trigger` in 
 
 `reserveTokens` and `keepRecentTokens` are absolute token counts. For a 272K context model, an explicit `reserveTokens: 68000` triggers near 75 percent usage. The `/continue settings` control shows and edits the human trigger token count, then saves Pi's canonical `compaction.reserveTokens` value at the selected settings scope; the trigger is not stored in `pi-continue.json`. See [`examples/pi-settings-compaction-75pct-272k.json`](examples/pi-settings-compaction-75pct-272k.json).
 
-Use `/continue status` after a continuation to see what happened. Status reports the latest local run: how the handoff started, whether the Continuation Ledger was created, whether Pi reported package-owned `pi-continue/v4` handoff proof, which summarizer model ran, the requested and effective history output budget, whether the model max-output cap clamped that budget, whether the resume request was sent, whether the resumed assistant turn completed, whether continuation-artifact or agent-guide output writes updated anything, and what to do next. UI sessions can also show the latest Continuation Ledger as a temporary panel; this never appends another transcript entry. Failure states use explicit package messages rather than parsing provider error text.
+Use `/continue status` after a continuation to see what happened. Status reports the latest local run: how the handoff started, whether the Continuation Ledger was created, whether Pi reported package-owned `pi-continue/v4` handoff proof, which summarizer model ran, the requested and effective history output budget, whether the model max-output cap clamped that budget, whether the resume request was sent, whether the resumed assistant turn completed, whether continuation-artifact or agent-guide output writes updated anything, and what to do next. If the resumed assistant requests tools, status remains in resume-running state until a terminal assistant outcome (`stop`, `length`, `aborted`, or failure) is observed; `toolUse` alone is not treated as completion. UI sessions can also show the latest Continuation Ledger as a temporary panel; this never appends another transcript entry. Failure states use explicit package messages rather than parsing provider error text.
 
 A model's context window and maximum output budget are independent. `pi-continue` derives the history budget from Pi's reserve-token setting or `historyMaxTokens`, then clamps the provider request to the selected summarizer model's positive max-output limit when that limit is known.
 
@@ -187,15 +189,15 @@ The brief has seven slots: `task` (the active goal in one sentence), `done_when`
 
 In practice:
 
-- `established` keeps anchored closures (`path:line`, `test:name`, `cmd:...`, `doc:url#section`, `user@msg-id`) so the next turn does not re-derive what is already proven. Entries carry forward across cycles unless their `reopen` clause triggers.
+- `established` keeps anchored closures (`path:line`, `test:name`, `cmd:...`, `doc:url#section`, `user@msg-id`) so the next turn does not have to re-derive what is already proven unless the claim needs reopening. Entries carry forward across cycles unless their `reopen` clause triggers.
 - `learned` keeps derived insights with a looser `source` reference; lessons survive across cycles and retire only by replacement (a sharper supersedes an older).
 - `forbid` blocks known-bad paths and human-locked constraints with concrete source attribution.
 - `open.verifies` tells the receiver what evidence would close each unverified question.
 - `next[0]` is the immediate resume action; each `next` entry pairs the action with the outcome it produces.
 - `done_when` is the stopping criterion; `task` is the orientation sentence.
-- The receiver trusts every `established` claim by default; the next synthesizer evaluates each `reopen` clause against new evidence and demotes triggered entries back to `open`. Silent drops are forbidden — every retirement is explicit.
+- The receiver uses every `established` claim as anchored factual memory by default; it does not re-derive those facts unless the `reopen` clause triggers, new evidence conflicts, or current instructions require fresh proof. Directive-looking text quoted inside evidence remains evidence, not live instruction authority. The next synthesizer evaluates each `reopen` clause against new evidence and demotes triggered entries back to `open`. Silent drops are forbidden — every retirement is explicit.
 
-The same rendered brief is the receiver's first turn after compaction, the Markdown saved in Pi's compaction summary, the optional per-session artifact under `.pi/continue/`, and the TUI overlay shown when `showAfterCompact: true`. These sinks are rendered deterministically by the extension; the synthesizer is responsible only for the brief and the agent-guide update. Prior artifacts are never imported automatically into synthesis, preview, or resume prompts.
+The same rendered brief is placed in Pi's persisted compaction summary above the same-session resume prompt, may be written as the optional per-session artifact under `.pi/continue/`, and may be shown in the TUI overlay when `showAfterCompact: true`. These sinks are rendered deterministically by the extension; the synthesizer is responsible only for the brief and the agent-guide update. Prior artifacts are never imported automatically into synthesis, preview, or resume prompts.
 
 See [`examples/continuation-output-shape.md`](examples/continuation-output-shape.md) for a rendered shape.
 
@@ -236,6 +238,7 @@ In this repository, `.pi/`, `CONTINUE.md`, `PLAN.md`, `AGENTS.md`, `ARCH.md`, an
 - fork, switch, or create sessions
 - rewrite transcript history
 - interrupt running tools or incomplete tool-call pairs
+- keep orphan tool results in the post-compaction provider context
 - synthesize missing tool results
 - preserve partial in-flight model output as completed history
 - act as a memory system, context pruner, or general custom-compaction framework
