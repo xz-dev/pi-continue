@@ -30,7 +30,7 @@ import {
 } from "./working-ui.ts";
 
 export { CONTINUATION_PROMPT } from "./continuation-prompt.ts";
-export { acceptContinuationCompactionProof, armDeferredResumeStartTimeout, clearResumeStartTimeout, failContinuationCompactionProof } from "./resume-proof.ts";
+export { acceptContinuationCompactionProof, armDeferredResumeStartTimeout, clearResumeStartTimeout, dispatchVerifiedContinuationResume, failContinuationCompactionProof, verifyContinuationCompactionProof } from "./resume-proof.ts";
 
 export type ContinuationRequestMode = "steer" | "queue";
 export type ContinuationRequestSource = ContinuationEventSource;
@@ -68,6 +68,7 @@ const COMPACTION_FAILURE = "Continuation handoff failed.";
 const RESUME_ABORTED_FAILURE = "Continuation resume was aborted.";
 const RESUME_LIMIT_FAILURE = "Continuation resume stopped before completing because a model limit was reached.";
 const RESUME_NO_ASSISTANT_FAILURE = "Continuation resume did not produce an assistant response.";
+const CHAINED_CONTINUATION_STOP_REASON = "chained-continuation";
 
 function isContinuationRequestMode(value: string): value is ContinuationRequestMode {
 	return MODE_TOKENS.has(value);
@@ -175,6 +176,17 @@ function hasActiveContinuationSettlement(runtime: ContinuationRuntimeState): boo
 	return runtime.activeEventId !== undefined || runtime.awaitingResumeEventId !== undefined;
 }
 
+function finishRunningResumeForChainedContinuation(runtime: ContinuationRuntimeState): boolean {
+	clearStaleAwaitingContinuationResume(runtime);
+	const eventId = runtime.awaitingResumeEventId;
+	if (!eventId || runtime.activeEventId !== eventId || runtime.latestEvent?.id !== eventId) return false;
+	if (runtime.latestEvent.resume.status !== "running") return false;
+	if (!settleContinuationResume(runtime, eventId, "completed", { stopReason: CHAINED_CONTINUATION_STOP_REASON })) return false;
+	clearResumeStartTimeout(runtime);
+	runtime.awaitingResumeEventId = undefined;
+	return true;
+}
+
 function compactionFailureReason(runtime: ContinuationRuntimeState, eventId: string): string {
 	const event = runtime.latestEvent;
 	if (event?.id === eventId && event.artifactStatus === "aborted" && event.failureReason) return event.failureReason;
@@ -192,6 +204,9 @@ export function startContinuationCompaction(
 		if (options.abortActiveRun && options.source === "mid-run-guard") ctx.abort();
 		notify(ctx, "A continuation handoff is already being saved.", "warning");
 		return false;
+	}
+	if (options.source === "mid-run-guard") {
+		finishRunningResumeForChainedContinuation(runtime);
 	}
 	if (hasActiveContinuationSettlement(runtime)) {
 		if (options.source === "mid-run-guard" && options.abortActiveRun) ctx.abort();

@@ -345,6 +345,51 @@ test("mid-run guard dispatches resume as follow-up after context threshold proof
 	}
 });
 
+test("mid-run guard chains when the resumed assistant tool loop fills context again", async () => {
+	const cwd = mkdtempSync(join(tmpdir(), "pi-continue-mid-run-chain-"));
+	try {
+		mkdirSync(join(cwd, ".pi", "extensions"), { recursive: true });
+		writeFileSync(join(cwd, ".pi", "settings.json"), JSON.stringify({
+			compaction: { enabled: true, reserveTokens: 20, keepRecentTokens: 10 },
+		}), "utf8");
+		writeFileSync(join(cwd, ".pi", "extensions", "pi-continue.json"), JSON.stringify({
+			showAfterCompact: false,
+		}), "utf8");
+		const pi = createFakePi(cwd);
+		const notifications = [];
+		const ctx = createCommandContext(cwd, async () => undefined);
+		ctx.model = { ...ctx.model, contextWindow: 100 };
+		ctx.ui.notify = (message, type) => {
+			notifications.push([message, type]);
+		};
+		registerContinueExtension(pi);
+		await pi.commands.get("continue").handler("steer", ctx);
+		ctx.compactOptions.onComplete({});
+		await pi.events.get("session_compact")(ownedCompactionEvent(), ctx);
+		await pi.events.get("before_agent_start")({ prompt: CONTINUATION_PROMPT }, ctx);
+		await pi.events.get("message_end")({ message: highUsageAssistantMessage() }, ctx);
+		assert.equal(ctx.workingMessages.at(-1), "pi-continue resume running");
+		await pi.events.get("context")({
+			messages: [userMessage("continue tools"), highUsageAssistantMessage(), toolResultMessage("x".repeat(160))],
+		}, ctx);
+		assert.equal(ctx.compactCount, 2);
+		assert.equal(ctx.workingMessages.at(-1), "pi-continue saving handoff");
+		assert.deepEqual(notifications, [
+			["/continue steer: saving handoff.", "info"],
+			["/continue steer: resume request sent.", "info"],
+			["automatic continuation: saving handoff (130/100 tokens, threshold 80).", "info"],
+		]);
+		ctx.compactOptions.onComplete({});
+		await pi.events.get("session_compact")(ownedCompactionEvent("continue-2"), ctx);
+		assert.deepEqual(pi.sent, [CONTINUATION_PROMPT, CONTINUATION_PROMPT]);
+		await pi.events.get("before_agent_start")({ prompt: CONTINUATION_PROMPT }, ctx);
+		await pi.events.get("message_end")({ message: assistantMessage() }, ctx);
+		assert.equal(ctx.workingMessages.at(-1), undefined);
+	} finally {
+		rmSync(cwd, { recursive: true, force: true });
+	}
+});
+
 test("mid-run guard does not compact provider-unsafe orphan tool-result suffixes", async () => {
 	const cwd = mkdtempSync(join(tmpdir(), "pi-continue-mid-run-orphan-"));
 	try {
@@ -514,6 +559,22 @@ test("session_compact native or invalid active handoff proof fails closed withou
 	assert.deepEqual(invalidPi.sent, []);
 	assert.deepEqual(invalidCtx.statusCalls, []);
 
+	const ownerlessPi = createFakePi(cwd);
+	const ownerlessCtx = createCommandContext(cwd, async () => undefined);
+	registerContinueExtension(ownerlessPi);
+	await ownerlessPi.commands.get("continue").handler("steer", ownerlessCtx);
+	ownerlessCtx.compactOptions.onComplete({});
+	await ownerlessPi.events.get("session_compact")({
+		fromExtension: true,
+		compactionEntry: {
+			id: "ownerless",
+			summary: "<continuation>\nownerless summary\n</continuation>",
+			details: { kind: "pi-continue/v4", readFiles: [], modifiedFiles: [] },
+		},
+	}, ownerlessCtx);
+	assert.deepEqual(ownerlessPi.sent, []);
+	assert.deepEqual(ownerlessCtx.statusCalls, []);
+
 	const stalePi = createFakePi(cwd);
 	const staleCtx = createCommandContext(cwd, async () => undefined);
 	registerContinueExtension(stalePi);
@@ -531,11 +592,15 @@ test("session_compact native or invalid active handoff proof fails closed withou
 	assert.deepEqual(staleCtx.statusCalls, []);
 });
 
-test("session_compact unsupported automatic ledger overlay reports the degraded path", async () => {
+test("session_compact ignores ownerless continuation details without overlay, writes, or resume", async () => {
 	const cwd = process.cwd();
 	const pi = createFakePi(cwd);
 	const notifications = [];
-	const ctx = createCommandContext(cwd, async () => undefined);
+	let customCalls = 0;
+	const ctx = createCommandContext(cwd, async () => {
+		customCalls += 1;
+		return undefined;
+	});
 	ctx.ui.notify = (message, type) => {
 		notifications.push([message, type]);
 	};
@@ -549,7 +614,8 @@ test("session_compact unsupported automatic ledger overlay reports the degraded 
 		},
 	}, ctx);
 	await new Promise((resolve) => setTimeout(resolve, 0));
-	assert.deepEqual(notifications, [["Could not open Continuation Ledger: Continuation Ledger cannot open in this Pi mode.", "error"]]);
+	assert.deepEqual(notifications, []);
+	assert.equal(customCalls, 0);
 	assert.deepEqual(pi.sent, []);
 });
 
@@ -581,12 +647,94 @@ test("stale session_compact does not replace the latest owned ledger", async () 
 			details: { kind: "pi-continue/v4", readFiles: [], modifiedFiles: [], continuationEventId: "continue-stale" },
 		},
 	}, ctx);
+	const compactCountBeforeRetry = ctx.compactCount;
+	await pi.commands.get("continue").handler("steer", ctx);
+	assert.equal(ctx.compactCount, compactCountBeforeRetry);
+	assert.deepEqual(pi.sent, [CONTINUATION_PROMPT]);
 	await pi.commands.get("continue").handler("ledger", ctx);
 	assert.match(rendered, /first ledger/);
 	assert.doesNotMatch(rendered, /stale ledger/);
+	await pi.events.get("before_agent_start")({ prompt: CONTINUATION_PROMPT }, ctx);
+	await pi.events.get("message_end")({ message: assistantMessage() }, ctx);
+	assert.equal(ctx.workingMessages.at(-1), undefined);
 });
 
-test("session_compact ledger display is transient UI and does not send a continuation prompt", async () => {
+test("native and invalid session_compact events after verified proof do not clear the pending resume", async () => {
+	const cwd = process.cwd();
+	for (const staleEvent of [
+		{
+			fromExtension: false,
+			compactionEntry: { id: "native-late", summary: "native summary", details: { readFiles: [], modifiedFiles: [] } },
+		},
+		{
+			fromExtension: true,
+			compactionEntry: { id: "invalid-late", summary: "invalid summary", details: { kind: "pi-continue/v4", readFiles: [] } },
+		},
+	]) {
+		const pi = createFakePi(cwd);
+		const ctx = createCommandContext(cwd, async () => undefined);
+		registerContinueExtension(pi);
+		await pi.commands.get("continue").handler("steer", ctx);
+		ctx.compactOptions.onComplete({});
+		await pi.events.get("session_compact")(ownedCompactionEvent(), ctx);
+		assert.deepEqual(pi.sent, [CONTINUATION_PROMPT]);
+		await pi.events.get("session_compact")(staleEvent, ctx);
+		const compactCountBeforeRetry = ctx.compactCount;
+		await pi.commands.get("continue").handler("steer", ctx);
+		assert.equal(ctx.compactCount, compactCountBeforeRetry);
+		assert.deepEqual(pi.sent, [CONTINUATION_PROMPT]);
+	}
+});
+
+test("verified proof is recorded before awaited ledger display work", async () => {
+	const cwd = process.cwd();
+	const pi = createFakePi(cwd);
+	const ctx = createCommandContext(cwd, async () => undefined);
+	let blockProjectContext = false;
+	let releaseProjectContext = () => {};
+	const projectContextStarted = new Promise((resolveStarted) => {
+		pi.exec = async (command, args, options) => {
+			assert.equal(command, "git");
+			assert.deepEqual(args, ["rev-parse", "--show-toplevel"]);
+			if (blockProjectContext) {
+				resolveStarted(undefined);
+				await new Promise((resolve) => {
+					releaseProjectContext = resolve;
+				});
+			}
+			return { stdout: options?.cwd ?? cwd, code: 0 };
+		};
+	});
+	registerContinueExtension(pi);
+	await pi.commands.get("continue").handler("steer", ctx);
+	ctx.compactOptions.onComplete({});
+	blockProjectContext = true;
+	const proofPromise = pi.events.get("session_compact")(ownedCompactionEvent(), ctx);
+	await projectContextStarted;
+	await pi.events.get("session_compact")({
+		fromExtension: true,
+		compactionEntry: { id: "invalid-late", summary: "invalid summary", details: { kind: "pi-continue/v4", readFiles: [] } },
+	}, ctx);
+	assert.deepEqual(pi.sent, []);
+	releaseProjectContext();
+	await proofPromise;
+	assert.deepEqual(pi.sent, [CONTINUATION_PROMPT]);
+});
+
+test("verified proof can arrive before the compaction completion callback", async () => {
+	const cwd = process.cwd();
+	const pi = createFakePi(cwd);
+	const ctx = createCommandContext(cwd, async () => undefined);
+	registerContinueExtension(pi);
+	await pi.commands.get("continue").handler("steer", ctx);
+	await pi.events.get("session_compact")(ownedCompactionEvent(), ctx);
+	assert.deepEqual(pi.sent, []);
+	ctx.compactOptions.onComplete({});
+	assert.deepEqual(pi.sent, [CONTINUATION_PROMPT]);
+	assert.deepEqual(pi.sentOptions, [{ deliverAs: "followUp" }]);
+});
+
+test("session_compact ledger display is transient UI and sends only the same-session resume prompt", async () => {
 	const cwd = process.cwd();
 	const pi = createFakePi(cwd);
 	let customCalls = 0;
@@ -596,17 +744,12 @@ test("session_compact ledger display is transient UI and does not send a continu
 		return undefined;
 	});
 	registerContinueExtension(pi);
-	await pi.events.get("session_compact")({
-		fromExtension: true,
-		compactionEntry: {
-			id: "compact-1",
-			summary: "<continuation>\nledger body\n</continuation>",
-			details: { kind: "pi-continue/v4", readFiles: [], modifiedFiles: [] },
-		},
-	}, ctx);
+	await pi.commands.get("continue").handler("steer", ctx);
+	ctx.compactOptions.onComplete({});
+	await pi.events.get("session_compact")(ownedCompactionEvent(), ctx);
 	await new Promise((resolve) => setTimeout(resolve, 0));
 	assert.equal(customCalls, 1);
-	assert.deepEqual(pi.sent, []);
+	assert.deepEqual(pi.sent, [CONTINUATION_PROMPT]);
 });
 
 test("session_before_compact and session_compact write default artifact and configured agent guide only after a successful compaction", async () => {
@@ -625,6 +768,7 @@ test("session_before_compact and session_compact write default artifact and conf
 			isSplitTurn: true,
 			turnPrefixMessages: [{ role: "user", content: [{ type: "text", text: "split turn prefix" }], timestamp: 0 }],
 		}), ctx);
+		assert.equal(result.compaction.details.continuationEventId, "continue-1");
 		assert.equal(existsSync(join(cwd, "CONTINUE.md")), false);
 		assert.equal(existsSync(continuationArtifactPath(cwd)), false);
 		assert.equal(existsSync(join(cwd, "AGENTS.md")), false);
@@ -782,6 +926,113 @@ test("session_before_compact clamps history output budget to model max tokens", 
 	}
 });
 
+test("session_before_compact cancels instead of returning ownerless details when ownership is lost during synthesis", async () => {
+	const cwd = mkdtempSync(join(tmpdir(), "pi-continue-owner-lost-"));
+	const faux = registerFauxProvider();
+	try {
+		let releaseResponse = () => {};
+		const providerStarted = new Promise((resolveStarted) => {
+			faux.setResponses([async () => {
+				resolveStarted(undefined);
+				await new Promise((resolve) => {
+					releaseResponse = resolve;
+				});
+				return fauxAssistantMessage(continuationArtifactJson());
+			}]);
+		});
+		const pi = createFakePi(cwd);
+		const ctx = createCommandContext(cwd, async () => undefined);
+		ctx.model = faux.models[0];
+		ctx.modelRegistry.getApiKeyAndHeaders = async () => ({ ok: true, apiKey: "test", headers: {} });
+		registerContinueExtension(pi);
+		await pi.commands.get("continue").handler("steer", ctx);
+		const compactionPromise = pi.events.get("session_before_compact")(compactionEvent(), ctx);
+		await providerStarted;
+		await pi.events.get("session_shutdown")({ reason: "reload" }, ctx);
+		releaseResponse();
+		const result = await compactionPromise;
+		assert.deepEqual(result, { cancel: true });
+		assertNoFailedSynthesisSideEffects(cwd, pi);
+	} finally {
+		faux.unregister();
+		rmSync(cwd, { recursive: true, force: true });
+	}
+});
+
+test("session_before_compact does not attribute an old synthesis to a newer continuation owner", async () => {
+	const cwd = mkdtempSync(join(tmpdir(), "pi-continue-owner-replaced-"));
+	const faux = registerFauxProvider();
+	try {
+		let releaseResponse = () => {};
+		const providerStarted = new Promise((resolveStarted) => {
+			faux.setResponses([async () => {
+				resolveStarted(undefined);
+				await new Promise((resolve) => {
+					releaseResponse = resolve;
+				});
+				return fauxAssistantMessage(continuationArtifactJson());
+			}]);
+		});
+		const pi = createFakePi(cwd);
+		const ctx = createCommandContext(cwd, async () => undefined);
+		ctx.model = faux.models[0];
+		ctx.modelRegistry.getApiKeyAndHeaders = async () => ({ ok: true, apiKey: "test", headers: {} });
+		registerContinueExtension(pi);
+		await pi.commands.get("continue").handler("steer", ctx);
+		const compactionPromise = pi.events.get("session_before_compact")(compactionEvent(), ctx);
+		await providerStarted;
+		await pi.events.get("session_shutdown")({ reason: "reload" }, ctx);
+		await pi.commands.get("continue").handler("steer", ctx);
+		assert.equal(ctx.compactCount, 2);
+		releaseResponse();
+		const result = await compactionPromise;
+		assert.deepEqual(result, { cancel: true });
+		assertNoFailedSynthesisSideEffects(cwd, pi);
+		const compactCountBeforeRetry = ctx.compactCount;
+		await pi.commands.get("continue").handler("steer", ctx);
+		assert.equal(ctx.compactCount, compactCountBeforeRetry);
+	} finally {
+		faux.unregister();
+		rmSync(cwd, { recursive: true, force: true });
+	}
+});
+
+test("late compaction for abandoned owner does not fail a newer active handoff", async () => {
+	const cwd = mkdtempSync(join(tmpdir(), "pi-continue-late-abandoned-owner-"));
+	const faux = registerFauxProvider();
+	try {
+		writeAgentGuideSyncConfig(cwd);
+		faux.setResponses([fauxAssistantMessage(continuationArtifactJson("# Agent Guide\n\nOld abandoned guide.\n"))]);
+		const pi = createFakePi(cwd);
+		const ctx = createCommandContext(cwd, async () => undefined);
+		ctx.model = faux.models[0];
+		ctx.modelRegistry.getApiKeyAndHeaders = async () => ({ ok: true, apiKey: "test", headers: {} });
+		registerContinueExtension(pi);
+		await pi.commands.get("continue").handler("steer", ctx);
+		const oldResult = await pi.events.get("session_before_compact")(compactionEvent(), ctx);
+		assert.equal(oldResult.compaction.details.continuationEventId, "continue-1");
+		await pi.events.get("session_shutdown")({ reason: "reload" }, ctx);
+		await pi.commands.get("continue").handler("steer", ctx);
+		ctx.compactOptions.onComplete({});
+		await pi.events.get("session_compact")({
+			fromExtension: true,
+			compactionEntry: {
+				id: "old-compact",
+				summary: oldResult.compaction.summary,
+				details: oldResult.compaction.details,
+			},
+		}, ctx);
+		assert.deepEqual(pi.sent, []);
+		assert.equal(existsSync(continuationArtifactPath(cwd)), false);
+		assert.equal(existsSync(join(cwd, "AGENTS.md")), false);
+		await pi.events.get("session_compact")(ownedCompactionEvent("continue-2"), ctx);
+		assert.deepEqual(pi.sent, [CONTINUATION_PROMPT]);
+	} finally {
+		faux.unregister();
+		rmSync(cwd, { recursive: true, force: true });
+	}
+});
+
 test("session_before_compact fails closed when ledger synthesis cannot authenticate", async () => {
 	const cwd = mkdtempSync(join(tmpdir(), "pi-continue-hard-fail-"));
 	try {
@@ -819,6 +1070,23 @@ test("session_before_compact fails closed when history artifacts are malformed",
 		assertNoFailedSynthesisSideEffects(cwd, pi);
 	} finally {
 		faux.unregister();
+		rmSync(cwd, { recursive: true, force: true });
+	}
+});
+
+test("session_before_compact cancels active package-owned compaction if config becomes disabled", async () => {
+	const cwd = mkdtempSync(join(tmpdir(), "pi-continue-disabled-active-"));
+	try {
+		const pi = createFakePi(cwd);
+		const ctx = createCommandContext(cwd, async () => undefined);
+		registerContinueExtension(pi);
+		await pi.commands.get("continue").handler("steer", ctx);
+		mkdirSync(join(cwd, ".pi", "extensions"), { recursive: true });
+		writeFileSync(join(cwd, ".pi", "extensions", "pi-continue.json"), JSON.stringify({ enabled: false }), "utf8");
+		const result = await pi.events.get("session_before_compact")(compactionEvent(), ctx);
+		assert.deepEqual(result, { cancel: true });
+		assertNoFailedSynthesisSideEffects(cwd, pi);
+	} finally {
 		rmSync(cwd, { recursive: true, force: true });
 	}
 });

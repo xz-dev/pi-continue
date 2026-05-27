@@ -220,7 +220,7 @@ export interface PendingOutputWrite {
 	content: string;
 	label: string;
 	target: ContinuationOutputWriteTarget;
-	eventId: string | undefined;
+	eventId: string;
 }
 
 export interface PiCompactionSettings {

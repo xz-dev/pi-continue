@@ -194,7 +194,7 @@ export function markContinuationCompactionComplete(ctx: ExtensionContext, runtim
 	return true;
 }
 
-export function acceptContinuationCompactionProof(ctx: ExtensionContext, runtime: ResumeProofRuntimeState, eventId: string, compactionEntryId: string): boolean {
+export function verifyContinuationCompactionProof(ctx: ExtensionContext, runtime: ResumeProofRuntimeState, eventId: string, compactionEntryId: string): boolean {
 	if (!markContinuationCompactionProofVerified(runtime, eventId, compactionEntryId)) return false;
 	const pending = runtime.pendingResumeDispatch;
 	if (!pending || pending.eventId !== eventId) {
@@ -203,7 +203,16 @@ export function acceptContinuationCompactionProof(ctx: ExtensionContext, runtime
 	}
 	pending.proofVerified = true;
 	clearCompactionProofTimeout(runtime);
-	dispatchIfReady(ctx, runtime, eventId);
+	return true;
+}
+
+export function dispatchVerifiedContinuationResume(ctx: ExtensionContext, runtime: ResumeProofRuntimeState, eventId: string): boolean {
+	return dispatchIfReady(ctx, runtime, eventId);
+}
+
+export function acceptContinuationCompactionProof(ctx: ExtensionContext, runtime: ResumeProofRuntimeState, eventId: string, compactionEntryId: string): boolean {
+	if (!verifyContinuationCompactionProof(ctx, runtime, eventId, compactionEntryId)) return false;
+	dispatchVerifiedContinuationResume(ctx, runtime, eventId);
 	return true;
 }
 

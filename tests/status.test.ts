@@ -135,7 +135,7 @@ test("renderStatus summarizes a completed latest continuation calmly", () => {
 	}
 });
 
-test("renderStatus tells running resumes to wait for a terminal assistant outcome", () => {
+test("renderStatus tells running resumes to wait for a terminal outcome or continuation checkpoint", () => {
 	const root = mkdtempSync(join(tmpdir(), "pi-continuation-status-"));
 	try {
 		const latestEvent = baseEvent({
@@ -157,7 +157,7 @@ test("renderStatus tells running resumes to wait for a terminal assistant outcom
 		);
 		assert.match(rendered, /Current state: resume is still settling/);
 		assert.match(rendered, /Resume outcome: resumed assistant turn is running/);
-		assert.match(rendered, /Action: Wait for the resumed assistant turn to reach a terminal assistant outcome\./);
+		assert.match(rendered, /Action: Wait for the resumed assistant turn to reach a terminal assistant outcome or the next automatic continuation checkpoint\./);
 		assert.doesNotMatch(rendered, /finish its first assistant response/);
 	} finally {
 		rmSync(root, { recursive: true, force: true });

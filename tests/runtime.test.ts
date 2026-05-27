@@ -180,6 +180,49 @@ test("resume proof stays running while the resumed assistant requests tools", ()
 	assert.equal(runtime.awaitingResumeEventId, "continue-1");
 });
 
+test("mid-run guard can chain after a resumed assistant tool-use turn", () => {
+	const owner = createContext(true);
+	const ctx = bindContext(owner);
+	const runtime = createContinuationRuntimeState();
+	const continuations = [];
+	const first = startContinuationCompaction(ctx, runtime, {
+		source: "command-steer",
+		instructions: undefined,
+		trigger: undefined,
+		abortActiveRun: false,
+		continueAfterComplete: true,
+		sendContinuation: (prompt) => continuations.push(prompt),
+	});
+	assert.equal(first, true);
+	completeAndVerify(owner, ctx, runtime);
+	assert.equal(markAwaitingContinuationResumeStarted(runtime), "continue-1");
+	const toolUseSettlement = settleAwaitingContinuationResumeFromAssistant(runtime, {
+		role: "assistant",
+		provider: "openai",
+		model: "gpt-test",
+		content: [{ type: "toolCall", id: "call-a", name: "read", arguments: { path: "/repo/a.ts" } }],
+		usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+		stopReason: "toolUse",
+		timestamp: 0,
+	});
+	assert.equal(toolUseSettlement, undefined);
+	const guard = startContinuationCompaction(ctx, runtime, {
+		source: "mid-run-guard",
+		instructions: undefined,
+		trigger,
+		abortActiveRun: true,
+		continueAfterComplete: true,
+		sendContinuation: (prompt) => continuations.push(prompt),
+	});
+	assert.equal(guard, true);
+	assert.equal(owner.aborts, 1);
+	assert.equal(runtime.latestEvent?.id, "continue-2");
+	assert.equal(runtime.latestEvent?.status, "running");
+	assert.equal(runtime.latestEvent?.resume.status, "not-requested");
+	assert.equal(runtime.awaitingResumeEventId, undefined);
+	assert.equal(continuations.length, 1);
+});
+
 test("mid-run guard stops over-limit request while handoff is already saving", () => {
 	const owner = createContext(true);
 	const ctx = bindContext(owner);

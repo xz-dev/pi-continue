@@ -234,19 +234,19 @@ export function buildContinuationDetails(
 	agentGuideWriteStatus: AgentGuideWriteStatus | undefined,
 	agentGuideChangeReason: string | undefined,
 	synthesis: ContinuationSynthesisTelemetry | undefined,
-	continuationEventId: string | undefined,
+	continuationEventId: string,
 ): ContinuationCompactionDetails {
 	const { readFiles, modifiedFiles } = snapshotFileOperations(fileOps);
 	const details: ContinuationCompactionDetails = {
 		kind: CONTINUATION_DETAILS_KIND_V4,
 		readFiles,
 		modifiedFiles,
+		continuationEventId,
 	};
 	if (continuationArtifactWriteId) details.continuationArtifactWriteId = continuationArtifactWriteId;
 	if (agentGuideWriteId) details.agentGuideWriteId = agentGuideWriteId;
 	if (agentGuideWriteStatus) details.agentGuideWriteStatus = agentGuideWriteStatus;
 	if (agentGuideChangeReason) details.agentGuideChangeReason = agentGuideChangeReason;
-	if (continuationEventId) details.continuationEventId = continuationEventId;
 	if (synthesis) details.synthesis = synthesis;
 	return details;
 }

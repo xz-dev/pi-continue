@@ -14,11 +14,11 @@ import {
 	abandonActiveContinuationEvent,
 	failPendingOutputWritesForEvent,
 	getActiveContinuationEventId,
-	isLatestContinuationEvent,
-	markActiveContinuationArtifact,
-	planActiveOutputWrites,
-	recordActiveSynthesisFailure,
-	recordActiveSynthesisTelemetry,
+	isActiveRunningContinuationEvent,
+	markContinuationArtifact,
+	planContinuationOutputWrites,
+	recordContinuationSynthesisFailure,
+	recordContinuationSynthesisTelemetry,
 	recordOutputWriteResult,
 } from "./src/continuation-event.ts";
 import { buildContinuationDetails, buildContinuationSynthesisTelemetry, parseContinuationDetails } from "./src/details.ts";
@@ -33,20 +33,20 @@ import { isContinuationPromptUserMessage } from "./src/prompt-dispatch.ts";
 import { showContinuePalette } from "./src/palette.ts";
 import {
 	CONTINUATION_PROMPT,
-	acceptContinuationCompactionProof,
 	armDeferredResumeStartTimeout,
 	clearResumeStartTimeout,
 	createContinuationRuntimeState,
+	dispatchVerifiedContinuationResume,
 	failContinuationCompactionProof,
 	failRunningAwaitingContinuationResume,
 	markAwaitingContinuationResumeStarted,
 	settleAwaitingContinuationResumeFromAssistant,
 	type ContinuationRuntimeState,
+	verifyContinuationCompactionProof,
 } from "./src/runtime.ts";
 import {
 	INVALID_COMPACTION_PROOF_FAILURE,
 	NATIVE_COMPACTION_FALLBACK_FAILURE,
-	STALE_COMPACTION_PROOF_FAILURE,
 	clearPendingResumeDispatch,
 } from "./src/resume-proof.ts";
 import type { AgentGuideWriteStatus, ContinuationSynthesisFailure, ContinuationSynthesisTelemetry, ParsedHistoryArtifacts, PendingOutputWrite, WriteMode } from "./src/types.ts";
@@ -192,11 +192,18 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_before_compact", async (event, ctx) => {
 		const sessionId = ctx.sessionManager.getSessionId();
+		const ownerEventId = getActiveContinuationEventId(runtime);
+		if (ownerEventId === undefined) return undefined;
+		const ownerStillActive = () => isActiveRunningContinuationEvent(runtime, ownerEventId);
+		const ownerLostResult = () => ownerStillActive() ? undefined : { cancel: true as const };
 		const projectContext = await resolveProjectContext(pi, ctx.cwd, sessionId);
+		const ownerLostAfterProjectContext = ownerLostResult();
+		if (ownerLostAfterProjectContext) return ownerLostAfterProjectContext;
 		const config = loadContinuationConfig(projectContext.projectRoot);
-		if (!config.enabled) return undefined;
-		if (getActiveContinuationEventId(runtime) === undefined) return undefined;
+		if (!config.enabled) return { cancel: true };
 		const resolvedProjectContext = await resolveProjectContext(pi, ctx.cwd, sessionId, config.agentGuidePath);
+		const ownerLostAfterResolvedContext = ownerLostResult();
+		if (ownerLostAfterResolvedContext) return ownerLostAfterResolvedContext;
 		const normalizedPreparation = normalizeCompactionPreparation(event.preparation, event.branchEntries);
 		if (normalizedPreparation.repairedProviderUnsafeSuffix && ctx.hasUI) {
 			ctx.ui.notify("pi-continue summarized a provider-unsafe kept suffix before resuming.", "warning");
@@ -212,6 +219,8 @@ export default function (pi: ExtensionAPI) {
 		);
 		const fileOpsSnapshot = snapshotFileOperations(preparation.fileOps);
 		const internals = await loadPiInternals();
+		const ownerLostAfterInternals = ownerLostResult();
+		if (ownerLostAfterInternals) return ownerLostAfterInternals;
 		const messagesToSummarize = preparation.messagesToSummarize;
 		const turnPrefixMessages = preparation.turnPrefixMessages;
 		const turnPrefixTranscript = preparation.isSplitTurn && turnPrefixMessages.length > 0
@@ -239,8 +248,10 @@ export default function (pi: ExtensionAPI) {
 		let synthesis: ContinuationSynthesisTelemetry | undefined;
 		try {
 			const historyOutput = await runPromptPass(pi, ctx, config, historyPrompt, preparation.settings.reserveTokens, event.signal);
+			const ownerLostAfterSynthesis = ownerLostResult();
+			if (ownerLostAfterSynthesis) return ownerLostAfterSynthesis;
 			synthesis = buildContinuationSynthesisTelemetry(historyOutput);
-			recordActiveSynthesisTelemetry(runtime, synthesis);
+			recordContinuationSynthesisTelemetry(runtime, ownerEventId, synthesis);
 			const parsedHistoryArtifacts = parseHistoryArtifacts(historyOutput.text);
 			if (!parsedHistoryArtifacts.ok) {
 				throw new ArtifactParseError({
@@ -252,13 +263,14 @@ export default function (pi: ExtensionAPI) {
 				});
 			}
 			historyArtifacts = parsedHistoryArtifacts.artifacts;
-			markActiveContinuationArtifact(runtime, "modeled", undefined);
+			markContinuationArtifact(runtime, ownerEventId, "modeled", undefined);
 		} catch (error) {
-			recordActiveSynthesisFailure(runtime, normalizeSynthesisFailure(error));
-			markActiveContinuationArtifact(runtime, "aborted", SYNTHESIS_ABORT_MESSAGE);
+			if (ownerStillActive()) {
+				recordContinuationSynthesisFailure(runtime, ownerEventId, normalizeSynthesisFailure(error));
+				markContinuationArtifact(runtime, ownerEventId, "aborted", SYNTHESIS_ABORT_MESSAGE);
+			}
 			return { cancel: true };
 		}
-		const activeEventId = getActiveContinuationEventId(runtime);
 		const continuationArtifactWriteId = config.continuationArtifactMode === "always" ? randomUUID() : undefined;
 		if (continuationArtifactWriteId) {
 			pendingOutputWrites.set(continuationArtifactWriteId, {
@@ -266,7 +278,7 @@ export default function (pi: ExtensionAPI) {
 				content: historyArtifacts.briefMarkdown,
 				label: "continuation artifact",
 				target: "continuation-artifact",
-				eventId: activeEventId,
+				eventId: ownerEventId,
 			});
 		}
 		const agentGuideWriteStatus = decideAgentGuideWriteStatus(config.agentGuideSyncMode, historyArtifacts.agentGuideMd);
@@ -277,11 +289,12 @@ export default function (pi: ExtensionAPI) {
 				content: historyArtifacts.agentGuideMd,
 				label: "agent guide",
 				target: "agent-guide",
-				eventId: activeEventId,
+				eventId: ownerEventId,
 			});
 		}
-		planActiveOutputWrites(
+		planContinuationOutputWrites(
 			runtime,
+			ownerEventId,
 			{
 				continuationArtifact: continuationArtifactWriteId ? "pending" : "off",
 				agentGuide: agentGuideWriteStatus === "replacement-pending"
@@ -291,7 +304,6 @@ export default function (pi: ExtensionAPI) {
 						: "off",
 			},
 		);
-		const continuationEventId = getActiveContinuationEventId(runtime);
 		const details = buildContinuationDetails(
 			preparation.fileOps,
 			continuationArtifactWriteId,
@@ -299,7 +311,7 @@ export default function (pi: ExtensionAPI) {
 			agentGuideWriteStatus,
 			historyArtifacts.agentGuideChangeReason,
 			synthesis,
-			continuationEventId,
+			ownerEventId,
 		);
 		return {
 			compaction: {
@@ -317,23 +329,36 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_compact", async (event, ctx) => {
 		const activeEventId = getActiveContinuationEventId(runtime);
+		const activeCompactionProofVerified = activeEventId !== undefined
+			&& runtime.latestEvent?.id === activeEventId
+			&& runtime.latestEvent.compactionProof.status === "verified";
 		if (activeEventId && !event.fromExtension) {
-			failContinuationCompactionProof(ctx, runtime, activeEventId, NATIVE_COMPACTION_FALLBACK_FAILURE);
+			if (!activeCompactionProofVerified) {
+				failContinuationCompactionProof(ctx, runtime, activeEventId, NATIVE_COMPACTION_FALLBACK_FAILURE);
+			}
 			return;
 		}
 		if (!event.fromExtension) return;
 		const details = parseContinuationDetails(event.compactionEntry.details);
 		if (activeEventId && !details) {
-			failContinuationCompactionProof(ctx, runtime, activeEventId, INVALID_COMPACTION_PROOF_FAILURE);
+			if (!activeCompactionProofVerified) {
+				failContinuationCompactionProof(ctx, runtime, activeEventId, INVALID_COMPACTION_PROOF_FAILURE);
+			}
 			return;
 		}
 		if (!details) return;
-		if (activeEventId && details.continuationEventId !== activeEventId) {
-			failContinuationCompactionProof(ctx, runtime, activeEventId, STALE_COMPACTION_PROOF_FAILURE);
+		if (!details.continuationEventId) {
+			if (activeEventId && !activeCompactionProofVerified) {
+				failContinuationCompactionProof(ctx, runtime, activeEventId, INVALID_COMPACTION_PROOF_FAILURE);
+			}
 			return;
 		}
+		if (activeEventId && details.continuationEventId !== activeEventId) return;
+		const acceptedActiveProof = activeEventId !== undefined && details.continuationEventId === activeEventId
+			? verifyContinuationCompactionProof(ctx, runtime, activeEventId, event.compactionEntry.id)
+			: false;
 		const ledgerOwnerId = details.continuationEventId;
-		const canUpdateLedger = ledgerOwnerId ? isLatestContinuationEvent(runtime, ledgerOwnerId) : getActiveContinuationEventId(runtime) === undefined;
+		const canUpdateLedger = isActiveRunningContinuationEvent(runtime, ledgerOwnerId);
 		const ledger = canUpdateLedger
 			? buildLedgerSnapshot(event.compactionEntry.summary, ledgerOwnerId, event.compactionEntry.id)
 			: undefined;
@@ -352,7 +377,7 @@ export default function (pi: ExtensionAPI) {
 			const pending = pendingOutputWrites.get(writeId);
 			pendingOutputWrites.delete(writeId);
 			if (!pending) continue;
-			if (pending.eventId && !isLatestContinuationEvent(runtime, pending.eventId)) continue;
+			if (!isActiveRunningContinuationEvent(runtime, pending.eventId)) continue;
 			try {
 				const result = await writeNormalizedMarkdownFile(pending.path, pending.content);
 				recordOutputWriteResult(runtime, pending.eventId, pending.target, result, undefined);
@@ -372,7 +397,9 @@ export default function (pi: ExtensionAPI) {
 		if (ctx.hasUI && details.agentGuideWriteStatus === "no-replacement" && details.agentGuideChangeReason) {
 			ctx.ui.notify("Agent guide unchanged; no full replacement was produced.", "info");
 		}
-		if (activeEventId) acceptContinuationCompactionProof(ctx, runtime, activeEventId, event.compactionEntry.id);
+		if (acceptedActiveProof && activeEventId) {
+			dispatchVerifiedContinuationResume(ctx, runtime, activeEventId);
+		}
 	});
 
 	pi.on("session_shutdown", async (_event, ctx) => {

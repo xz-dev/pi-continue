@@ -34,7 +34,7 @@ test("README stays a front-facing product and operator guide", () => {
 	assert.match(readme, /Per-session artifacts/);
 	assert.match(readme, /\.pi\/continue\/.*encoded-session-id/);
 	assert.match(readme, /never loads `CONTINUE\.md` or `\.pi\/continue\/\*\.md` as automatic prompt memory/);
-	assert.match(readme, /requests tools.*resume-running state.*terminal assistant outcome|resume-running state.*terminal assistant outcome.*toolUse/is);
+	assert.match(readme, /requests tools.*resume-running state.*tool-use loop|resume-running state.*chained handoff.*toolUse/is);
 	assert.match(readme, /persisted compaction summary above the same-session resume prompt/i);
 	assert.doesNotMatch(readme, /receiver's first turn/i);
 	assert.match(readme, /pi install npm:pi-continue/);
@@ -63,21 +63,17 @@ test("CHANGELOG documents the current package version", () => {
 	assert.match(changelog, /per-session continuation artifact/i);
 });
 
-test("CHANGELOG documents the 0.8.1 patch contract", () => {
+test("CHANGELOG documents the 0.8.2 patch contract", () => {
 	const changelog = readText("CHANGELOG.md");
 	assert.match(changelog, /## Unreleased/);
-	assert.match(changelog, /## 0\.8\.1 - 2026-05-25/);
-	assert.match(changelog, /prompt authority model/i);
-	assert.match(changelog, /authoritative factual evidence/i);
-	assert.match(changelog, /dynamic handoff-prompt inputs/i);
-	assert.match(changelog, /prior-summary, guide, and modeled brief text/i);
-	assert.match(changelog, /wrapper tags/i);
-	assert.match(changelog, /provider-unsafe kept suffixes/i);
-	assert.match(changelog, /matching tool-call IDs/i);
-	assert.match(changelog, /toolUse/i);
-	assert.match(changelog, /terminal assistant outcome/i);
-	assert.match(changelog, /TUI status surfaces/i);
-	assert.match(changelog, /shared footer status row/i);
+	assert.match(changelog, /## 0\.8\.2 - 2026-05-27/);
+	assert.match(changelog, /v0\.8\.2 source tag/i);
+	assert.match(changelog, /event-scoped/i);
+	assert.match(changelog, /captured continuation owner/i);
+	assert.match(changelog, /owner loss during synthesis/i);
+	assert.match(changelog, /newer active handoff/i);
+	assert.match(changelog, /chained handoff/i);
+	assert.match(changelog, /resume-running state/i);
 });
 
 test("ignored local Markdown guides stay out of the package corpus", () => {
@@ -122,7 +118,7 @@ test("npm dry-run package contents align with the public contract", () => {
 test("package metadata and package contents align with the public contract", () => {
 	const packageJson = JSON.parse(readText("package.json"));
 	assert.equal(packageJson.name, "pi-continue");
-	assert.equal(packageJson.version, "0.8.1");
+	assert.equal(packageJson.version, "0.8.2");
 	assert.match(packageJson.description, /Mid-turn continuation/);
 	assert.match(packageJson.description, /long Pi tool runs/);
 	assert.match(packageJson.description, /context overflow/);
@@ -155,6 +151,6 @@ test("package metadata and package contents align with the public contract", () 
 	assert.equal(packageJson.peerDependencies["@earendil-works/pi-ai"], ">=0.74.0");
 	assert.equal(packageJson.peerDependencies["@earendil-works/pi-coding-agent"], ">=0.74.0");
 	assert.deepEqual(packageJson.pi.extensions, ["./extensions/continue/index.ts"]);
-	assert.equal(packageJson.pi.image, "https://raw.githubusercontent.com/Tiziano-AI/pi-continue/v0.8.1/assets/gallery/pi-continue-gallery.webp");
+	assert.equal(packageJson.pi.image, "https://raw.githubusercontent.com/Tiziano-AI/pi-continue/v0.8.2/assets/gallery/pi-continue-gallery.webp");
 	assert.equal(existsSync("assets/gallery/pi-continue-gallery.webp"), true);
 });

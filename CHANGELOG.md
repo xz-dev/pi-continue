@@ -4,6 +4,17 @@ All notable changes to `pi-continue` are documented here.
 
 ## Unreleased
 
+## 0.8.2 - 2026-05-27
+
+### Changed
+
+- Updated the package gallery image URL to the v0.8.2 source tag.
+
+### Fixed
+
+- Made package-owned continuation compactions event-scoped: handoff details and output writes now carry the captured continuation owner, owner loss during synthesis cancels before Pi saves an ownerless handoff, and late unrelated compaction events no longer clear a verified pending resume or poison a newer active handoff.
+- Allowed automatic continuation to use a chained handoff after a resumed assistant reaches another completed tool-result checkpoint over the threshold, so a live tool loop no longer stays blocked behind the prior resume-running state.
+
 ## 0.8.1 - 2026-05-25
 
 ### Changed

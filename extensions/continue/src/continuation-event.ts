@@ -119,29 +119,54 @@ export function getActiveContinuationEventId(store: ContinuationEventStore): str
 	return store.activeEventId;
 }
 
+/** Record whether the owned continuation produced a modeled ledger or aborted before a usable artifact. */
+export function markContinuationArtifact(
+	store: ContinuationEventStore,
+	eventId: string,
+	status: ContinuationArtifactStatus,
+	reason: string | undefined,
+): boolean {
+	const event = latestMatching(store, eventId);
+	if (!event || store.activeEventId !== eventId || event.status !== "running") return false;
+	replaceLatest(store, {
+		...event,
+		artifactStatus: status,
+		failureReason: reason ?? event.failureReason,
+	});
+	return true;
+}
+
 /** Record whether the active continuation produced a modeled ledger or aborted before a usable artifact. */
 export function markActiveContinuationArtifact(
 	store: ContinuationEventStore,
 	status: ContinuationArtifactStatus,
 	reason: string | undefined,
 ): void {
-	const event = activeLatest(store);
-	if (!event) return;
-	replaceLatest(store, {
-		...event,
-		artifactStatus: status,
-		failureReason: reason ?? event.failureReason,
-	});
+	const eventId = store.activeEventId;
+	if (!eventId) return;
+	markContinuationArtifact(store, eventId, status, reason);
 }
 
 /** Record a bounded synthesis failure classifier without storing provider output. */
-export function recordActiveSynthesisFailure(store: ContinuationEventStore, failure: ContinuationSynthesisFailure): void {
-	const event = activeLatest(store);
-	if (!event) return;
+export function recordContinuationSynthesisFailure(
+	store: ContinuationEventStore,
+	eventId: string,
+	failure: ContinuationSynthesisFailure,
+): boolean {
+	const event = latestMatching(store, eventId);
+	if (!event || store.activeEventId !== eventId || event.status !== "running") return false;
 	replaceLatest(store, {
 		...event,
 		synthesisFailure: failure,
 	});
+	return true;
+}
+
+/** Record a bounded synthesis failure classifier for the active continuation. */
+export function recordActiveSynthesisFailure(store: ContinuationEventStore, failure: ContinuationSynthesisFailure): void {
+	const eventId = store.activeEventId;
+	if (!eventId) return;
+	recordContinuationSynthesisFailure(store, eventId, failure);
 }
 
 /** Mark that Pi saved and reported the matching package-owned compaction entry. */
@@ -174,31 +199,55 @@ export function markContinuationCompactionProofFailed(store: ContinuationEventSt
 	return true;
 }
 
+/** Record summarizer telemetry for an owned continuation compaction. */
+export function recordContinuationSynthesisTelemetry(
+	store: ContinuationEventStore,
+	eventId: string,
+	synthesis: ContinuationSynthesisTelemetry | undefined,
+): boolean {
+	if (!synthesis) return false;
+	const event = latestMatching(store, eventId);
+	if (!event || store.activeEventId !== eventId || event.status !== "running") return false;
+	replaceLatest(store, {
+		...event,
+		synthesis,
+	});
+	return true;
+}
+
 /** Record summarizer telemetry for the active continuation compaction. */
 export function recordActiveSynthesisTelemetry(
 	store: ContinuationEventStore,
 	synthesis: ContinuationSynthesisTelemetry | undefined,
 ): void {
-	if (!synthesis) return;
-	const event = activeLatest(store);
-	if (!event) return;
-	replaceLatest(store, {
-		...event,
-		synthesis,
-	});
+	const eventId = store.activeEventId;
+	if (!eventId) return;
+	recordContinuationSynthesisTelemetry(store, eventId, synthesis);
 }
 
 /** Record planned output-write outcomes before Pi saves the compaction entry. */
-export function planActiveOutputWrites(
+export function planContinuationOutputWrites(
 	store: ContinuationEventStore,
+	eventId: string,
 	outputWrites: ContinuationOutputWriteStatus,
-): void {
-	const event = activeLatest(store);
-	if (!event) return;
+): boolean {
+	const event = latestMatching(store, eventId);
+	if (!event || store.activeEventId !== eventId || event.status !== "running") return false;
 	replaceLatest(store, {
 		...event,
 		outputWrites,
 	});
+	return true;
+}
+
+/** Record planned output-write outcomes before Pi saves the compaction entry for the active continuation. */
+export function planActiveOutputWrites(
+	store: ContinuationEventStore,
+	outputWrites: ContinuationOutputWriteStatus,
+): void {
+	const eventId = store.activeEventId;
+	if (!eventId) return;
+	planContinuationOutputWrites(store, eventId, outputWrites);
 }
 
 function updateOutputTarget(
@@ -213,7 +262,7 @@ function updateOutputTarget(
 /** Apply a post-compaction output-write result only to the matching latest event id. */
 export function recordOutputWriteResult(
 	store: ContinuationEventStore,
-	eventId: string | undefined,
+	eventId: string,
 	target: ContinuationOutputWriteTarget,
 	status: ContinuationWriteStatus,
 	reason: string | undefined,
