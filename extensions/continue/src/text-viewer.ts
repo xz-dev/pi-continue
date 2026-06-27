@@ -1,4 +1,5 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { keyRepeat } from "./key-input.ts";
 import { padVisible, stripAnsi, truncateAnsi, visibleWidth } from "./tui-text.ts";
 
 const MIN_WIDTH = 48;
@@ -6,14 +7,6 @@ const TARGET_WIDTH = 92;
 const MAX_HEIGHT = 24;
 const CONTROL_CHARACTER_PATTERN = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g;
 const ESCAPE_CHARACTER_PATTERN = /\u001b/g;
-const KITTY_UP_PATTERN = /^\u001b\[1;1(?::[12])?A/;
-const KITTY_DOWN_PATTERN = /^\u001b\[1;1(?::[12])?B/;
-const KITTY_HOME_PATTERN = /^\u001b\[1;1(?::[12])?H/;
-const KITTY_END_PATTERN = /^\u001b\[1;1(?::[12])?F/;
-const KITTY_PAGE_UP_PATTERN = /^\u001b\[5(?:;1)?(?::[12])?~/;
-const KITTY_PAGE_DOWN_PATTERN = /^\u001b\[6(?:;1)?(?::[12])?~/;
-const KITTY_HOME_FUNCTION_PATTERN = /^\u001b\[7(?:;1)?(?::[12])?~/;
-const KITTY_END_FUNCTION_PATTERN = /^\u001b\[8(?:;1)?(?::[12])?~/;
 
 type ViewerColor = "accent" | "border" | "dim" | "muted";
 
@@ -81,49 +74,6 @@ function prepareTextLines(content: string, width: number): string[] {
 		for (const wrapped of wrapPlainLine(line, inner)) result.push(wrapped);
 	}
 	return result.length > 0 ? result : ["(empty)"];
-}
-
-function repeatCount(data: string, sequences: string[]): number {
-	for (const sequence of sequences) {
-		if (data === sequence) return 1;
-		if (sequence.length === 0 || data.length <= sequence.length) continue;
-		if (data.length % sequence.length !== 0) continue;
-		const count = data.length / sequence.length;
-		if (sequence.repeat(count) === data) return count;
-	}
-	return 0;
-}
-
-function repeatedPatternCount(data: string, patterns: RegExp[]): number {
-	for (const pattern of patterns) {
-		let index = 0;
-		let count = 0;
-		while (index < data.length) {
-			const match = pattern.exec(data.slice(index));
-			if (!match || match.index !== 0 || match[0].length === 0) {
-				count = 0;
-				break;
-			}
-			index += match[0].length;
-			count += 1;
-		}
-		if (count > 0) return count;
-	}
-	return 0;
-}
-
-function repeatCountFor(data: string, sequences: string[], patterns: RegExp[]): number {
-	return Math.max(repeatCount(data, sequences), repeatedPatternCount(data, patterns));
-}
-
-function keyRepeat(data: string, key: "up" | "down" | "page-up" | "page-down" | "home" | "end" | "close"): number {
-	if (key === "up") return repeatCountFor(data, ["up", "k", "\u001b[A", "\u001bOA"], [KITTY_UP_PATTERN]);
-	if (key === "down") return repeatCountFor(data, ["down", "j", "\u001b[B", "\u001bOB"], [KITTY_DOWN_PATTERN]);
-	if (key === "page-up") return repeatCountFor(data, ["pageup", "page-up", "\u001b[5~", "\u001b[[5~"], [KITTY_PAGE_UP_PATTERN]);
-	if (key === "page-down") return repeatCountFor(data, ["pagedown", "page-down", "\u001b[6~", "\u001b[[6~"], [KITTY_PAGE_DOWN_PATTERN]);
-	if (key === "home") return repeatCountFor(data, ["home", "\u001b[H", "\u001bOH", "\u001b[1~", "\u001b[7~"], [KITTY_HOME_PATTERN, KITTY_HOME_FUNCTION_PATTERN]);
-	if (key === "end") return repeatCountFor(data, ["end", "\u001b[F", "\u001bOF", "\u001b[4~", "\u001b[8~"], [KITTY_END_PATTERN, KITTY_END_FUNCTION_PATTERN]);
-	return repeatCount(data, ["enter", "return", "\r", "\n", "escape", "q", "\u001b", "ctrl+c", "\u0003"]);
 }
 
 export class ScrollableTextOverlay {

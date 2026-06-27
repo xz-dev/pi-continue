@@ -80,10 +80,44 @@ test("ContinuePaletteComponent captures optional focus from the focus screen", (
 		renders += 1;
 	});
 	component.handleInput("f");
-	for (const char of "finish tests") component.handleInput(char);
+	component.handleInput("finish tests");
 	component.handleInput("enter");
 	assert.deepEqual(selected, { kind: "continue", mode: "steer", instructions: "finish tests" });
-	assert.equal(renders, "finish tests".length + 1);
+	assert.equal(renders, 2);
+});
+
+test("ContinuePaletteComponent opens focus mode with CSI-u encoded f shortcut", () => {
+	let selected;
+	const component = new ContinuePaletteComponent(createSnapshot(), theme, (result) => {
+		selected = result;
+	}, () => {});
+	component.handleInput("\x1b[102;1u");
+	component.handleInput("via kitty");
+	component.handleInput("enter");
+	assert.deepEqual(selected, { kind: "continue", mode: "steer", instructions: "via kitty" });
+});
+
+test("ContinuePaletteComponent keeps Unicode focus text", () => {
+	let selected;
+	const component = new ContinuePaletteComponent(createSnapshot(), theme, (result) => {
+		selected = result;
+	}, () => {});
+	component.handleInput("f");
+	for (const ch of "测试🙂é") component.handleInput(ch);
+	component.handleInput("enter");
+	assert.deepEqual(selected, { kind: "continue", mode: "steer", instructions: "测试🙂é" });
+});
+
+test("ContinuePaletteComponent rejects CSI-u encoded controls in focus text", () => {
+	let selected;
+	const component = new ContinuePaletteComponent(createSnapshot(), theme, (result) => {
+		selected = result;
+	}, () => {});
+	component.handleInput("f");
+	component.handleInput("\x1b[133;1u");
+	component.handleInput("\x1b[127;1u");
+	component.handleInput("enter");
+	assert.deepEqual(selected, { kind: "continue", mode: "steer", instructions: undefined });
 });
 
 test("ContinuePaletteComponent captures queue and preview focus actions", () => {
@@ -119,6 +153,18 @@ test("ContinuePaletteComponent backs out of focus mode without saving hidden tex
 	for (const char of "do not keep") component.handleInput(char);
 	component.handleInput("escape");
 	component.handleInput("enter");
+	assert.deepEqual(selected, { kind: "continue", mode: "steer", instructions: undefined });
+});
+
+test("ContinuePaletteComponent handles Pi TUI escape and enter key events", () => {
+	let selected;
+	const component = new ContinuePaletteComponent(createSnapshot(), theme, (result) => {
+		selected = result;
+	}, () => {});
+	component.handleInput("f");
+	for (const char of "do not keep") component.handleInput(char);
+	component.handleInput("\x1b[27;1u");
+	component.handleInput("\x1b[13;1u");
 	assert.deepEqual(selected, { kind: "continue", mode: "steer", instructions: undefined });
 });
 

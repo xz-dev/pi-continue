@@ -44,6 +44,34 @@ test("ScrollableTextOverlay scrolls repeated held-arrow chunks", () => {
 	assert.match(afterUp, /\| line 2\s+\|/);
 });
 
+test("ScrollableTextOverlay closes on CSI-u Escape", () => {
+	let closed = 0;
+	const overlay = new ScrollableTextOverlay(
+		{ title: "preview", content: "x" },
+		theme,
+		() => {
+			closed += 1;
+		},
+		() => {},
+	);
+	overlay.handleInput("\u001b[27;1u");
+	assert.equal(closed, 1);
+});
+
+test("ScrollableTextOverlay closes on CSI-u Enter", () => {
+	let closed = 0;
+	const overlay = new ScrollableTextOverlay(
+		{ title: "preview", content: "x" },
+		theme,
+		() => {
+			closed += 1;
+		},
+		() => {},
+	);
+	overlay.handleInput("\u001b[13;1u");
+	assert.equal(closed, 1);
+});
+
 test("ScrollableTextOverlay scrolls Kitty repeat key events", () => {
 	let renders = 0;
 	const lines = Array.from({ length: 50 }, (_entry, index) => `line ${index + 1}`).join("\n");
