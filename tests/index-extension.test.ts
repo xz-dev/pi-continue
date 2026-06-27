@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import registerContinueExtension from "../extensions/continue/index.ts";
+import { clearContinuationLedgerOverlay } from "../extensions/continue/src/ledger-viewer.ts";
 import { buildContinuationArtifactPath } from "../extensions/continue/src/project.ts";
 import { CONTINUATION_PROMPT } from "../extensions/continue/src/runtime.ts";
 import { NO_PRE_COMPACTION_MESSAGES_KEPT_ENTRY_ID } from "../extensions/continue/src/compaction-preparation.ts";
@@ -178,6 +179,14 @@ function writeArtifactOffConfig(cwd) {
 	mkdirSync(join(cwd, ".pi", "extensions"), { recursive: true });
 	writeFileSync(join(cwd, ".pi", "extensions", "pi-continue.json"), JSON.stringify({
 		continuationArtifactMode: "off",
+	}), "utf8");
+}
+
+function writeLedgerAutoCloseConfig(cwd, ledgerOverlayAutoClose, extra = {}) {
+	mkdirSync(join(cwd, ".pi", "extensions"), { recursive: true });
+	writeFileSync(join(cwd, ".pi", "extensions", "pi-continue.json"), JSON.stringify({
+		ledgerOverlayAutoClose,
+		...extra,
 	}), "utf8");
 }
 
@@ -531,6 +540,209 @@ test("message_end settles failed and aborted resume outcomes without footer stat
 	await abortedPi.events.get("message_end")({ message: assistantMessage("aborted") }, abortedCtx);
 	assert.deepEqual(abortedCtx.statusCalls, []);
 	assert.equal(abortedCtx.workingMessages.at(-1), undefined);
+});
+
+function createOverlayTrackingContext(cwd, options) {
+	let hideCalls = 0;
+	const asyncHandle = options?.asyncHandle ?? false;
+	const ctx = createCommandContext(cwd, async (factory, uiOptions) => {
+		factory({ requestRender() {} }, ctx.ui.theme, {}, () => {});
+		const handle = { focus() {}, hide() { hideCalls += 1; } };
+		if (asyncHandle) {
+			await Promise.resolve();
+			uiOptions.onHandle(handle);
+			return new Promise(() => {});
+		}
+		uiOptions.onHandle(handle);
+		return new Promise(() => {});
+	});
+	return { ctx, hideCalls: () => hideCalls };
+}
+
+async function runContinuationWithOverlay(cwd, stopReason, ledgerOverlayAutoClose) {
+	writeLedgerAutoCloseConfig(cwd, ledgerOverlayAutoClose);
+	const pi = createFakePi(cwd);
+	const overlay = createOverlayTrackingContext(cwd);
+	registerContinueExtension(pi);
+	await pi.commands.get("continue").handler("steer", overlay.ctx);
+	overlay.ctx.compactOptions.onComplete({});
+	await pi.events.get("session_compact")(ownedCompactionEvent(), overlay.ctx);
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	await pi.events.get("before_agent_start")({ prompt: CONTINUATION_PROMPT }, overlay.ctx);
+	await pi.events.get("message_end")({ message: assistantMessage(stopReason) }, overlay.ctx);
+	const result = overlay.hideCalls();
+	clearContinuationLedgerOverlay();
+	return result;
+}
+
+test("ledgerOverlayAutoClose is disabled by default", async () => {
+	const cwd = mkdtempSync(join(tmpdir(), "pi-continue-autoclose-default-"));
+	try {
+		const pi = createFakePi(cwd);
+		let hideCalls = 0;
+		const ctx = createCommandContext(cwd, async (factory, options) => {
+			factory({ requestRender() {} }, ctx.ui.theme, {}, () => {});
+			options.onHandle({ focus() {}, hide() { hideCalls += 1; } });
+			return new Promise(() => {});
+		});
+		registerContinueExtension(pi);
+		await pi.commands.get("continue").handler("steer", ctx);
+		ctx.compactOptions.onComplete({});
+		await pi.events.get("session_compact")(ownedCompactionEvent(), ctx);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		await pi.events.get("before_agent_start")({ prompt: CONTINUATION_PROMPT }, ctx);
+		await pi.events.get("message_end")({ message: assistantMessage("stop") }, ctx);
+		assert.equal(hideCalls, 0);
+		clearContinuationLedgerOverlay();
+	} finally {
+		rmSync(cwd, { recursive: true, force: true });
+	}
+});
+
+test("ledgerOverlayAutoClose completed only closes successful resumes", async () => {
+	const completedCwd = mkdtempSync(join(tmpdir(), "pi-continue-autoclose-completed-"));
+	const failedCwd = mkdtempSync(join(tmpdir(), "pi-continue-autoclose-failed-"));
+	try {
+		assert.equal(await runContinuationWithOverlay(completedCwd, "stop", "completed"), 1);
+		assert.equal(await runContinuationWithOverlay(failedCwd, "length", "completed"), 0);
+	} finally {
+		rmSync(completedCwd, { recursive: true, force: true });
+		rmSync(failedCwd, { recursive: true, force: true });
+	}
+});
+
+test("ledgerOverlayAutoClose all closes failed and aborted resumes", async () => {
+	for (const stopReason of ["length", "aborted"]) {
+		const cwd = mkdtempSync(join(tmpdir(), `pi-continue-autoclose-${stopReason}-`));
+		try {
+			assert.equal(await runContinuationWithOverlay(cwd, stopReason, "all"), 1);
+		} finally {
+			rmSync(cwd, { recursive: true, force: true });
+		}
+	}
+});
+
+test("ledgerOverlayAutoClose all closes resumes that end without an assistant response", async () => {
+	for (const [policy, expectedHideCalls] of [["all", 1], ["completed", 0]]) {
+		const cwd = mkdtempSync(join(tmpdir(), `pi-continue-autoclose-agent-end-${policy}-`));
+		try {
+			writeLedgerAutoCloseConfig(cwd, policy);
+			const pi = createFakePi(cwd);
+			const overlay = createOverlayTrackingContext(cwd);
+			registerContinueExtension(pi);
+			await pi.commands.get("continue").handler("steer", overlay.ctx);
+			overlay.ctx.compactOptions.onComplete({});
+			await pi.events.get("session_compact")(ownedCompactionEvent(), overlay.ctx);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			await pi.events.get("before_agent_start")({ prompt: CONTINUATION_PROMPT }, overlay.ctx);
+			await pi.events.get("agent_end")({}, overlay.ctx);
+			assert.equal(overlay.hideCalls(), expectedHideCalls);
+		} finally {
+			clearContinuationLedgerOverlay();
+			rmSync(cwd, { recursive: true, force: true });
+		}
+	}
+});
+
+test("ledgerOverlayAutoClose all closes when resume prompt dispatch fails", async () => {
+	const cwd = mkdtempSync(join(tmpdir(), "pi-continue-autoclose-dispatch-fail-"));
+	try {
+		writeLedgerAutoCloseConfig(cwd, "all");
+		const pi = createFakePi(cwd);
+		pi.sendUserMessage = () => {
+			throw new Error("dispatch failed");
+		};
+		const overlay = createOverlayTrackingContext(cwd);
+		registerContinueExtension(pi);
+		await pi.commands.get("continue").handler("steer", overlay.ctx);
+		overlay.ctx.compactOptions.onComplete({});
+		await pi.events.get("session_compact")(ownedCompactionEvent(), overlay.ctx);
+		assert.deepEqual(pi.sent, []);
+		assert.equal(overlay.hideCalls(), 1);
+	} finally {
+		clearContinuationLedgerOverlay();
+		rmSync(cwd, { recursive: true, force: true });
+	}
+});
+
+test("ledgerOverlayAutoClose all closes dispatch failures even when overlay handle arrives asynchronously", async () => {
+	const cwd = mkdtempSync(join(tmpdir(), "pi-continue-autoclose-dispatch-fail-async-handle-"));
+	try {
+		writeLedgerAutoCloseConfig(cwd, "all");
+		const pi = createFakePi(cwd);
+		pi.sendUserMessage = () => {
+			throw new Error("dispatch failed");
+		};
+		const overlay = createOverlayTrackingContext(cwd, { asyncHandle: true });
+		registerContinueExtension(pi);
+		await pi.commands.get("continue").handler("steer", overlay.ctx);
+		overlay.ctx.compactOptions.onComplete({});
+		await pi.events.get("session_compact")(ownedCompactionEvent(), overlay.ctx);
+		assert.deepEqual(pi.sent, []);
+		await Promise.resolve();
+		assert.equal(overlay.hideCalls(), 1);
+	} finally {
+		clearContinuationLedgerOverlay();
+		rmSync(cwd, { recursive: true, force: true });
+	}
+});
+
+test("ledgerOverlayAutoClose all closes when a sent resume never starts", async (t) => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const cwd = mkdtempSync(join(tmpdir(), "pi-continue-autoclose-start-timeout-"));
+	try {
+		writeLedgerAutoCloseConfig(cwd, "all");
+		const pi = createFakePi(cwd);
+		const overlay = createOverlayTrackingContext(cwd);
+		registerContinueExtension(pi);
+		await pi.commands.get("continue").handler("steer", overlay.ctx);
+		overlay.ctx.compactOptions.onComplete({});
+		await pi.events.get("session_compact")(ownedCompactionEvent(), overlay.ctx);
+		assert.equal(overlay.hideCalls(), 0);
+		t.mock.timers.tick(30_000);
+		assert.equal(overlay.hideCalls(), 1);
+	} finally {
+		clearContinuationLedgerOverlay();
+		rmSync(cwd, { recursive: true, force: true });
+	}
+});
+
+test("ledgerOverlayAutoClose all closes stacked legacy Ledger overlays", async () => {
+	const cwd = mkdtempSync(join(tmpdir(), "pi-continue-autoclose-stacked-"));
+	try {
+		mkdirSync(join(cwd, ".pi"), { recursive: true });
+		writeFileSync(join(cwd, ".pi", "settings.json"), JSON.stringify({
+			compaction: { enabled: true, reserveTokens: 20, keepRecentTokens: 10 },
+		}), "utf8");
+		writeLedgerAutoCloseConfig(cwd, "all", { singleLedgerOverlay: false });
+		const pi = createFakePi(cwd);
+		const hidden = [];
+		const ctx = createCommandContext(cwd, async (factory, options) => {
+			const component = factory({ requestRender() {} }, ctx.ui.theme, {}, () => {});
+			options.onHandle({ focus() {}, hide() { hidden.push(component.render(80).join("\n")); } });
+			return new Promise(() => {});
+		});
+		ctx.model = { ...ctx.model, contextWindow: 100 };
+		registerContinueExtension(pi);
+		await pi.commands.get("continue").handler("steer", ctx);
+		ctx.compactOptions.onComplete({});
+		await pi.events.get("session_compact")(ownedCompactionEvent(), ctx);
+		await pi.events.get("before_agent_start")({ prompt: CONTINUATION_PROMPT }, ctx);
+		await pi.events.get("message_end")({ message: highUsageAssistantMessage() }, ctx);
+		await pi.events.get("context")({
+			messages: [userMessage("continue tools"), highUsageAssistantMessage(), toolResultMessage("x".repeat(160))],
+		}, ctx);
+		ctx.compactOptions.onComplete({});
+		await pi.events.get("session_compact")(ownedCompactionEvent("continue-2"), ctx);
+		await pi.events.get("before_agent_start")({ prompt: CONTINUATION_PROMPT }, ctx);
+		await pi.events.get("message_end")({ message: assistantMessage("stop") }, ctx);
+		assert.equal(hidden.length, 2);
+		assert.match(hidden[0], /ledger body/);
+		assert.match(hidden[1], /ledger body/);
+	} finally {
+		clearContinuationLedgerOverlay();
+		rmSync(cwd, { recursive: true, force: true });
+	}
 });
 
 test("session_compact native or invalid active handoff proof fails closed without resume", async () => {

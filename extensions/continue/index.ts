@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { loadHistoryPromptAssets } from "./src/assets.ts";
 import { parseHistoryArtifacts } from "./src/blocks.ts";
 import { splitContinueSubcommand, shouldOpenContinuePalette } from "./src/command-shape.ts";
@@ -23,7 +23,7 @@ import {
 } from "./src/continuation-event.ts";
 import { buildContinuationDetails, buildContinuationSynthesisTelemetry, parseContinuationDetails } from "./src/details.ts";
 import { SYNTHESIS_ABORT_MESSAGE } from "./src/synthesis-error.ts";
-import { buildLedgerSnapshot, clearContinuationLedgerOverlay, showContinuationLedgerOverlaySoon } from "./src/ledger-viewer.ts";
+import { buildLedgerSnapshot, clearContinuationLedgerOverlay, closeContinuationLedgerOverlays, showContinuationLedgerOverlaySoon } from "./src/ledger-viewer.ts";
 import { runMidRunGuard } from "./src/mid-run-guard.ts";
 import { PromptPassError, runPromptPass } from "./src/model.ts";
 import { loadPiInternals } from "./src/pi-internals.ts";
@@ -49,7 +49,7 @@ import {
 	NATIVE_COMPACTION_FALLBACK_FAILURE,
 	clearPendingResumeDispatch,
 } from "./src/resume-proof.ts";
-import type { AgentGuideWriteStatus, ContinuationSynthesisFailure, ContinuationSynthesisTelemetry, ParsedHistoryArtifacts, PendingOutputWrite, WriteMode } from "./src/types.ts";
+import type { AgentGuideWriteStatus, ContinuationResumeStatus, ContinuationSynthesisFailure, ContinuationSynthesisTelemetry, ParsedHistoryArtifacts, PendingOutputWrite, ResolvedProjectContext, WriteMode } from "./src/types.ts";
 import {
 	clearWorkingVisuals,
 	settleWorkingVisuals,
@@ -63,6 +63,19 @@ function decideAgentGuideWriteStatus(writeMode: WriteMode, agentGuideMd: string 
 
 function isAssistantMessage(message: unknown): message is AssistantMessage {
 	return typeof message === "object" && message !== null && "role" in message && message.role === "assistant";
+}
+
+async function maybeAutoCloseLedgerOverlays(
+	pi: Pick<ExtensionAPI, "exec">,
+	ctx: Pick<ExtensionContext, "cwd" | "sessionManager">,
+	resumeStatus: ContinuationResumeStatus,
+	projectContext?: ResolvedProjectContext,
+): Promise<void> {
+	const resolvedContext = projectContext ?? await resolveProjectContext(pi, ctx.cwd, ctx.sessionManager.getSessionId());
+	const config = loadContinuationConfig(resolvedContext.projectRoot);
+	if (config.ledgerOverlayAutoClose === "disabled") return;
+	if (config.ledgerOverlayAutoClose === "completed" && resumeStatus !== "completed") return;
+	closeContinuationLedgerOverlays();
 }
 
 const OUTPUT_WRITE_FAILURE = "Output write failed; check the configured path and permissions.";
@@ -94,6 +107,19 @@ function normalizeSynthesisFailure(error: unknown): ContinuationSynthesisFailure
 export default function (pi: ExtensionAPI) {
 	const pendingOutputWrites = new Map<string, PendingOutputWrite>();
 	const runtime = createContinuationRuntimeState();
+	const projectContexts = new Map<string, ResolvedProjectContext>();
+
+	function projectContextForEvent(eventId: string): ResolvedProjectContext | undefined {
+		return projectContexts.get(eventId);
+	}
+
+	function rememberProjectContext(eventId: string, projectContext: ResolvedProjectContext): void {
+		projectContexts.set(eventId, projectContext);
+	}
+
+	function cleanupProjectContext(eventId: string): void {
+		projectContexts.delete(eventId);
+	}
 
 	function cleanupPendingOutputWrites(eventId: string): void {
 		let removed = false;
@@ -107,6 +133,28 @@ export default function (pi: ExtensionAPI) {
 		}
 	}
 
+	function cleanupContinuationSideEffects(eventId: string): void {
+		cleanupPendingOutputWrites(eventId);
+		cleanupProjectContext(eventId);
+	}
+
+	function continuationFailureHasResume(eventId: string): boolean {
+		const event = runtime.latestEvent;
+		return event?.id === eventId && event.resume.status !== "not-requested";
+	}
+
+	function cleanupContinuationFailureSideEffects(ctx: ExtensionContext, eventId: string): void {
+		const projectContext = projectContextForEvent(eventId);
+		const shouldAutoClose = continuationFailureHasResume(eventId);
+		cleanupContinuationSideEffects(eventId);
+		if (shouldAutoClose) void maybeAutoCloseLedgerOverlays(pi, ctx, "failed", projectContext).catch(() => undefined);
+	}
+
+	async function settleContinuationWithAutoClose(ctx: ExtensionContext, settlement: { eventId: string; status: ContinuationResumeStatus }): Promise<void> {
+		await maybeAutoCloseLedgerOverlays(pi, ctx, settlement.status, projectContextForEvent(settlement.eventId));
+		cleanupProjectContext(settlement.eventId);
+	}
+
 	pi.registerCommand("continue", {
 		description: "Save a same-session handoff, resume this run, or inspect continuation settings.",
 		getArgumentCompletions: getContinueArgumentCompletions,
@@ -114,7 +162,15 @@ export default function (pi: ExtensionAPI) {
 			if (shouldOpenContinuePalette(args, ctx.hasUI)) {
 				const palette = await showContinuePalette(pi, ctx, runtime);
 				if (palette.supported) {
-					if (palette.result) await runContinuePaletteResult(pi, ctx, runtime, palette.result, (eventId) => cleanupPendingOutputWrites(eventId));
+					if (palette.result) {
+						await runContinuePaletteResult(
+							pi,
+							ctx,
+							runtime,
+							palette.result,
+							(eventId) => cleanupContinuationFailureSideEffects(ctx, eventId),
+						);
+					}
 					return;
 				}
 			}
@@ -144,7 +200,7 @@ export default function (pi: ExtensionAPI) {
 				ctx,
 				runtime,
 				args,
-				(eventId) => cleanupPendingOutputWrites(eventId),
+				(eventId) => cleanupContinuationFailureSideEffects(ctx, eventId),
 			);
 		},
 	});
@@ -174,6 +230,7 @@ export default function (pi: ExtensionAPI) {
 		const settlement = failRunningAwaitingContinuationResume(runtime, "Continuation resume did not produce an assistant response.");
 		if (settlement) {
 			settleWorkingVisuals(ctx, runtime, settlement.eventId);
+			await settleContinuationWithAutoClose(ctx, settlement);
 			return;
 		}
 		armDeferredResumeStartTimeout(ctx, runtime);
@@ -184,10 +241,11 @@ export default function (pi: ExtensionAPI) {
 		const settlement = settleAwaitingContinuationResumeFromAssistant(runtime, event.message);
 		if (!settlement) return;
 		settleWorkingVisuals(ctx, runtime, settlement.eventId);
+		await settleContinuationWithAutoClose(ctx, settlement);
 	});
 
 	pi.on("context", async (event, ctx) => {
-		await runMidRunGuard(pi, ctx, runtime, event.messages, (eventId) => cleanupPendingOutputWrites(eventId));
+		await runMidRunGuard(pi, ctx, runtime, event.messages, (eventId) => cleanupContinuationFailureSideEffects(ctx, eventId));
 	});
 
 	pi.on("session_before_compact", async (event, ctx) => {
@@ -197,6 +255,7 @@ export default function (pi: ExtensionAPI) {
 		const ownerStillActive = () => isActiveRunningContinuationEvent(runtime, ownerEventId);
 		const ownerLostResult = () => ownerStillActive() ? undefined : { cancel: true as const };
 		const projectContext = await resolveProjectContext(pi, ctx.cwd, sessionId);
+		rememberProjectContext(ownerEventId, projectContext);
 		const ownerLostAfterProjectContext = ownerLostResult();
 		if (ownerLostAfterProjectContext) return ownerLostAfterProjectContext;
 		const config = loadContinuationConfig(projectContext.projectRoot);
@@ -362,9 +421,10 @@ export default function (pi: ExtensionAPI) {
 		const ledger = canUpdateLedger
 			? buildLedgerSnapshot(event.compactionEntry.summary, ledgerOwnerId, event.compactionEntry.id)
 			: undefined;
+		let projectContext: ResolvedProjectContext | undefined;
 		if (ledger) {
 			runtime.latestLedger = ledger;
-			const projectContext = await resolveProjectContext(pi, ctx.cwd, ctx.sessionManager.getSessionId());
+			projectContext = await resolveProjectContext(pi, ctx.cwd, ctx.sessionManager.getSessionId());
 			const config = loadContinuationConfig(projectContext.projectRoot);
 			if (config.enabled && config.showAfterCompact) {
 				showContinuationLedgerOverlaySoon(ctx, ledger, config.singleLedgerOverlay, (reason) => {
@@ -398,6 +458,7 @@ export default function (pi: ExtensionAPI) {
 			ctx.ui.notify("Agent guide unchanged; no full replacement was produced.", "info");
 		}
 		if (acceptedActiveProof && activeEventId) {
+			if (projectContext) rememberProjectContext(activeEventId, projectContext);
 			dispatchVerifiedContinuationResume(ctx, runtime, activeEventId);
 		}
 	});
@@ -405,6 +466,7 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_shutdown", async (_event, ctx) => {
 		abandonActiveContinuationEvent(runtime, "Pi session shut down before continuation finished settling.");
 		pendingOutputWrites.clear();
+		projectContexts.clear();
 		clearWorkingVisuals(ctx, runtime);
 		runtime.compactionRunning = false;
 		runtime.guardFailureKey = undefined;

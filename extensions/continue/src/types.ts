@@ -8,6 +8,7 @@ export type ContinuationReasoning =
 	| "xhigh";
 
 export type PromptOverridePolicy = "package-default" | "global-override" | "project-override";
+export type LedgerOverlayAutoClose = "disabled" | "completed" | "all";
 export type WriteMode = "always" | "off";
 export type ConfigScope = "global" | "project";
 export type HistoryScenario = "initial" | "update";
@@ -27,6 +28,7 @@ export interface ContinuationConfig {
 	promptOverridePolicy: PromptOverridePolicy;
 	showAfterCompact: boolean;
 	singleLedgerOverlay: boolean;
+	ledgerOverlayAutoClose: LedgerOverlayAutoClose;
 }
 
 export interface ResolvedProjectContext {

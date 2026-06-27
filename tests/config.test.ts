@@ -42,24 +42,27 @@ test("loadContinuationConfig uses current-session model, reasoning, guard, and o
 		assert.equal(config.appendModifiedFileTags, true);
 		assert.equal(config.showAfterCompact, true);
 		assert.equal(config.singleLedgerOverlay, true);
+		assert.equal(config.ledgerOverlayAutoClose, "disabled");
 	});
 });
 
-test("loadContinuationConfig ignores non-boolean overlay settings", async () => {
+test("loadContinuationConfig ignores invalid overlay settings", async () => {
 	await withTempAgent(async (root) => {
 		const configDir = join(root, ".pi", "extensions");
 		mkdirSync(configDir, { recursive: true });
 		writeFileSync(join(configDir, "pi-continue.json"), JSON.stringify({
 			showAfterCompact: "yes",
 			singleLedgerOverlay: "no",
+			ledgerOverlayAutoClose: "never",
 		}), "utf8");
 		const config = loadContinuationConfig(root);
 		assert.equal(config.showAfterCompact, true);
 		assert.equal(config.singleLedgerOverlay, true);
+		assert.equal(config.ledgerOverlayAutoClose, "disabled");
 	});
 });
 
-test("loadContinuationConfig preserves explicit overlay setting false", async () => {
+test("loadContinuationConfig preserves explicit overlay settings", async () => {
 	await withTempAgent(async (root) => {
 		const configDir = join(root, ".pi", "extensions");
 		mkdirSync(configDir, { recursive: true });
@@ -67,11 +70,13 @@ test("loadContinuationConfig preserves explicit overlay setting false", async ()
 			midRunGuardEnabled: false,
 			showAfterCompact: false,
 			singleLedgerOverlay: false,
+			ledgerOverlayAutoClose: "all",
 		}), "utf8");
 		const config = loadContinuationConfig(root);
 		assert.equal(config.midRunGuardEnabled, false);
 		assert.equal(config.showAfterCompact, false);
 		assert.equal(config.singleLedgerOverlay, false);
+		assert.equal(config.ledgerOverlayAutoClose, "all");
 	});
 });
 

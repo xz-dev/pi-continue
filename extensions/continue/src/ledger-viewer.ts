@@ -16,6 +16,8 @@ interface LedgerOverlayHandle {
 interface TrackedLedgerOverlay {
 	overlay: ContinuationLedgerOverlay;
 	handle: LedgerOverlayHandle | undefined;
+	closedByUser: boolean;
+	closeRequested: boolean;
 }
 
 const openLedgerOverlays = new Set<TrackedLedgerOverlay>();
@@ -59,9 +61,13 @@ function forgetLedgerOverlay(entry: TrackedLedgerOverlay | undefined): void {
 
 export function closeContinuationLedgerOverlays(): void {
 	const open = [...openLedgerOverlays];
-	openLedgerOverlays.clear();
-	activeLedgerOverlay = undefined;
-	for (const entry of open.reverse()) entry.handle?.hide();
+	for (const entry of open) {
+		if (!entry.closedByUser) entry.closeRequested = true;
+		forgetLedgerOverlay(entry);
+	}
+	for (const entry of open.filter((entry) => !entry.closedByUser).reverse()) {
+		entry.handle?.hide();
+	}
 }
 
 export function clearContinuationLedgerOverlay(): void {
@@ -103,8 +109,11 @@ export async function showContinuationLedgerOverlay(
 	const lifecycle = ctx.ui.custom<void>(
 		(tui, theme, _keybindings, done) => {
 			supported = true;
-			const overlay = new ContinuationLedgerOverlay(ledger, theme, () => done(), () => tui.requestRender());
-			entry = { overlay, handle: undefined };
+			const overlay = new ContinuationLedgerOverlay(ledger, theme, () => {
+				if (entry) entry.closedByUser = true;
+				done();
+			}, () => tui.requestRender());
+			entry = { overlay, handle: undefined, closedByUser: false, closeRequested: false };
 			openLedgerOverlays.add(entry);
 			if (singleOverlay) activeLedgerOverlay = entry;
 			return overlay;
@@ -119,7 +128,10 @@ export async function showContinuationLedgerOverlay(
 				margin: 1,
 			},
 			onHandle: (handle) => {
-				if (entry) entry.handle = handle;
+				if (entry) {
+					entry.handle = handle;
+					if (entry.closeRequested) handle.hide();
+				}
 			},
 		},
 	);

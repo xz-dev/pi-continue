@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildLedgerSnapshot, clearContinuationLedgerOverlay, ContinuationLedgerOverlay, extractContinuationLedger, showContinuationLedgerOverlay } from "../extensions/continue/src/ledger-viewer.ts";
+import { buildLedgerSnapshot, clearContinuationLedgerOverlay, closeContinuationLedgerOverlays, ContinuationLedgerOverlay, extractContinuationLedger, showContinuationLedgerOverlay } from "../extensions/continue/src/ledger-viewer.ts";
 
 const theme = {
 	fg(_color, text) {
@@ -126,6 +126,48 @@ test("showContinuationLedgerOverlay can keep backward-compatible stacked overlay
 	assert.equal(await showContinuationLedgerOverlay(ctx, { eventId: "continue-1", compactionEntryId: "compact-1", content: "first", capturedAt: 0 }, false), true);
 	assert.equal(await showContinuationLedgerOverlay(ctx, { eventId: "continue-2", compactionEntryId: "compact-2", content: "second", capturedAt: 1 }, false), true);
 	assert.equal(customCalls, 2);
+	clearContinuationLedgerOverlay();
+});
+
+test("closeContinuationLedgerOverlays closes all uncancelled stacked overlays", async () => {
+	const hidden: string[] = [];
+	const ctx = {
+		hasUI: true,
+		ui: {
+			custom(factory, options) {
+				const component = factory({ requestRender() {} }, theme, {}, () => {});
+				options.onHandle({ focus() {}, hide() { hidden.push(component.render(80).join("\n")); } });
+				return new Promise<void>(() => {});
+			},
+		},
+	};
+	assert.equal(await showContinuationLedgerOverlay(ctx, { eventId: "continue-1", compactionEntryId: "compact-1", content: "first", capturedAt: 0 }, false), true);
+	assert.equal(await showContinuationLedgerOverlay(ctx, { eventId: "continue-2", compactionEntryId: "compact-2", content: "second", capturedAt: 1 }, false), true);
+	closeContinuationLedgerOverlays();
+	assert.equal(hidden.length, 2);
+	assert.match(hidden[0], /second/);
+	assert.match(hidden[1], /first/);
+});
+
+test("closeContinuationLedgerOverlays leaves user-cancelled overlays alone", async () => {
+	let component;
+	let hideCalls = 0;
+	const ctx = {
+		hasUI: true,
+		ui: {
+			custom(factory, options) {
+				component = factory({ requestRender() {} }, theme, {}, () => {});
+				options.onHandle({ focus() {}, hide() { hideCalls += 1; } });
+				return new Promise<void>(() => {});
+			},
+		},
+	};
+	const shown = await showContinuationLedgerOverlay(ctx, { eventId: "continue-1", compactionEntryId: "compact-1", content: "first", capturedAt: 0 }, true);
+	assert.equal(shown, true);
+	component.handleInput("q");
+	closeContinuationLedgerOverlays();
+	assert.equal(hideCalls, 0);
+	clearContinuationLedgerOverlay();
 });
 
 test("ContinuationLedgerOverlay renders scrollable ledger panel", () => {

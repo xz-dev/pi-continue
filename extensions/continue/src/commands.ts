@@ -102,6 +102,7 @@ async function chooseModel(ctx: ExtensionCommandContext): Promise<string | undef
 }
 
 const ALL_REASONING_OPTIONS: readonly ContinuationConfig["reasoning"][] = ["inherit", "off", "minimal", "low", "medium", "high", "xhigh"];
+const LEDGER_OVERLAY_AUTO_CLOSE_OPTIONS: readonly ContinuationConfig["ledgerOverlayAutoClose"][] = ["disabled", "completed", "all"];
 
 /** Return operator-selectable reasoning levels, hiding levels unsupported by the resolved summarizer model. */
 export function getReasoningOptionsForModel(model: Model<Api> | undefined): ContinuationConfig["reasoning"][] {
@@ -145,6 +146,7 @@ const CONFIG_KEYS = [
 	"promptOverridePolicy",
 	"showAfterCompact",
 	"singleLedgerOverlay",
+	"ledgerOverlayAutoClose",
 ] as const;
 
 function setConfigPatchValue<Key extends keyof ContinuationConfig>(patch: Partial<ContinuationConfig>, key: Key, value: ContinuationConfig[Key]): void {
@@ -201,6 +203,7 @@ export async function runSettingsDialog(pi: ExtensionAPI, ctx: ExtensionCommandC
 			`Prompt override policy: ${config.promptOverridePolicy}`,
 			`Show brief after compaction: ${config.showAfterCompact ? "yes" : "no"}`,
 			`Single Ledger overlay: ${config.singleLedgerOverlay ? "yes" : "no"}`,
+			`Auto-close Ledger overlays: ${config.ledgerOverlayAutoClose}`,
 			`Reset ${scope} settings`,
 			"Done",
 		]);
@@ -311,6 +314,13 @@ export async function runSettingsDialog(pi: ExtensionAPI, ctx: ExtensionCommandC
 				...current,
 				singleLedgerOverlay: !current.singleLedgerOverlay,
 			}));
+			continue;
+		}
+		if (selected.startsWith("Auto-close Ledger overlays:")) {
+			config = await updateSetting(scope, projectContext.projectRoot, config, async (current) => {
+				const next = await ctx.ui.select("Auto-close Ledger overlays", [...LEDGER_OVERLAY_AUTO_CLOSE_OPTIONS]);
+				return next ? { ...current, ledgerOverlayAutoClose: next as ContinuationConfig["ledgerOverlayAutoClose"] } : undefined;
+			});
 			continue;
 		}
 		if (selected === `Reset ${scope} settings`) {
