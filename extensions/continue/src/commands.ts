@@ -102,6 +102,7 @@ async function chooseModel(ctx: ExtensionCommandContext): Promise<string | undef
 }
 
 const ALL_REASONING_OPTIONS: readonly ContinuationConfig["reasoning"][] = ["inherit", "off", "minimal", "low", "medium", "high", "xhigh"];
+const LEDGER_OVERLAY_AUTO_CLOSE_OPTIONS: readonly ContinuationConfig["ledgerOverlayAutoClose"][] = ["disabled", "completed", "all"];
 
 /** Return operator-selectable reasoning levels, hiding levels unsupported by the resolved summarizer model. */
 export function getReasoningOptionsForModel(model: Model<Api> | undefined): ContinuationConfig["reasoning"][] {
@@ -144,6 +145,8 @@ const CONFIG_KEYS = [
 	"appendModifiedFileTags",
 	"promptOverridePolicy",
 	"showAfterCompact",
+	"singleLedgerOverlay",
+	"ledgerOverlayAutoClose",
 ] as const;
 
 function setConfigPatchValue<Key extends keyof ContinuationConfig>(patch: Partial<ContinuationConfig>, key: Key, value: ContinuationConfig[Key]): void {
@@ -199,6 +202,8 @@ export async function runSettingsDialog(pi: ExtensionAPI, ctx: ExtensionCommandC
 			`Append modified file tags: ${config.appendModifiedFileTags ? "yes" : "no"}`,
 			`Prompt override policy: ${config.promptOverridePolicy}`,
 			`Show brief after compaction: ${config.showAfterCompact ? "yes" : "no"}`,
+			`Single Ledger overlay: ${config.singleLedgerOverlay ? "yes" : "no"}`,
+			`Auto-close Ledger overlays: ${config.ledgerOverlayAutoClose}`,
 			`Reset ${scope} settings`,
 			"Done",
 		]);
@@ -304,6 +309,20 @@ export async function runSettingsDialog(pi: ExtensionAPI, ctx: ExtensionCommandC
 			}));
 			continue;
 		}
+		if (selected.startsWith("Single Ledger overlay:")) {
+			config = await updateSetting(scope, projectContext.projectRoot, config, async (current) => ({
+				...current,
+				singleLedgerOverlay: !current.singleLedgerOverlay,
+			}));
+			continue;
+		}
+		if (selected.startsWith("Auto-close Ledger overlays:")) {
+			config = await updateSetting(scope, projectContext.projectRoot, config, async (current) => {
+				const next = await ctx.ui.select("Auto-close Ledger overlays", [...LEDGER_OVERLAY_AUTO_CLOSE_OPTIONS]);
+				return next ? { ...current, ledgerOverlayAutoClose: next as ContinuationConfig["ledgerOverlayAutoClose"] } : undefined;
+			});
+			continue;
+		}
 		if (selected === `Reset ${scope} settings`) {
 			const confirmed = await ctx.ui.confirm(`Reset ${scope} settings?`, `Delete the ${scope} settings file and fall back to global/default settings?`);
 			if (confirmed) {
@@ -339,8 +358,10 @@ export async function runStatusCommand(pi: ExtensionAPI, ctx: ExtensionCommandCo
 }
 
 /** Show the latest in-memory Continuation Ledger without mutating the transcript. */
-export async function runLedgerCommand(ctx: ExtensionCommandContext, runtime: ContinuationRuntimeState): Promise<void> {
-	await showLatestContinuationLedger(ctx, getLatestContinuationLedger(runtime));
+export async function runLedgerCommand(pi: ExtensionAPI, ctx: ExtensionCommandContext, runtime: ContinuationRuntimeState): Promise<void> {
+	const projectContext = await resolveProjectContext(pi, ctx.cwd, ctx.sessionManager.getSessionId());
+	const config = loadContinuationConfig(projectContext.projectRoot);
+	await showLatestContinuationLedger(ctx, getLatestContinuationLedger(runtime), config.singleLedgerOverlay);
 }
 
 /** Reset scoped config. */

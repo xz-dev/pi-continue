@@ -124,7 +124,9 @@ Default package config:
   "appendReadFileTags": false,
   "appendModifiedFileTags": true,
   "promptOverridePolicy": "project-override",
-  "showAfterCompact": true
+  "showAfterCompact": true,
+  "singleLedgerOverlay": true,
+  "ledgerOverlayAutoClose": "disabled"
 }
 ```
 
@@ -145,6 +147,8 @@ Common settings:
 | `appendModifiedFileTags` | `true` by default; when true, appends current compaction modified-file tags. |
 | `promptOverridePolicy` | Chooses project overrides, global overrides, or package defaults. |
 | `showAfterCompact` | `true` by default; surfaces the rendered brief in a temporary TUI panel right after each successful extension-owned compaction. Set `false` for a silent handoff. |
+| `singleLedgerOverlay` | `true` by default; reuses and focuses one package-owned Ledger panel instead of stacking a new panel after every compaction. Set `false` to keep the older stacked-panel behavior. |
+| `ledgerOverlayAutoClose` | `"disabled"` by default. Set `"completed"` to close package-owned Ledger panels after a successful same-session continuation ends, or `"all"` to close them after any terminal continuation resume outcome. |
 
 `/continue settings` also includes a handoff trigger control. It shows one human-facing trigger token count and writes Pi core `compaction.reserveTokens` in `.pi/settings.json` or the global Pi settings file, not a package config key.
 
@@ -224,6 +228,7 @@ What can change:
 - `continuationArtifactMode: "always"` writes the rendered brief under `.pi/continue/` after successful extension-owned compaction.
 - `continuationArtifactMode: "off"` writes no continuation artifact.
 - `showAfterCompact: true` (default) surfaces the rendered brief in a TUI overlay right after compaction completes; set `false` for a silent handoff.
+- `ledgerOverlayAutoClose: "completed"` or `"all"` can close package-owned Ledger panels when the continuation resume settles; the default `"disabled"` leaves them open for manual review.
 - `agentGuideSyncMode: "off"` is the default.
 - `agentGuideSyncMode: "always"` writes only a full non-null `agentGuideUpdate.content` replacement to the configured agent-guide path.
 - Writes are normalized and skipped when content is unchanged.

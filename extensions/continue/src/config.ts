@@ -5,6 +5,7 @@ import type {
 	ConfigScope,
 	ContinuationConfig,
 	ContinuationReasoning,
+	LedgerOverlayAutoClose,
 	PromptOverridePolicy,
 	WriteMode,
 } from "./types.ts";
@@ -25,6 +26,7 @@ const PROMPT_OVERRIDE_POLICIES = new Set<PromptOverridePolicy>([
 	"project-override",
 ]);
 const WRITE_MODES = new Set<WriteMode>(["always", "off"]);
+const LEDGER_OVERLAY_AUTO_CLOSE_VALUES = new Set<LedgerOverlayAutoClose>(["disabled", "completed", "all"]);
 const mutationQueues = new Map<string, Promise<void>>();
 
 async function withConfigMutationQueue(path: string, work: () => Promise<void>): Promise<void> {
@@ -52,6 +54,8 @@ export const DEFAULT_CONTINUE_CONFIG: ContinuationConfig = {
 	appendModifiedFileTags: true,
 	promptOverridePolicy: "project-override",
 	showAfterCompact: true,
+	singleLedgerOverlay: true,
+	ledgerOverlayAutoClose: "disabled",
 };
 
 interface PartialContinuationConfig {
@@ -68,6 +72,8 @@ interface PartialContinuationConfig {
 	appendModifiedFileTags?: boolean;
 	promptOverridePolicy?: string;
 	showAfterCompact?: boolean;
+	singleLedgerOverlay?: boolean;
+	ledgerOverlayAutoClose?: string;
 }
 
 export interface ContinuationConfigPatch {
@@ -84,6 +90,8 @@ export interface ContinuationConfigPatch {
 	appendModifiedFileTags?: boolean;
 	promptOverridePolicy?: PromptOverridePolicy;
 	showAfterCompact?: boolean;
+	singleLedgerOverlay?: boolean;
+	ledgerOverlayAutoClose?: LedgerOverlayAutoClose;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -136,6 +144,10 @@ function parsePartialConfig(value: unknown): PartialContinuationConfig {
 	if (promptOverridePolicy !== undefined) result.promptOverridePolicy = promptOverridePolicy;
 	const showAfterCompact = asBoolean(value.showAfterCompact);
 	if (showAfterCompact !== undefined) result.showAfterCompact = showAfterCompact;
+	const singleLedgerOverlay = asBoolean(value.singleLedgerOverlay);
+	if (singleLedgerOverlay !== undefined) result.singleLedgerOverlay = singleLedgerOverlay;
+	const ledgerOverlayAutoClose = asString(value.ledgerOverlayAutoClose);
+	if (ledgerOverlayAutoClose !== undefined) result.ledgerOverlayAutoClose = ledgerOverlayAutoClose;
 	return result;
 }
 
@@ -170,6 +182,12 @@ function normalizeWriteMode(value: string | undefined, fallback: WriteMode): Wri
 		: fallback;
 }
 
+function normalizeLedgerOverlayAutoClose(value: string | undefined): LedgerOverlayAutoClose {
+	return value !== undefined && LEDGER_OVERLAY_AUTO_CLOSE_VALUES.has(value as LedgerOverlayAutoClose)
+		? (value as LedgerOverlayAutoClose)
+		: DEFAULT_CONTINUE_CONFIG.ledgerOverlayAutoClose;
+}
+
 function normalizePath(value: string | undefined, fallback: string): string {
 	const trimmed = value?.trim();
 	return trimmed && trimmed.length > 0 ? trimmed : fallback;
@@ -201,6 +219,8 @@ function normalizeConfig(partial: PartialContinuationConfig): ContinuationConfig
 		appendModifiedFileTags: partial.appendModifiedFileTags ?? DEFAULT_CONTINUE_CONFIG.appendModifiedFileTags,
 		promptOverridePolicy: normalizePromptOverridePolicy(partial.promptOverridePolicy),
 		showAfterCompact: partial.showAfterCompact ?? DEFAULT_CONTINUE_CONFIG.showAfterCompact,
+		singleLedgerOverlay: partial.singleLedgerOverlay ?? DEFAULT_CONTINUE_CONFIG.singleLedgerOverlay,
+		ledgerOverlayAutoClose: normalizeLedgerOverlayAutoClose(partial.ledgerOverlayAutoClose),
 	};
 }
 
