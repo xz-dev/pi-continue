@@ -26,6 +26,7 @@ export interface ContinuationConfig {
 	appendModifiedFileTags: boolean;
 	promptOverridePolicy: PromptOverridePolicy;
 	showAfterCompact: boolean;
+	singleLedgerOverlay: boolean;
 }
 
 export interface ResolvedProjectContext {

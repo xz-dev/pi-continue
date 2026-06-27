@@ -130,10 +130,10 @@ export class ScrollableTextOverlay {
 	private scroll = 0;
 	private cachedWidth: number | undefined;
 	private cachedLines: string[] | undefined;
-	private readonly title: string;
-	private readonly content: string;
-	private readonly headerLines: string[];
-	private readonly footer: string;
+	private title: string;
+	private content: string;
+	private headerLines: string[];
+	private footer: string;
 	private readonly theme: ViewerTheme;
 	private readonly done: () => void;
 	private readonly requestRender: () => void;
@@ -151,6 +151,16 @@ export class ScrollableTextOverlay {
 		this.theme = theme;
 		this.done = done;
 		this.requestRender = requestRender;
+	}
+
+	update(options: ScrollableTextOverlayOptions): void {
+		this.title = sanitizeOverlayText(options.title).trim() || "Preview";
+		this.content = sanitizeOverlayText(options.content);
+		this.headerLines = (options.headerLines ?? []).map((line) => sanitizeOverlayText(line));
+		this.footer = options.footer ?? "↑↓/j/k scroll | PgUp/PgDn page | Enter/q/Esc close";
+		this.scroll = 0;
+		this.invalidate();
+		this.requestRender();
 	}
 
 	handleInput(data: string): void {

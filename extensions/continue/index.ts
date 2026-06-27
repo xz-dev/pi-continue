@@ -23,7 +23,7 @@ import {
 } from "./src/continuation-event.ts";
 import { buildContinuationDetails, buildContinuationSynthesisTelemetry, parseContinuationDetails } from "./src/details.ts";
 import { SYNTHESIS_ABORT_MESSAGE } from "./src/synthesis-error.ts";
-import { buildLedgerSnapshot, showContinuationLedgerOverlaySoon } from "./src/ledger-viewer.ts";
+import { buildLedgerSnapshot, clearContinuationLedgerOverlay, showContinuationLedgerOverlaySoon } from "./src/ledger-viewer.ts";
 import { runMidRunGuard } from "./src/mid-run-guard.ts";
 import { PromptPassError, runPromptPass } from "./src/model.ts";
 import { loadPiInternals } from "./src/pi-internals.ts";
@@ -124,7 +124,7 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 			if (subcommand?.name === "ledger") {
-				await runLedgerCommand(ctx, runtime);
+				await runLedgerCommand(pi, ctx, runtime);
 				return;
 			}
 			if (subcommand?.name === "settings") {
@@ -367,7 +367,7 @@ export default function (pi: ExtensionAPI) {
 			const projectContext = await resolveProjectContext(pi, ctx.cwd, ctx.sessionManager.getSessionId());
 			const config = loadContinuationConfig(projectContext.projectRoot);
 			if (config.enabled && config.showAfterCompact) {
-				showContinuationLedgerOverlaySoon(ctx, ledger, (reason) => {
+				showContinuationLedgerOverlaySoon(ctx, ledger, config.singleLedgerOverlay, (reason) => {
 					if (ctx.hasUI) ctx.ui.notify(`Could not open Continuation Ledger: ${reason}`, "error");
 				});
 			}
@@ -411,5 +411,6 @@ export default function (pi: ExtensionAPI) {
 		clearResumeStartTimeout(runtime);
 		clearPendingResumeDispatch(runtime);
 		runtime.awaitingResumeEventId = undefined;
+		clearContinuationLedgerOverlay();
 	});
 }

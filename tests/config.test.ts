@@ -41,27 +41,37 @@ test("loadContinuationConfig uses current-session model, reasoning, guard, and o
 		assert.equal(config.appendReadFileTags, false);
 		assert.equal(config.appendModifiedFileTags, true);
 		assert.equal(config.showAfterCompact, true);
+		assert.equal(config.singleLedgerOverlay, true);
 	});
 });
 
-test("loadContinuationConfig ignores non-boolean showAfterCompact", async () => {
+test("loadContinuationConfig ignores non-boolean overlay settings", async () => {
 	await withTempAgent(async (root) => {
 		const configDir = join(root, ".pi", "extensions");
 		mkdirSync(configDir, { recursive: true });
-		writeFileSync(join(configDir, "pi-continue.json"), JSON.stringify({ showAfterCompact: "yes" }), "utf8");
+		writeFileSync(join(configDir, "pi-continue.json"), JSON.stringify({
+			showAfterCompact: "yes",
+			singleLedgerOverlay: "no",
+		}), "utf8");
 		const config = loadContinuationConfig(root);
 		assert.equal(config.showAfterCompact, true);
+		assert.equal(config.singleLedgerOverlay, true);
 	});
 });
 
-test("loadContinuationConfig preserves explicit mid-run guard false", async () => {
+test("loadContinuationConfig preserves explicit overlay setting false", async () => {
 	await withTempAgent(async (root) => {
 		const configDir = join(root, ".pi", "extensions");
 		mkdirSync(configDir, { recursive: true });
-		writeFileSync(join(configDir, "pi-continue.json"), JSON.stringify({ midRunGuardEnabled: false, showAfterCompact: false }), "utf8");
+		writeFileSync(join(configDir, "pi-continue.json"), JSON.stringify({
+			midRunGuardEnabled: false,
+			showAfterCompact: false,
+			singleLedgerOverlay: false,
+		}), "utf8");
 		const config = loadContinuationConfig(root);
 		assert.equal(config.midRunGuardEnabled, false);
 		assert.equal(config.showAfterCompact, false);
+		assert.equal(config.singleLedgerOverlay, false);
 	});
 });
 

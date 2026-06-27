@@ -43,7 +43,7 @@ export async function runContinuePaletteResult(
 		return;
 	}
 	if (result.kind === "ledger") {
-		await runLedgerCommand(ctx, runtime);
+		await runLedgerCommand(pi, ctx, runtime);
 		return;
 	}
 	if (result.kind === "settings") {

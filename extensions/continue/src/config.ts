@@ -52,6 +52,7 @@ export const DEFAULT_CONTINUE_CONFIG: ContinuationConfig = {
 	appendModifiedFileTags: true,
 	promptOverridePolicy: "project-override",
 	showAfterCompact: true,
+	singleLedgerOverlay: true,
 };
 
 interface PartialContinuationConfig {
@@ -68,6 +69,7 @@ interface PartialContinuationConfig {
 	appendModifiedFileTags?: boolean;
 	promptOverridePolicy?: string;
 	showAfterCompact?: boolean;
+	singleLedgerOverlay?: boolean;
 }
 
 export interface ContinuationConfigPatch {
@@ -84,6 +86,7 @@ export interface ContinuationConfigPatch {
 	appendModifiedFileTags?: boolean;
 	promptOverridePolicy?: PromptOverridePolicy;
 	showAfterCompact?: boolean;
+	singleLedgerOverlay?: boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -136,6 +139,8 @@ function parsePartialConfig(value: unknown): PartialContinuationConfig {
 	if (promptOverridePolicy !== undefined) result.promptOverridePolicy = promptOverridePolicy;
 	const showAfterCompact = asBoolean(value.showAfterCompact);
 	if (showAfterCompact !== undefined) result.showAfterCompact = showAfterCompact;
+	const singleLedgerOverlay = asBoolean(value.singleLedgerOverlay);
+	if (singleLedgerOverlay !== undefined) result.singleLedgerOverlay = singleLedgerOverlay;
 	return result;
 }
 
@@ -201,6 +206,7 @@ function normalizeConfig(partial: PartialContinuationConfig): ContinuationConfig
 		appendModifiedFileTags: partial.appendModifiedFileTags ?? DEFAULT_CONTINUE_CONFIG.appendModifiedFileTags,
 		promptOverridePolicy: normalizePromptOverridePolicy(partial.promptOverridePolicy),
 		showAfterCompact: partial.showAfterCompact ?? DEFAULT_CONTINUE_CONFIG.showAfterCompact,
+		singleLedgerOverlay: partial.singleLedgerOverlay ?? DEFAULT_CONTINUE_CONFIG.singleLedgerOverlay,
 	};
 }
 

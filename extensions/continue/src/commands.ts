@@ -144,6 +144,7 @@ const CONFIG_KEYS = [
 	"appendModifiedFileTags",
 	"promptOverridePolicy",
 	"showAfterCompact",
+	"singleLedgerOverlay",
 ] as const;
 
 function setConfigPatchValue<Key extends keyof ContinuationConfig>(patch: Partial<ContinuationConfig>, key: Key, value: ContinuationConfig[Key]): void {
@@ -199,6 +200,7 @@ export async function runSettingsDialog(pi: ExtensionAPI, ctx: ExtensionCommandC
 			`Append modified file tags: ${config.appendModifiedFileTags ? "yes" : "no"}`,
 			`Prompt override policy: ${config.promptOverridePolicy}`,
 			`Show brief after compaction: ${config.showAfterCompact ? "yes" : "no"}`,
+			`Single Ledger overlay: ${config.singleLedgerOverlay ? "yes" : "no"}`,
 			`Reset ${scope} settings`,
 			"Done",
 		]);
@@ -304,6 +306,13 @@ export async function runSettingsDialog(pi: ExtensionAPI, ctx: ExtensionCommandC
 			}));
 			continue;
 		}
+		if (selected.startsWith("Single Ledger overlay:")) {
+			config = await updateSetting(scope, projectContext.projectRoot, config, async (current) => ({
+				...current,
+				singleLedgerOverlay: !current.singleLedgerOverlay,
+			}));
+			continue;
+		}
 		if (selected === `Reset ${scope} settings`) {
 			const confirmed = await ctx.ui.confirm(`Reset ${scope} settings?`, `Delete the ${scope} settings file and fall back to global/default settings?`);
 			if (confirmed) {
@@ -339,8 +348,10 @@ export async function runStatusCommand(pi: ExtensionAPI, ctx: ExtensionCommandCo
 }
 
 /** Show the latest in-memory Continuation Ledger without mutating the transcript. */
-export async function runLedgerCommand(ctx: ExtensionCommandContext, runtime: ContinuationRuntimeState): Promise<void> {
-	await showLatestContinuationLedger(ctx, getLatestContinuationLedger(runtime));
+export async function runLedgerCommand(pi: ExtensionAPI, ctx: ExtensionCommandContext, runtime: ContinuationRuntimeState): Promise<void> {
+	const projectContext = await resolveProjectContext(pi, ctx.cwd, ctx.sessionManager.getSessionId());
+	const config = loadContinuationConfig(projectContext.projectRoot);
+	await showLatestContinuationLedger(ctx, getLatestContinuationLedger(runtime), config.singleLedgerOverlay);
 }
 
 /** Reset scoped config. */

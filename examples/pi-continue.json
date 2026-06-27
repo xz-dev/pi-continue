@@ -11,5 +11,6 @@
   "appendReadFileTags": false,
   "appendModifiedFileTags": true,
   "promptOverridePolicy": "project-override",
-  "showAfterCompact": true
+  "showAfterCompact": true,
+  "singleLedgerOverlay": true
 }

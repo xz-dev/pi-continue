@@ -124,7 +124,8 @@ Default package config:
   "appendReadFileTags": false,
   "appendModifiedFileTags": true,
   "promptOverridePolicy": "project-override",
-  "showAfterCompact": true
+  "showAfterCompact": true,
+  "singleLedgerOverlay": true
 }
 ```
 
@@ -145,6 +146,7 @@ Common settings:
 | `appendModifiedFileTags` | `true` by default; when true, appends current compaction modified-file tags. |
 | `promptOverridePolicy` | Chooses project overrides, global overrides, or package defaults. |
 | `showAfterCompact` | `true` by default; surfaces the rendered brief in a temporary TUI panel right after each successful extension-owned compaction. Set `false` for a silent handoff. |
+| `singleLedgerOverlay` | `true` by default; reuses and focuses one package-owned Ledger panel instead of stacking a new panel after every compaction. Set `false` to keep the older stacked-panel behavior. |
 
 `/continue settings` also includes a handoff trigger control. It shows one human-facing trigger token count and writes Pi core `compaction.reserveTokens` in `.pi/settings.json` or the global Pi settings file, not a package config key.
 

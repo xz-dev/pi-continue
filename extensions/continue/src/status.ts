@@ -277,6 +277,7 @@ export function renderStatus(
 		`- Append modified file tags: ${config.appendModifiedFileTags ? "yes" : "no"}`,
 		`- Prompt override policy: ${config.promptOverridePolicy}`,
 		`- Show brief after compaction: ${config.showAfterCompact ? "yes" : "no"}`,
+		`- Single Ledger overlay: ${config.singleLedgerOverlay ? "yes" : "no"}`,
 		``,
 		`## Pi Core Compaction`,
 		`- Enabled: ${piCompactionSettings.enabled ? "yes" : "no"}`,
