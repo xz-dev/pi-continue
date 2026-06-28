@@ -1,4 +1,5 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { Focusable } from "@earendil-works/pi-tui";
 import { padVisible, stripAnsi, truncateAnsi, visibleWidth } from "./tui-text.ts";
 
 const MIN_WIDTH = 48;
@@ -38,21 +39,29 @@ export function sanitizeOverlayText(content: string): string {
 		.replace(ESCAPE_CHARACTER_PATTERN, "");
 }
 
-function topLine(theme: ViewerTheme, width: number, title: string): string {
+function borderColor(focused: boolean): ViewerColor {
+	return focused ? "border" : "muted";
+}
+
+function titleColor(focused: boolean): ViewerColor {
+	return focused ? "accent" : "dim";
+}
+
+function topLine(theme: ViewerTheme, width: number, title: string, focused: boolean): string {
 	const label = ` ${title} `;
 	const fill = Math.max(0, width - visibleWidth(label) - 2);
-	return `${theme.fg("border", "+")}${theme.fg("accent", label)}${theme.fg("border", `${"-".repeat(fill)}+`)}`;
+	return `${theme.fg(borderColor(focused), "+")}${theme.fg(titleColor(focused), label)}${theme.fg(borderColor(focused), `${"-".repeat(fill)}+`)}`;
 }
 
-function bottomLine(theme: ViewerTheme, width: number): string {
+function bottomLine(theme: ViewerTheme, width: number, focused: boolean): string {
 	const inner = Math.max(0, width - 2);
-	return theme.fg("border", `+${"-".repeat(inner)}+`);
+	return theme.fg(borderColor(focused), `+${"-".repeat(inner)}+`);
 }
 
-function frame(theme: ViewerTheme, width: number, content: string): string {
+function frame(theme: ViewerTheme, width: number, content: string, focused: boolean): string {
 	const inner = Math.max(0, width - 2);
 	const safe = padVisible(truncateAnsi(content, inner), inner);
-	return `${theme.fg("border", "|")}${safe}${theme.fg("border", "|")}`;
+	return `${theme.fg(borderColor(focused), "|")}${safe}${theme.fg(borderColor(focused), "|")}`;
 }
 
 function wrapPlainLine(line: string, width: number): string[] {
@@ -126,7 +135,8 @@ function keyRepeat(data: string, key: "up" | "down" | "page-up" | "page-down" | 
 	return repeatCount(data, ["enter", "return", "\r", "\n", "escape", "q", "\u001b", "ctrl+c", "\u0003"]);
 }
 
-export class ScrollableTextOverlay {
+export class ScrollableTextOverlay implements Focusable {
+	focused = false;
 	private scroll = 0;
 	private cachedWidth: number | undefined;
 	private cachedLines: string[] | undefined;
@@ -186,15 +196,18 @@ export class ScrollableTextOverlay {
 		const scrollLabel = content.length > page
 			? `lines ${this.scroll + 1}-${Math.min(content.length, this.scroll + page)} of ${content.length}`
 			: `${content.length} lines`;
+		const footer = this.focused
+			? this.footer
+			: "Not focused: check to regain focus";
 		return [
-			topLine(this.theme, overlayWidth, this.title),
-			...this.headerLines.map((line) => frame(this.theme, overlayWidth, ` ${this.theme.fg("dim", line)}`)),
-			frame(this.theme, overlayWidth, ` ${this.theme.fg("dim", scrollLabel)}`),
-			frame(this.theme, overlayWidth, ""),
-			...visible.map((line) => frame(this.theme, overlayWidth, ` ${line}`)),
-			frame(this.theme, overlayWidth, ""),
-			frame(this.theme, overlayWidth, ` ${this.theme.fg("dim", this.footer)}`),
-			bottomLine(this.theme, overlayWidth),
+			topLine(this.theme, overlayWidth, this.title, this.focused),
+			...this.headerLines.map((line) => frame(this.theme, overlayWidth, ` ${this.theme.fg("dim", line)}`, this.focused)),
+			frame(this.theme, overlayWidth, ` ${this.theme.fg("dim", scrollLabel)}`, this.focused),
+			frame(this.theme, overlayWidth, "", this.focused),
+			...visible.map((line) => frame(this.theme, overlayWidth, ` ${line}`, this.focused)),
+			frame(this.theme, overlayWidth, "", this.focused),
+			frame(this.theme, overlayWidth, ` ${this.theme.fg("dim", footer)}`, this.focused),
+			bottomLine(this.theme, overlayWidth, this.focused),
 		];
 	}
 
